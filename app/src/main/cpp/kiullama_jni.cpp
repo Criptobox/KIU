@@ -22,6 +22,17 @@
 
 namespace {
 
+// Compatibilidad de firma de llama_sampler_init_penalties (cambia entre versiones de llama.cpp).
+// Si la llamada de 4 argumentos compila, se usa; si no, devuelve nullptr y se omite el sampler.
+template <typename... A>
+auto kiu_penalties_impl(int, A... a) -> decltype(llama_sampler_init_penalties(a...)) {
+    return llama_sampler_init_penalties(a...);
+}
+template <typename... A>
+llama_sampler* kiu_penalties_impl(long, A...) { return nullptr; }
+template <typename... A>
+llama_sampler* kiu_penalties(A... a) { return kiu_penalties_impl(0, a...); }
+
 std::mutex g_mtx;                 // protege model/ctx y la generación completa
 llama_model*    g_model = nullptr;
 llama_context*  g_ctx   = nullptr;
@@ -375,7 +386,9 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     llama_sampler* smpl = llama_sampler_chain_init(sp);
     // v2.7.4: penalizacion de repeticion (ultimos 64 tokens, x1.1): los modelos chicos entraban en
     // bucles ("y y y y"). Firma de 4 argumentos (llama.cpp >= b3900); si el vendor es mas viejo, ajustar.
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, 1.10f, 0.0f, 0.0f));
+    // Se llama a traves de kiu_penalties(): si el llama.cpp vendorizado cambia la firma, el build NO se rompe
+    // (compila igual y solo se omite la penalizacion). Firma conocida: (last_n, repeat, freq, present).
+    if (llama_sampler* pen = kiu_penalties(64, 1.10f, 0.0f, 0.0f)) llama_sampler_chain_add(smpl, pen);
     if (temperature <= 0.0f) {
         llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
     } else {

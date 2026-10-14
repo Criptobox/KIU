@@ -19,3 +19,12 @@ test('keyframes del cuerpo escalan con --u (sin px sueltos)', () => {
 test('el montaje y el resize fijan --u', () => {
   assert.equal((src.match(/setProperty\('--u'/g) || []).length, 2);
 });
+
+test('el bot pequeño (<60 px) no se desplaza de lado: solo flota', () => {
+  assert.match(css, /\.bot\.mini\.b-sd[^{]*\{animation:fl /);
+  for (const c of ['sd', 'sw', 'zg', 'sh', 'tr', 'jt', 'vb']) {
+    assert.ok(css.includes('.bot.mini.b-' + c), 'falta .mini para b-' + c);
+  }
+  assert.match(src, /bt\.className='bot b-'\+c\[3\]\+\(size<60\?' mini':''\)/);
+  assert.match(src, /classList\.toggle\('mini',size<60\)/);
+});

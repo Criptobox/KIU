@@ -72,10 +72,32 @@ jobs:
           fi
 
       - name: Compilar (debug + release firmado)
+        shell: bash
         run: |
           # Reintenta la descarga del wrapper de Gradle (fallo puntual de DNS en el runner)
           for i in 1 2 3; do ./gradlew --version --no-daemon && break || sleep 15; done
-          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+
+      # Si falla: saca el error REAL (compilador C++/Gradle) al resumen del run,
+      # para no tener que buscarlo entre cientos de líneas de stack trace.
+      - name: Mostrar el error real
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Error real de la compilación"
+            echo '```'
+            grep -nE "error:|fatal error|undefined (reference|symbol)|FAILED:|What went wrong|Execution failed|not declared|no matching function" build.log | head -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir log completo de la compilación
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
 
       - name: Chequeo rápido de lint interno
         run: ./gradlew :app:lintDebug --no-daemon || true

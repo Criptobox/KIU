@@ -20,6 +20,7 @@ const SCRIPTS = [
   'js/skills.js',
   'js/react.js',
   'js/tools.js',
+  'js/kiu-estados.js',
   'js/kiu-avatar.js',
   'js/kiu-avatar-boot.js',
   'js/rag-worker.js',
@@ -46,6 +47,7 @@ const MUST_EXIST = {
   KiuBrain: 'object', KiuTools: 'object', RAG: 'object',
   KiuSkills: 'object', KiuReAct: 'object',
   KiuRagCore: 'object', KiuI18n: 'object', KiuAvatarBoot: 'object',
+  KiuState: 'object', KiuSettings: 'object',
 };
 
 test('todos los módulos cargan en orden sin ReferenceError', () => {

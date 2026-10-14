@@ -445,7 +445,11 @@
       this.on = !!v;
       this.save(function () { });
       this.render();
-      if (window.KiuAvatar) KiuAvatar.flash(this.on ? 'RAG activo' : 'RAG apagado', 2500);
+      /* v2.8.0: la capa 'rag' queda pegada en el estado real (activo o apagado),
+         no es un aviso de 2,5 s: 'RAG apagado' era uno de los estados que nunca
+         se veían porque solo se pintaba un instante. */
+      var k0 = window.KiuState;
+      if (k0) { k0.set('rag', this.on ? 'RAG activo' : 'RAG apagado'); k0.flash('flash', this.on ? 'RAG activo' : 'RAG apagado', 2500); }
       App.toast(this.on ? 'RAG activado: Kiu leerá tus documentos' : 'RAG desactivado');
       if (this._mode === 'idb' && this._db) {
         idbWrite(this._db, ['meta'], function (tx) {
@@ -570,13 +574,14 @@
       if (!isPdf && !isTxt) { App.toast('Formato no soportado: usá PDF, TXT, MD, CSV o JSON'); return; }
       if (file.size > 30 * 1048576) { App.toast('Archivo muy grande (máx 30 MB)'); return; }
       App.toast('Leyendo ' + file.name + '…');
-      if (window.KiuAvatar) KiuAvatar.flash('Indexando', 4000);
+      var k1 = window.KiuState;
+      if (k1) k1.set('rag', 'Indexando');
       var fin = function (text, err) {
         if (err) { App.toast(err); return; }
         self.addText(file.name, isPdf ? 'pdf' : 'txt', String(text || ''), function (err2, doc, n) {
           if (err2) { App.toast(err2); return; }
           self.render();
-          if (window.KiuAvatar) KiuAvatar.flash('RAG activo', 2500);
+          if (k1) { k1.set('rag', 'RAG activo'); k1.flash('flash', 'RAG activo', 2500); }
           App.toast('Documentos: ' + doc.name + ' indexado (' + n + ' fragmentos)');
         });
       };

@@ -25,8 +25,10 @@ Orden de carga en `index.html` (cada uno depende solo de los anteriores):
 | 6 | `app-ui.js` | Toda la UI (`App`), memoria (`KiuMem`), sistema en vivo (`Sys`), restauración de copias (`window.kiuDataRestore`), arranque en DOMContentLoaded | `App` (+ `window.App`), `KiuMem` |
 
 Fuera de `js/app/`, `index.html` carga antes: `kiu-migrate.js` (ferry de datos),
-`i18n.js`, `brain.js`, `tools.js`, `kiu-avatar.js` + `kiu-avatar-boot.js`
-(inicialización ÚNICA del avatar desde v2.7: `avatar.js` viejo eliminado),
+`i18n.js`, `brain.js`, `tools.js`, `kiu-estados.js` + `kiu-avatar.js` + `kiu-avatar-boot.js`
+(desde v2.7 `avatar.js` viejo eliminado; desde v2.8 `kiu-estados.js` es el dueño
+único del estado del avatar: por capas y con prioridad, con eventos explícitos en vez
+de adivinar mirando el puente),
 `rag-worker.js` + `rag.js` (núcleo compartido + worker) y `kiu-secure.js`
 (bóveda de claves + proxy de red + streaming).
 

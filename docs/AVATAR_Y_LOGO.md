@@ -128,35 +128,55 @@ robot blanco de visor de `avatar.js` (13 estados) fue **eliminado** en la
 tanda 8: la inicialización quedó unificada en `kiu-avatar-boot.js`.
 
 ### Cómo está cableado
-- `index.html` carga, en este orden: `brain.js` → `tools.js` → `kiu-avatar.js` →
-  `kiu-avatar-boot.js` → `rag.js` → `app.js`.
+- `index.html` carga, en este orden: `brain.js` → `tools.js` → **`kiu-estados.js`** →
+  `kiu-avatar.js` → `kiu-avatar-boot.js` → `rag.js` → `app.js`.
+- **`kiu-estados.js` (v2.8.0) es el dueño del estado.** Antes había dos dueños y se
+  pisaban: el boot envolvía `window.KiuBridge` con un Proxy y adivinaba el estado
+  mirando cada llamada al puente, mientras `app-ui`/`motor`/`models` llamaban
+  `KiuAvatar.set()` por su cuenta. Ese Proxy se fue: ahora el estado se pone con
+  eventos explícitos, por capas y con prioridad.
 - `kiu-avatar-boot.js` monta el bot en los tres huecos `[data-avatar]` del index
-  (hero, cabecera del chat y tarjeta de perfil), ajusta el tamaño de cada uno al
-  hueco real (con re-ajuste en resize) y envuelve `window.KiuBridge` con un Proxy
-  para cambiar de estado solo, según lo que la app hace.
-- Capa de compatibilidad (dentro de `kiu-avatar.js`): la API vieja que usa `app.js`,
-  `tools.js` y `brain.js` sigue funcionando y se traduce al mapa nuevo:
-  `set('idle'|'work'|'think'|'speak'|'search'|'listen'|'timer'|'error'|'happy'|'alert'|...)`,
-  `flash(est, ms)`, `state()` (devuelve nombres viejos para las comparaciones),
-  `pick(texto)` y `mount()` sin argumentos. Con `KiuAvatar.oldAlias` se ve el mapeo.
+  (hero, cabecera del chat y tarjeta de perfil) y ajusta el tamaño de cada uno al
+  hueco real (con re-ajuste en resize). Nada más.
+- Capa de compatibilidad (dentro de `kiu-avatar.js`): la API vieja sigue
+  funcionando y se traduce al mapa nuevo. **v2.8.0**: `state()` devuelve el nombre
+  real del estado (`'Generando'`, `'Sin modelo'`…) y `oldState()` conserva la vista
+  vieja de 13 nombres. Con `KiuAvatar.oldAlias` se ve el mapeo completo.
+
+### El controlador: `KiuState`
+```js
+KiuState.set(capa, estado, ms?)  // estado pegado de esa capa
+KiuState.flash(capa, estado, ms) // aviso momentáneo
+KiuState.clear(capa)
+KiuState.reset(base)             // vuelve al reposo
+KiuState.get()                   // el estado que se ve
+KiuState.snapshot()              // qué hay puesto en cada capa
+KiuState.on(fn)                  // avisar cuando cambia
+```
+Prioridades: `err 90 > job 70 > pausa 65 > ruta 60 > voz 50 > tool 35 > flash 30 >
+rag 25 > rest 10`. **Un flash solo se ve si no hay nada de mayor prioridad
+activo.** `set(capa, estado, ms)` además pone caducidad: si el evento de fin nunca
+llega (una promesa colgada), el estado se cae solo.
 
 ### Estados y quién los dispara
-- **Automáticos vía KiuBridge (boot)**: Escuchando (listen), Hablando (speak, con
-  duración según el texto), Palabra de activación (startWake/stopWake), Manos libres
-  (setHandsFree), Generando + Respuesta lista (kiuGen/kiuGenStatus), Detenido
-  (kiuGenStop), Ocupado (kiuResetBusy), Cargando/Cargado (kiuLoad/kiuLoadProgress/
-  kiuIsLoaded), Liberado (kiuFree), Motor no soportado (kiuAvailable=false),
-  Descargando/Error de descarga/Descargado (dlStart/dlStatus/dlCancel), Importando
-  (importModel/impStatus), Programado/Cancelado (setReminder/cancelReminder),
-  Temporizador nativo (startTimerNative/cancelTimerNative), Sin permiso de alarma
-  exacta (canExactAlarms=false) y Acción del dispositivo (dial, sms, torch, openApp…).
-- **Desde la lógica JS**: Entrada (escribir en el cuadro), Indexando/RAG activo/RAG
-  apagado (rag.js: addFile/toggle), y los estados de trabajo viejos vía capa compat
-  (think → Armando prompt, search → Indexando, work → Acción del dispositivo…).
-- **Manuales**: `KiuAvatarBoot.set('Sin modelo')`, `.hold('Generando')`,
-  `.flash('Error', 3000)`, o `KiuAvatar.set('Usar nube/Ollama')` con los 37 nombres.
-- Aún sin disparador automático (no hay evento nativo hoy): Disparado, Reprogramado
-  al reiniciar, Proveedor en pausa y Usar nube/Ollama.
+- **El motor** (`motor.js`): Cargando/Cargado/Error (`Kiu.load`), Generando/Respuesta
+  lista/Detenido/Error (`Kiu.ask`, `cancelGen`), Liberado (`unload`, `forceReset`),
+  Proveedor en pausa (corte por calor). `ensureLoaded()` **no** toca el avatar.
+- **Las descargas** (`models.js`): Descargando/Descargado/Error de descarga/Cancelado
+  (`Mod`), Importando (`Imp`). `Sin modelo` en reposo cuando no hay ningún GGUF.
+- **La app** (`app-ui.js`): Enrutando (mandar un mensaje, buscar en la web, esperar
+  un proveedor), Proveedor en pausa (un proveedor falla), Reglas offline (cerebro
+  local o skills), Entrada (escribir **en el chat**), Hablando/Escuchando
+  (`nexoTtsStart`/`nexoTtsDone`/`nexoListenStart`/`nexoListenEnd`), Palabra de
+  activación, Sin permiso de alarma exacta (diálogo al agendar), Disparado
+  (`nexoAlarmFired`), Reprogramado al reiniciar (`kiuTakeRescheduled`), Sin modelo /
+  Usar nube/Ollama / Motor no soportado (`App.avatarRest()`).
+- **El dispositivo** (`brain.js`): Acción del dispositivo, desde el único punto por
+  el que el cerebro toca el puente (`B()`).
+- **Los documentos** (`rag.js`): Indexando / RAG activo / RAG apagado (capa pegada).
+- **Los temporizadores** (`tools.js`): Temporizador nativo / Disparado.
+- **Manuales**: `KiuAvatarBoot.set('…')`, `.hold('…')`, `.flash('…', 3000)`, o
+  `KiuState.set('rest', 'Usar nube/Ollama')` con los 37 nombres.
 
 El mapa interactivo completo vive en `docs/kiu-estados.html` (ábirlo en un navegador):
 muestra cada estado, su detalle técnico y las transiciones posibles.

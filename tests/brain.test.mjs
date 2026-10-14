@@ -20,9 +20,25 @@ const src = readFileSync(
 );
 
 function loadBrain() {
+  return loadBrainAt();
+}
+
+/* v2.8.0: reloj congelado. parseWhen mira la hora actual, así que el mismo texto
+   da 'a las 09:00' o 'mañana a las 09:00' según qué hora sea cuando corre el
+   test. Con un reloj fijo el caso deja de depender del momento en que se ejecuta.
+   FrozenDate se pasa como 'YYYY-MM-DDTHH:mm:ss' en hora local del proceso. */
+function loadBrainAt(iso) {
+  const fixed = iso ? new Date(iso).getTime() : null;
   const ctx = { window: {} };
   // genPass usa window.crypto si está; Node trae webcrypto
   ctx.window.crypto = globalThis.crypto;
+  if (fixed !== null) {
+    class FrozenDate extends Date {
+      constructor(...a) { if (a.length) super(...a); else super(fixed); }
+      static now() { return fixed; }
+    }
+    ctx.Date = FrozenDate;
+  }
   vm.createContext(ctx);
   vm.runInContext(src, ctx, { filename: 'brain.js' });
   const brain = ctx.window.KiuBrain;
@@ -144,11 +160,30 @@ test('parseWhen: basura entrante devuelve null (sin falsos positivos)', () => {
 });
 
 
-/* ---------- v2.7.1: regresiones de parseWhen ---------- */
-test('parseWhen: "de la manana" NO es el dia siguiente', () => {
-  const b = loadBrain();
+/* ---------- v2.7.1: regresiones de parseWhen ----------
+   v2.8.0: el caso "de la manana" usaba la hora real, así que a partir de las 9:00
+   fallaba aunque el código estuviera bien (a las 10, las 9 de la mañana ya pasaron
+   y la próxima ocurrencia ES mañana). Se congela el reloj para que el test diga
+   lo que dice, y se agrega explícitamente el caso del rollover. */
+test('parseWhen: "de la manana" con reloj fijo antes de las 9 = hoy a las 9', () => {
+  const b = loadBrainAt('2026-03-10T08:00:00');
   const r = b.parseWhen('a las 9 de la manana');
-  assert.ok(r && !/ma\u00f1ana/.test(r.whenTxt), r && r.whenTxt);
+  assert.ok(r, 'debería parsear la hora');
+  assert.equal(r.when.getHours(), 9);
+  assert.equal(r.when.getMinutes(), 0);
+  assert.equal(r.whenTxt, 'a las 09:00', 'no es el día siguiente');
+});
+
+test('parseWhen: pasadas las 9, "a las 9 de la manana" cae a mañana (por la hora, no por la palabra)', () => {
+  const b = loadBrainAt('2026-03-10T10:30:00');
+  const r = b.parseWhen('a las 9 de la manana');
+  assert.ok(r);
+  const esperado = new Date('2026-03-10T08:00:00');
+  esperado.setDate(esperado.getDate() + 1);
+  esperado.setHours(9, 0, 0, 0);
+  assert.equal(r.when.getDate(), esperado.getDate());
+  assert.equal(r.when.getHours(), 9);
+  assert.equal(r.whenTxt, 'mañana a las 09:00');
 });
 
 test('parseWhen: 12 de la noche = medianoche; esta noche a las 10 = 22:00', () => {

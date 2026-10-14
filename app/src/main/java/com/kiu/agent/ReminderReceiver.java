@@ -12,9 +12,17 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 
-/* loaded from: classes.dex */
+/* loaded from: classes.dex
+ *
+ * v2.8.0: además de la notificación, avisa a la WebView si está viva. El estado
+ * 'Disparado' del mapa antes no lo disparaba nadie: el avatar no se enteraba de
+ * que una alarma había sonado. El broadcast es interno (no sale de la app) y
+ * MainActivity lo escucha; si la app está cerrada no hay avatar que pintar, así
+ * que no hace falta guardarlo.
+ */
 public class ReminderReceiver extends BroadcastReceiver {
     public static final String CHANNEL_ID = "kiu_alarms";
+    public static final String ACTION_FIRED = "com.kiu.agent.REMINDER_FIRED";
 
     @Override // android.content.BroadcastReceiver
     public void onReceive(Context context, Intent intent) {
@@ -25,6 +33,19 @@ public class ReminderReceiver extends BroadcastReceiver {
         }
         Alarms.remove(context, stringExtra);
         notify(context, stringExtra2);
+        broadcast(context, stringExtra == null ? "" : stringExtra, stringExtra2);
+    }
+
+    /* v2.8.0: si hay una WebView viva, que el bot se entere */
+    static void broadcast(Context context, String id, String title) {
+        try {
+            Intent i = new Intent(ACTION_FIRED);
+            i.setPackage(context.getPackageName());
+            i.putExtra("id", id);
+            i.putExtra("title", title);
+            context.sendBroadcast(i);
+        } catch (Throwable ignored) {
+        }
     }
 
     static void notify(Context context, String str) {

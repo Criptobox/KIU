@@ -90,8 +90,14 @@ window.KiuBrain = (function () {
     configuracion: 'Ajustes', seteo: 'Ajustes'
   };
 
+  /* v2.8.0: B() es el único punto por el que el cerebro toca el dispositivo, así
+     que es el lugar natural para avisar "estoy haciendo algo en el teléfono".
+     Antes eso lo adivinaba un Proxy sobre el puente mirando los nombres de las
+     llamadas; con eventos explícitos alcanza con este punto. */
+  var DEVICE = /^(dial|sms|waChat|email|maps|ytSearch|webSearch|camera|torch|share|openUrl|openApp|openSettings|setAlarmDevice|setTimerDevice|addCalendarEvent)$/;
   function B(fn, args) {
     if (!window.KiuApp) return false;
+    if (DEVICE.test(fn) && window.KiuState) window.KiuState.flash('tool', 'Acción del dispositivo', 2200);
     try { return KiuApp.bridgeCall(fn, args); } catch (e) { return false; }
   }
 
@@ -229,7 +235,8 @@ window.KiuBrain = (function () {
     if (/(enciende|prende|prender|encender|activa|activar|dame|con)\s+(?:la\s+|el\s+)?(linterna|flash|torch)/.test(t)
         || /^(linterna|flash)\s*(on|encendida|prendida)$/.test(t)) {
       var okT = B('torch', [true]);
-      if (window.KiuAvatar) KiuAvatar.flash('alert', 1800);
+      /* v2.8.0: sin flash propio, B() ya encendió la capa 'tool' con
+         'Acción del dispositivo' (es una llamada real al puente). */
       return { handled: true, text: okT
         ? 'Listo, linterna encendida. Decime "apaga la linterna" cuando quieras.'
         : 'Este teléfono no me deja usar el flash. Usá la Linterna de Herramientas, que ilumina con la pantalla.' };

@@ -24,11 +24,13 @@ if [ -f "$IDX" ]; then
     cp "$IDX" "$IDX.bak"
     python3 - "$IDX" <<'PY'
 import re,sys
-p=sys.argv[1]; h=open(p,encoding='utf-8').read(); tag='<script src="js/kiu-avatar-boot.js"></script>\n'
+p=sys.argv[1]; h=open(p,encoding='utf-8').read()
+# v2.8.0: kiu-estados.js (controlador de estados) tiene que cargarse ANTES de kiu-avatar.js
+tag='<script src="js/kiu-estados.js"></script>\n<script src="js/kiu-avatar-boot.js"></script>\n'
 m=re.search(r'<script[^>]*src="[^"]*app\.js[^"]*"',h)
 h=(h[:m.start()]+tag+h[m.start():]) if m else h.replace('</body>',tag+'</body>',1)
-open(p,'w',encoding='utf-8').write(h); print("✔ index.html: añadida la línea kiu-avatar-boot.js (copia en index.html.bak)")
+open(p,'w',encoding='utf-8').write(h); print("✔ index.html: añadidas las líneas kiu-estados.js + kiu-avatar-boot.js (copia en index.html.bak)")
 PY
   fi
-else echo "No encuentro index.html: añade <script src=\"js/kiu-avatar-boot.js\"></script> antes de js/app/app-ui.js"; fi
+else echo "No encuentro index.html: añade <script src=\"js/kiu-estados.js\"></script> y <script src=\"js/kiu-avatar-boot.js\"></script> antes de js/app/app-ui.js"; fi
 echo; echo "Listo. Guía: docs/AVATAR_Y_LOGO.md"

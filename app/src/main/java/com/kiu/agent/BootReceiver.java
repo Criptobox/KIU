@@ -1,12 +1,30 @@
 package com.kiu.agent;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
-/* loaded from: classes.dex */
+/* loaded from: classes.dex
+ *
+ * v2.8.0:
+ *   1) Cuenta cuántas alarmas rearma y lo deja anotado en kiu_native.resched, para
+ *      que la UI pueda mostrar el estado 'Reprogramado al reiniciar' cuando la app
+ *      se abra después (Android borra TODAS las alarmas al reiniciar o al
+ *      actualizar; sin esto el usuario no se entera de que volvieron).
+ *   2) Wake word tras reinicio en Android 14: desde BOOT_COMPLETED ya no se puede
+ *      arrancar un servicio con micrófono. Antes el startForegroundService fallaba
+ *      en silencio y Kiu quedaba "escuchando" en Ajustes sin estar escuchando de
+ *      verdad. Ahora, si el sistema no lo deja, se manda una notificación pidiendo
+ *      que abras la app una vez.
+ */
 public class BootReceiver extends BroadcastReceiver {
+    private static final String CH_WAKE_BACK = "kiu_wake_back";
+
     @Override // android.content.BroadcastReceiver
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
@@ -20,19 +38,61 @@ public class BootReceiver extends BroadcastReceiver {
         if (!boot && !timeChange) {
             return;
         }
-        Alarms.rescheduleAll(context);
+        int restored = Alarms.rescheduleAll(context);
+        if (restored > 0) {
+            try {
+                context.getSharedPreferences("kiu_native", 0).edit().putInt("resched", restored).apply();
+            } catch (Exception ignored) {
+            }
+        }
         /* v2.5.0 (sección 4-b): el resumen matutino vuelve a armarse tras reiniciar */
         try { MorningReceiver.rescheduleIfOn(context); } catch (Exception ignored) { }
         if (boot && context.getSharedPreferences("kiu_native", 0).getBoolean("wake", false)) {
-            try {
-                Intent intent2 = new Intent(context, (Class<?>) KiuService.class);
-                if (Build.VERSION.SDK_INT >= 26) {
-                    context.startForegroundService(intent2);
-                } else {
-                    context.startService(intent2);
-                }
-            } catch (Exception unused) {
+            startWakeOrAsk(context);
+        }
+    }
+
+    /* v2.8.0: arranca el servicio de wake word; si Android 14 lo bloquea desde el
+       arranque, avisa con una notificación en vez de quedarse mudo. */
+    static void startWakeOrAsk(Context context) {
+        boolean started = false;
+        try {
+            Intent intent2 = new Intent(context, (Class<?>) KiuService.class);
+            if (Build.VERSION.SDK_INT >= 26) {
+                context.startForegroundService(intent2);
+            } else {
+                context.startService(intent2);
             }
+            started = true;
+        } catch (Exception unused) {
+        }
+        if (!started) askToReactivate(context);
+    }
+
+    static void askToReactivate(Context context) {
+        try {
+            NotificationManager nm = (NotificationManager) context.getSystemService("notification");
+            if (nm == null) return;
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel(CH_WAKE_BACK, "Despertar por voz", 3);
+                ch.setDescription("Aviso para volver a activar el micrófono de Kiu");
+                nm.createNotificationChannel(ch);
+            }
+            Intent open = new Intent(context, (Class<?>) MainActivity.class);
+            open.setFlags(805306368 | 268435456); /* NEW_TASK | CLEAR_TOP */
+            PendingIntent pi = PendingIntent.getActivity(context, 202, open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification.Builder b = (Build.VERSION.SDK_INT >= 26)
+                    ? new Notification.Builder(context, CH_WAKE_BACK)
+                    : new Notification.Builder(context);
+            b.setSmallIcon(R.drawable.ic_notif)
+                    .setContentTitle("Kiu no pudo escuchar «Kiu» al arrancar")
+                    .setContentText("Android 14 no deja abrir el micrófono al iniciar el teléfono. Abrí Kiu una vez y vuelve a prender el despertador por voz.")
+                    .setStyle(new Notification.BigTextStyle().bigText("Android 14 no deja abrir el micrófono al iniciar el teléfono. Abrí Kiu una vez y vuelve a prender el despertador por voz."))
+                    .setContentIntent(pi)
+                    .setAutoCancel(true);
+            nm.notify(202, b.build());
+        } catch (Throwable ignored) {
         }
     }
 }

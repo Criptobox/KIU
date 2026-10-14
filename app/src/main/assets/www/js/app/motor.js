@@ -5,6 +5,18 @@
 (function () {
   'use strict';
 
+  /* v2.8.0: el motor es el que sabe cuándo empieza y termina cada cosa, así que
+     es el que emite los eventos de estado. Nada de adivinar mirando el puente:
+     KiuState.set('job', …) mientras dura, KiuState.clear + flash al terminar. */
+  function KS() { return window.KiuState || null; }
+  function jobOn(state) { var k = KS(); if (k) k.set('job', state); }
+  function jobOff(flashState, ms) {
+    var k = KS(); if (!k) return;
+    k.clear('job');
+    if (flashState) k.flash('flash', flashState, ms || 2200);
+  }
+  function jobErr(state, ms) { var k = KS(); if (!k) return; k.clear('job'); k.warn(state, ms || 2800); }
+
   /* ================= v1.7.0: MOTOR INTERNO (llama.cpp en el teléfono) ================= */
   var Kiu = {
     avail: null,
@@ -80,7 +92,7 @@
       this.busyG = true;
       bcrumb('cargando modelo: ' + name + ' @ ' + path);
       if (!quiet) App.toast('Cargando ' + (name.replace(/\.gguf$/i, '').slice(0, 28)) + '…');
-      if (window.KiuAvatar) KiuAvatar.set('work');
+      jobOn('Cargando');
       this.pending = { op: 'load', cb: cb, quiet: !!quiet, name: name, path: path, t0: Date.now() };
       // Contexto según tamaño: modelos chicos tienen más margen para historial
       var ctx = (gb >= 12) ? 256 : (gb < 1.2 ? 1024 : 512);
@@ -88,6 +100,7 @@
       if (!ok) {
         this.busyG = false;
         this.pending = null;
+        jobErr('Error', 2600);
         try { rawBridge('kiuResetBusy'); } catch (e) {}
         if (!quiet) App.toast('No se pudo iniciar la carga. Tocá «Liberar motor» y reintentá.');
         if (cb) cb(false);
@@ -116,7 +129,7 @@
           S.kiu.name = pend.name || S.kiu.name;
           S.kiu.path = pend.path || S.kiu.path;
           saveS();
-          if (window.KiuAvatar) KiuAvatar.set('idle');
+          jobOff('Cargado', 2500);
           App.renderModels(); App.renderStatus();
           App.toast('Motor interno listo: ' + S.kiu.name.replace('.gguf', ''));
           if (pend.cb) pend.cb(true);
@@ -133,7 +146,7 @@
           self.busyG = false; self.pending = null;
           try { rawBridge('kiuResetBusy'); } catch (e) {}
           try { rawBridge('kiuFree'); } catch (e) {}
-          if (window.KiuAvatar) KiuAvatar.set('idle');
+          jobErr('Error', 2600);
           App.renderModels(); App.renderStatus();
           if (!q) App.toast('El motor no arrancó la carga. Tocá «Cargar modelo» de nuevo.');
           if (cbf) cbf(false);
@@ -218,7 +231,7 @@
         self.busyG = false;
         var cbT = self.pending.cb;
         self.pending = null;
-        if (window.KiuAvatar) KiuAvatar.flash('Detenido', 3500);
+        var kSt = KS(); if (kSt) { kSt.clear('job'); kSt.flash('flash', 'Proveedor en pausa', 3500); }
         try { App.toast('Motor en pausa por calor (' + Math.round(t) + '°). Esperá un poco y volvé a intentar.'); } catch (e5) { }
         var clean = partial.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim();
         cbT({ ok: !!clean, text: clean, tps: 0, recovered: true, thermal: Math.round(t) });
@@ -282,10 +295,11 @@
       /* v2.1: si un generate anterior murió sin callback, busyG quedaba pegado y el
          motor "cargado" nunca respondía. Sin pending = estado huérfano: se libera. */
       if (this.busyG && !this.pending) { this.busyG = false; try { rawBridge('kiuResetBusy'); } catch (e) { } }
-      if (!S.kiu.ok) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
-      if (this.busyG) { cb({ ok: false, err: 'motor ocupado' }); return; }
+      if (!S.kiu.ok) { jobOff(); cb({ ok: false, err: 'sin modelo cargado' }); return; }
+      if (this.busyG) { jobOff(); cb({ ok: false, err: 'motor ocupado' }); return; }
       this.busyG = true;
       this.pending = { op: 'gen', cb: cb };
+      jobOn('Generando');
       var genPrompt = this.fmt(msgs);
       var genMaxT = Math.min(maxT || 350, 512);
       var genTemp = (typeof S.temp === 'number' ? S.temp : 0.7);
@@ -309,6 +323,7 @@
         self.busyG = false;
         self.pending = null;
         if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
+        jobErr('Error', 2600);
         cb({ ok: false, err: 'motor ocupado' });
       };
       var afterGen = function () {
@@ -353,6 +368,7 @@
           self.pending = null;
           try { rawBridge('kiuGenStop'); } catch (e3) { }
           try { rawBridge('kiuResetBusy'); } catch (e4) { }
+          jobOff('Respuesta lista', 2200);
           cbR({ ok: !!partial.trim(), text: partial.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim(), tps: st.tps || 0, recovered: true });
           return;
         }
@@ -363,6 +379,7 @@
           self.busyG = false;
           var cbf = self.pending.cb;
           self.pending = null;
+          jobErr('Error', 2600);
           cbf({ ok: false, err: (lastTokN > 0 ? 'el motor se quedó sin responder' : 'el motor no arrancó'), stuck: true });
         }
       }, 130);
@@ -374,6 +391,7 @@
           var cbf2 = self.pending.cb;
           self.pending = null;
           rawBridge('kiuGenStop');
+          jobErr('Error', 2600);
           cbf2({ ok: false, err: 'tardó demasiado', stuck: true });
         }
       }, 600000);
@@ -396,8 +414,8 @@
         this.busyG = false;
         this.pending = null;
         if (this._loadProg) { clearInterval(this._loadProg); this._loadProg = null; }
-        if (window.KiuAvatar) KiuAvatar.set('idle');
         if (o.ok) {
+          jobOff('Cargado', 2500);
           S.kiu.ok = true;
           S.kiu.name = p.name || S.kiu.name;
           S.kiu.path = this.resolvePath(S.kiu.name) || S.kiu.path;
@@ -411,6 +429,7 @@
           saveS();
           App.renderModels();
           App.renderStatus();
+          jobErr('Error', 2800);
           var err = String(o.err || 'error desconocido');
           var hint = '';
           if (/RAM|memory|oom|out of memory|alloc/i.test(err)) hint = ' · el modelo es demasiado grande, usá uno ≤1.5B';
@@ -424,6 +443,7 @@
         this.busyG = false;
         this.pending = null;
         if (this._genPoll) { clearInterval(this._genPoll); this._genPoll = null; }
+        jobOff(o.ok ? 'Respuesta lista' : 'Error', 2200);
         if (o.ok) {
           var txt = String(o.text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim();
           p.cb({ ok: true, text: txt, tps: o.tps || 0, ms: o.ms || 0 });
@@ -441,6 +461,7 @@
       try { rawBridge('kiuGenStop'); } catch(e){}
       try { rawBridge('kiuResetBusy'); } catch(e){}
       try { rawBridge('kiuFree'); } catch(e){}
+      jobOff('Liberado', 2000);
       App.renderModels();
       App.renderStatus();
     },
@@ -453,6 +474,7 @@
       if (this._genPoll) { clearInterval(this._genPoll); this._genPoll = null; }
       try { rawBridge('kiuGenStop'); } catch (e) { }
       try { rawBridge('kiuResetBusy'); } catch (e2) { }
+      jobOff('Detenido', 1500);
       return true;
     },
     forceReset: function () {
@@ -461,6 +483,7 @@
       if (this._genPoll) { clearInterval(this._genPoll); this._genPoll = null; }
       try { rawBridge('kiuResetBusy'); } catch(e){}
       try { rawBridge('kiuGenStop'); } catch(e){}
+      jobOff('Liberado', 2000);
       App.toast('Motor liberado. Ya podés cargar un modelo.');
       App.renderModels();
       App.renderStatus();
@@ -672,7 +695,6 @@
       if (c && c.eng !== 'kiu') return false;
       App.toast('Auto: cambio a ' + want.replace(/\.gguf$/i, '').slice(0, 24) + ' ' + (role === 'brain' ? '(cerebro)' : role === 'vision' ? '(visión)' : '(rápido)') + '…');
       Orch._lastDecision = { role: role, name: want };
-      if (window.KiuAvatar) KiuAvatar.set('work');
       Kiu.unload();
       Kiu.load(want, function (ok) {
         if (ok) App.kiuReply(text, null);

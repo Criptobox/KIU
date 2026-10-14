@@ -33,6 +33,14 @@ import java.util.regex.Pattern;
  *   - Respuesta máxima 8 MB · timeouts 15 s conexión / 60 s lectura · 1 redirección
  *     automática como máximo (HttpURLConnection no cruza https→http: bien así).
  *
+ * Claves atadas a su proveedor (v2.8.0): un placeholder {{key:openai}} solo se
+ * sustituye si la petición va realmente a un host de OpenAI. Antes bastaba con que
+ * el nombre del placeholder existiera, así que una URL mal configurada (o un
+ * servicio local) podía llevarse la clave de otro proveedor. Los proveedores con
+ * host propio ("otro", el que el usuario configura a mano) no tienen lista: se
+ * inyectan igual, porque la URL y la clave son suyas. Lo que nunca se hace es
+ * mandar la clave de un proveedor conocido a un host de OTRO proveedor.
+ *
  * Uso (desde el puente): kiuApiStart(id, method, url, headersJson, body) → el JS
  * sondea con kiuApiPoll(id) cada ~60 ms → {st:"run"} | {st:"done",code,body,ct}
  * | {st:"err",msg}. Cancelación: kiuApiStop(id).
@@ -41,6 +49,17 @@ public final class KiuApiProxy {
     private static final ConcurrentHashMap<String, Job> JOBS = new ConcurrentHashMap<String, Job>();
     private static final Pattern KEY_PH = Pattern.compile("\\{\\{key:([A-Za-z0-9_\\-.]+)\\}\\}");
     private static final int MAX_BODY = 8 * 1024 * 1024; /* 8 MB */
+
+    /* id de proveedor (el mismo que usa js/app/state.js PROV) → hosts que le pertenecen.
+       Un host claimado por un proveedor NO puede recibir la clave de otro. */
+    private static final String[][] PROVIDER_HOSTS = {
+            {"openai", "api.openai.com"},
+            {"gemini", "generativelanguage.googleapis.com"},
+            {"groq", "api.groq.com"},
+            {"deepseek", "api.deepseek.com"},
+            {"openrouter", "openrouter.ai"},
+            {"kimi", "api.moonshot.ai"},
+    };
 
     private static final class Job {
         volatile HttpURLConnection conn;
@@ -97,7 +116,7 @@ public final class KiuApiProxy {
                             if (name == null) continue;
                             String val = hs.optString(name, "");
                             if (val == null) val = "";
-                            if (sameHost) val = injectKeys(app, val); /* v2.7.1: nunca mandar la clave a otro host tras una redireccion */
+                            if (sameHost) val = injectKeys(app, val, u.getHost()); /* v2.7.1: nunca mandar la clave a otro host tras una redireccion */
                             else if (val.indexOf("{{key:") >= 0) continue;
                             if (!val.isEmpty()) conn.setRequestProperty(name, val);
                         }
@@ -187,25 +206,58 @@ public final class KiuApiProxy {
         try { if (j.conn != null) j.conn.disconnect(); } catch (Throwable ignored) { }
     }
 
-    /* reemplaza {{key:nombre}} por la clave real guardada en Keystore (prefs kiu_keys) */
-    private static String injectKeys(Context ctx, String val) {
+    /* Reemplaza {{key:nombre}} por la clave real guardada en Keystore (prefs kiu_keys).
+       v2.8.0: solo si `host` pertenece a ese proveedor. Provider_id sin lista propia
+       (el personalizado del usuario) se inyecta, salvo que el host de destino sea de
+       un proveedor conocido: en ese caso la clave se descarta. */
+    private static String injectKeys(Context ctx, String val, String host) {
         if (val == null || val.indexOf("{{key:") < 0) return val;
+        String h = host == null ? "" : host.toLowerCase();
         Matcher m = KEY_PH.matcher(val);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
             String name = m.group(1);
             String key = "";
-            try {
-                if (ctx != null) {
-                    SharedPreferences sp = ctx.getSharedPreferences("kiu_keys", 0);
-                    String enc = sp.getString("k_" + name, null);
-                    if (enc != null) key = KiuCrypto.dec(enc);
-                }
-            } catch (Throwable ignored) { }
+            if (mayInject(name, h)) {
+                try {
+                    if (ctx != null) {
+                        SharedPreferences sp = ctx.getSharedPreferences("kiu_keys", 0);
+                        String enc = sp.getString("k_" + name, null);
+                        if (enc != null) key = KiuCrypto.dec(enc);
+                    }
+                } catch (Throwable ignored) { }
+            }
             m.appendReplacement(sb, Matcher.quoteReplacement(key == null ? "" : key));
         }
         m.appendTail(sb);
         return sb.toString();
+    }
+
+    /* ¿Este placeholder puede viajar a este host? */
+    private static boolean mayInject(String providerId, String host) {
+        String mine = providerId == null ? "" : providerId.toLowerCase();
+        String[] mineHosts = hostsOf(mine);
+        if (mineHosts != null) return hostMatches(host, mineHosts);   /* conocido: ata o suelta */
+        /* proveedor del usuario: se inyecta, salvo que el host sea de otro conocido */
+        for (String[] row : PROVIDER_HOSTS) {
+            if (hostMatches(host, new String[]{row[1]})) return false;
+        }
+        return true;
+    }
+
+    private static String[] hostsOf(String providerId) {
+        for (String[] row : PROVIDER_HOSTS) {
+            if (row[0].equalsIgnoreCase(providerId)) return new String[]{row[1]};
+        }
+        return null;
+    }
+
+    private static boolean hostMatches(String host, String[] hosts) {
+        if (host == null || host.isEmpty()) return false;
+        for (String h : hosts) {
+            if (host.equalsIgnoreCase(h) || host.toLowerCase().endsWith("." + h)) return true;
+        }
+        return false;
     }
 
     private static final Pattern IPV4 = Pattern.compile("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$");

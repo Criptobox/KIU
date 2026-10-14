@@ -2,6 +2,88 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.8.0] — Un solo controlador de estados para el avatar
+
+El bot se movía raro porque **dos capas distintas peleaban por su estado**: `kiu-avatar-boot.js`
+envolvía `window.KiuBridge` con un `Proxy` y *adivinaba* el estado mirando cada llamada al
+puente, mientras `app-ui.js`, `motor.js` y `models.js` llamaban `KiuAvatar.set()` por su cuenta.
+Los dos caminos se pisaban. Ahora hay un solo dueño del estado.
+
+### Nuevo: `js/kiu-estados.js` (controlador por capas y prioridad)
+- `KiuState.set(capa, estado[, ms])` · `.flash(capa, estado, ms)` · `.clear(capa)` · `.reset()` · `.get()` · `.snapshot()` · `.on(fn)`.
+- Capas y prioridad: `err 90 > job 70 > pausa 65 > ruta 60 > voz 50 > tool 35 > flash 30 > rag 25 > rest 10`.
+  Lo persistente manda y **un flash solo se ve si no hay nada de mayor prioridad activo**.
+- `pause` existe porque 'Proveedor en pausa' con prioridad de flash nunca se habría visto:
+  'Enrutando' estaba activo justo mientras se prueba el siguiente modelo.
+- `rag` va por debajo de `flash` a propósito: 'RAG apagado' es un estado de reposo y si viviera
+  más arriba taparía para siempre los avisos.
+- La caducidad la decide el reloj de cada capa, no el temporizador: con la WebView en segundo
+  plano los `setTimeout` no corren y el bot se quedaba con el estado viejo.
+- `set('ruta', …)` lleva red de seguridad de 2 min: una promesa colgada no deja al bot clavado
+  en «Enrutando». Es un temporizador del controlador, no un timer suelto más.
+- `window.KiuState` ya lo usaba `app-ui.js` para los **ajustes** (`window.KiuState = S`): ese
+  alias sin uso pasó a llamarse `window.KiuSettings` para liberar el nombre. `S` sigue igual.
+
+### Bugs que se fueron
+- **«Respuesta lista» mientras seguía generando**: el `Proxy` daba la generación por terminada a
+  los 2,5 s sin sondeo, y con el streaming por push ya no hay sondeo. Ahora la enciende y la
+  apaga `Kiu.ask`.
+- **«Cargado» en cada mensaje**: `ensureLoaded()` llama `kiuIsLoaded` antes de cada envío y el
+  `Proxy` lo leía como «recién cargó». `ensureLoaded` ya no toca el avatar.
+- **Alias viejos apuntando al estado equivocado**: `think` iba a «Armando prompt» (no a
+  «Generando»), `work` al engranaje de «Acción del dispositivo» (se veía al cargar o descargar
+  un modelo), `search` a «Indexando» (lupa sobre un documento, en una búsqueda web) y `create` a
+  «RAG activo» (al pedir un poema aparecía el libro). Ahora `think`/`create` → «Generando»,
+  `search` → «Enrutando», `work` → «Cargando»; la acción en el teléfono se sigue pidiendo con
+  `alert`/`action`.
+- **Reposo desactualizado**: `set()` no actualizaba el estado base y los flashes volvían a un
+  valor viejo (podía quedar en «Generando» con la respuesta ya escrita). El estado base lo
+  calcula ahora `App.avatarRest()` con la verdad a la vista.
+- **«Entrada» con cualquier campo de texto**: el listener global de `input` reaccionaba a
+  Ajustes, claves de API y el buscador del navegador. Va atado al input del chat.
+- **Timers sueltos**: el de `kiuLoad` forzaba «Inactivo» a los 90 s aunque hubiera otro estado;
+  «Escuchando» duraba 9 s fijos y «Hablando» se calculaba por el largo del texto. Ahora mandan
+  `nexoTtsStart`/`nexoTtsDone` y `nexoListenStart`/`nexoListenEnd`.
+- **El `Proxy` sobre `KiuBridge` se eliminó** y con él el listener global de `input`.
+  `kiu-avatar-boot.js` queda con lo suyo: montar y re-ajustar tamaño.
+
+### Estados que nunca se veían (ya tienen dueño)
+- `Enrutando` — al mandar un mensaje, abrir el navegador embebido o esperar un proveedor.
+- `Proveedor en pausa` — cuando un proveedor falla y `Rtr.fail()` lo aparta.
+- `Sin modelo` / `Usar nube/Ollama` / `Motor no soportado` — en `App.avatarRest()`, según lo que
+  haya en `S.dl.done` y si el motor interno está disponible en ese teléfono.
+- `Disparado` — `ReminderReceiver` manda un broadcast interno y `MainActivity` lo traduce a
+  `nexoAlarmFired` si la WebView está viva.
+- `Reprogramado al reiniciar` — `BootReceiver` cuenta cuántas alarmas rearma, lo guarda en
+  `kiu_native.resched` y la UI lo consume con `kiuTakeRescheduled()` (take-once).
+- `RAG apagado` — estado pegado de la capa `rag`, no un aviso de 2,5 s.
+
+### Otros arreglos
+- **El avatar no reinicia las animaciones en cada cambio**: `set()` reescribía el SVG entero
+  (ojos, boca, brazos, antena, objeto y `className`). Ahora guarda qué pintó y solo toca lo que
+  cambió; el `className` del cuerpo se reasigna únicamente si es distinto.
+- **`KiuAvatar.state()` devuelve el nombre real** del estado del mapa, no el alias viejo de 13
+  nombres; `KiuAvatar.oldState()` conserva la vista vieja. El pill del chat se arma con los 37
+  estados: antes todo lo que no fuera de esos 13 caía en «Listo para empezar» mientras el bot
+  descargaba un modelo.
+- **Permiso de alarma exacta con diálogo propio**: al agendar un recordatorio en Android 12+
+  se avisa (estado «Sin permiso de alarma exacta») y se lleva a Ajustes del sistema. Antes solo
+  había un botón suelto en Preferencias y ningún aviso al agendar. `App.confirm` acepta
+  `cancelLabel`.
+- **`{{key:x}}` atado a los hosts de su proveedor** (`KiuApiProxy`): el placeholder solo se
+  sustituye si la petición va a un host de ese proveedor. Un host de un proveedor conocido nunca
+  recibe la clave de otro; el proveedor personalizado del usuario sigue funcionando.
+- **Wake word tras reiniciar en Android 14**: desde `BOOT_COMPLETED` ya no se puede arrancar un
+  servicio con micrófono. Antes fallaba en silencio y Kiu figuraba como despierto sin estarlo;
+  ahora manda una notificación pidiendo abrir la app una vez.
+- **Test inestable arreglado**: `parseWhen('a las 9 de la manana')` fallaba pasadas las 9:00
+  porque asumía la hora actual. El código estaba bien (a las 10, las 9 de la mañana ya pasaron y
+  la próxima ocurrencia es mañana); el test ahora congela el reloj y hay un caso para cada
+  rama. Verificado en 5 zonas horarias.
+- **`tests/estados.test.mjs` (nuevo, 16 tests)** fija el contrato del controlador: prioridades,
+  un flash que no pisa a lo persistente, la caducidad por reloj, los alias y las regresiones
+  del Proxy. Suite completa: 115 tests, 115 pasan.
+
 ## [2.7.5] — Arreglos de arranque y CI
 
 - **Error «Sys is not defined» al abrir** (`motor.js:596`): `Sys` vivía solo dentro de `app-ui.js`; ahora se exporta a `window`.

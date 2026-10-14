@@ -5,6 +5,22 @@
 (function () {
   'use strict';
 
+  /* v2.8.0: la descarga y la importación son trabajo pesado: encienden la capa
+     'job' y la apagan solas cuando terminan. Antes solo hacían KiuAvatar.set('work')
+     y se quedaban en engranaje para siempre si el trabajo moría. */
+  function KS() { return window.KiuState || null; }
+  function jobOn(state) { var k = KS(); if (k) k.set('job', state); }
+  function jobOff(flashState, ms) { var k = KS(); if (!k) return; k.clear('job'); if (flashState) k.flash('flash', flashState, ms || 2600); }
+  function jobErr(state, ms) { var k = KS(); if (!k) return; k.clear('job'); k.warn(state, ms || 3200); }
+  /* sin ningún modelo en el teléfono: el bot lo dice de verdad, no de adivinada */
+  function resting() {
+    var k = KS(); if (!k) return;
+    if (k.layer('job')) return;                       /* hay trabajo en curso: no tocar el reposo */
+    var any = false;
+    for (var m in S.dl.done) if (Object.prototype.hasOwnProperty.call(S.dl.done, m)) { any = true; break; }
+    k.set('rest', any ? 'Inactivo' : 'Sin modelo');
+  }
+
   /* ================= v1.7.0: DESCARGAS DE MODELOS (persistente) ================= */
   var Mod = {
     jobs: {},
@@ -65,7 +81,7 @@
       for (var pf = 0; pf < this.files.length; pf++) if (this.files[pf].n === item.f + '.part') { pb0 = this.files[pf].b || 0; break; }
       this.jobs[res.id] = { st: 'queued', got: 0, total: 0, name: item.f, re: pb0 };
       App.toast('Descargando ' + item.n + '…');
-      if (window.KiuAvatar) KiuAvatar.set('work');
+      jobOn('Descargando');
       this.poll();
       App.renderModels();
     },
@@ -74,7 +90,7 @@
       if (this.timer) return;
       this.timer = setInterval(function () {
         var ids = Object.keys(self.jobs);
-        if (!ids.length) { clearInterval(self.timer); self.timer = null; self.sync(function () { App.renderModels(); }); return; }
+        if (!ids.length) { clearInterval(self.timer); self.timer = null; self.sync(function () { App.renderModels(); resting(); }); return; }
         for (var t = 0; t < ids.length; t++) {
           var j = ids[t];
           var st = jparse(rawBridge('dlStatus', [j]) || '{}', {});
@@ -101,10 +117,12 @@
             if (st.verified) S.dl.done[job.name].v = true;
             saveS();
             App.toast('¡Modelo descargado!' + (st.verified ? ' SHA-256 verificado ✓' : '') + ' Toca «Cargar» para usarlo');
-            if (window.KiuAvatar) KiuAvatar.flash('happy', 2600);
+            jobOff('Descargado', 3000);
+            resting();   /* ya hay un modelo más: el reposo deja de ser 'Sin modelo' */
             if (item && item.eng === 'kiu' && S.kiu.auto) Kiu.load(job.name, null, true);
             App.addActivity('notas', 'Descargué el modelo ' + (item ? item.n : job.name));
           } else if (job.st === 'cancel') {
+              jobOff('Cancelado', 2000);
             App.toast('Descarga cancelada · lo que bajó queda guardado para reanudar');
           } else if (job.st === 'err') {
             /* v1.8.0: reintentar solo, reanudando desde donde quedó (.part) */
@@ -116,19 +134,19 @@
             if (diskFull) {
               var freeG = Mod.free() ? Mod.gb(Mod.free()) : '0 MB';
               App.toast('No hay espacio libre suficiente (libres: ' + freeG + '). Liberá espacio y tocá «Descargar»: sigue donde quedó.');
-              if (window.KiuAvatar) KiuAvatar.flash('error', 2200);
+              jobErr('Error de descarga', 3000);
             } else if (corrupt) {
               /* v1.9.1: el archivo venía dañado y el motor ya lo borró */
               job.tries = 0;
               App.toast('El archivo bajó dañado y ya lo limpié. Tocá «Descargar»: ahora baja verificado (GGUF) y con reintentos.');
-              if (window.KiuAvatar) KiuAvatar.flash('error', 2200);
+              jobErr('Error de descarga', 3000);
             } else if (job.tries <= 6 && item) {
               var delay = job.tries === 1 ? 3000 : 8000;
               App.toast('Se cortó la descarga · reanudando automáticamente (' + job.tries + '/6)…');
               setTimeout(function () { self.start(item); }, delay);
             } else {
               App.toast('Descarga fallida: ' + msg.slice(0, 60) + ' · tocá «Descargar» de nuevo y sigue donde quedó (no empieza de cero)');
-              if (window.KiuAvatar) KiuAvatar.flash('error', 2200);
+              jobErr('Error de descarga', 3200);
             }
             App.renderModels();
             continue;
@@ -146,7 +164,7 @@
         delete S.dl.done[name];
         saveS();
         if (S.kiu.name === name) Kiu.unload();
-        self.sync(function () { App.toast('Modelo borrado'); App.renderModels(); });
+        self.sync(function () { App.toast('Modelo borrado'); App.renderModels(); resting(); });
       });
     },
     gb: function (b) {
@@ -171,6 +189,7 @@
     start: function () {
       if (!this.supported()) { App.toast('Importar funciona en la app del teléfono (Kiu 2.4.0 o más nueva)'); return; }
       bcrumb('importar gguf');
+      jobOn('Importando');
       rawBridge('importModel');
       this.since = Date.now();
       this.poll();
@@ -182,12 +201,13 @@
         var st = jparse(rawBridge('impStatus') || '{}', {});
         self.st = st;
         if (st.st === 'run') { self.since = Date.now(); App.renderImp(); return; }
-        if (st.st === 'cancelled') { self.stop(); App.toast('Importación cancelada'); return; }
+        if (st.st === 'cancelled') { self.stop(); jobOff('Cancelado', 2000); App.toast('Importación cancelada'); return; }
         if (st.st === 'done') {
           self.stop();
           Mod.sync(function () {
             App.toast('Modelo importado ✓ ' + (st.name || ''));
-            if (window.KiuAvatar) KiuAvatar.flash('happy', 2200);
+            jobOff('Descargado', 3000);
+            resting();
             App.addActivity('notas', 'Importé el modelo ' + (st.name || ''));
             if (S.kiu.auto && st.name && !S.kiu.ok && modKind(st.name) === 'text') Kiu.load(st.name, null, true);
             App.renderModels();
@@ -195,7 +215,7 @@
           });
           return;
         }
-        if (st.st === 'err') { self.stop(); App.toast('No pude importar: ' + (st.err || 'error')); try { App.copyText('No pude importar: ' + (st.err || 'error')); } catch (e) {} return; }
+        if (st.st === 'err') { self.stop(); jobErr('Error de descarga', 3000); App.toast('No pude importar: ' + (st.err || 'error')); try { App.copyText('No pude importar: ' + (st.err || 'error')); } catch (e) {} return; }
         if (Date.now() - self.since > 180000) self.stop();
       }, 700);
     },

@@ -78,6 +78,25 @@
   /* v2.7.5: motor.js (otro script) usa Sys en pickModel/best: tiene que vivir en window */
   window.Sys = Sys;
 
+  /* ================= v2.8.0: ESTADOS DEL AVATAR =================
+     Todo el estado del bot pasa por KiuState (js/kiu-estados.js), por capas y con
+     prioridad. Antes esta capa y kiu-avatar-boot.js peleaban por el mismo estado:
+     se pisaban, quedaban timers sueltos y el reposo se quedaba viejo. Ahora cada
+     lugar que CAUSA una acción es el que avisa. */
+  function KS() { return window.KiuState || null; }
+  function stSet(layer, state, ms) { var k = KS(); if (k) k.set(layer, state, ms); }
+  function stClear(layer) { var k = KS(); if (k) k.clear(layer); }
+  function stFlash(state, ms) { var k = KS(); if (k) k.flash('flash', state, ms || 2200); }
+  function stErr(state, ms) { var k = KS(); if (k) k.warn(state, ms || 2800); }
+  /* 'Proveedor en pausa' tiene capa propia (65, arriba de 'Enrutando' 60): si fuera
+     un flash común, 'Enrutando' —que está activo justo mientras se prueba el
+     siguiente modelo— lo taparía y el usuario nunca vería el aviso. */
+  function stPausa(ms) { var k = KS(); if (k) k.flash('pausa', 'Proveedor en pausa', ms || 2400); }
+  /* 'Enrutando' siempre con red de seguridad (2 min): si la promesa del proveedor o
+     el fetch de la web nunca resuelve, el estado se cae solo en vez de dejar al bot
+     clavado. El temporizador lo maneja el controlador, no un setTimeout suelto. */
+  function stRuta() { var k = KS(); if (k) k.set('ruta', 'Enrutando', 120000); }
+
   /* ================= USO DE HOY ================= */
   function usage() {
     var u = store('nexo_usage');
@@ -116,22 +135,28 @@
         var el = document.getElementById('vp-text');
         if (el && text) el.textContent = text;
       };
-      window.nexoTtsStart = function () { if (window.KiuAvatar) KiuAvatar.set('speak'); };
+      /* v2.8.0: el TTS avisa cuándo empieza y cuándo termina de verdad. Antes se
+         calculaba la duración por el largo del texto (Math.min(45000, 3500 + len*70))
+         y el bot cortaba o se Pasaba. Ahora manda el evento. */
+      window.nexoTtsStart = function () { clearTimeout(App._avT); stSet('voz', 'Hablando'); };
       window.nexoTtsDone = function () {
         clearTimeout(App._avT);
-        if (window.KiuAvatar && KiuAvatar.state() === 'speak') KiuAvatar.set('idle');
+        var kk = KS(); if (kk && kk.layer('voz') === 'Hablando') kk.clear('voz');
       };
       window.nexoWakeHit = function () {
-        if (window.KiuAvatar) KiuAvatar.flash('listen', 4000);
+        stSet('voz', 'Escuchando');
         App.toast('Kiu te escucha...');
       };
       window.nexoWakeCmd = function (text) {
-        if (window.KiuAvatar) KiuAvatar.set('listen');
+        stSet('voz', 'Escuchando');
         App.go('chat');
         App.sendMsg(text);
       };
       window.nexoWakeState = function (on) {
         S.wake = !!on; saveS();
+        /* 'Palabra de activación' es un estado pegado mientras la wake word esté
+           viva, no un aviso de 4 s. */
+        stSet('voz', on ? 'Palabra de activación' : null);
         var tg = document.getElementById('tg-wake');
         if (tg) tg.classList.toggle('on', !!on);
         App.toast(on ? 'Despertar por voz activo: decí «Kiu»' : 'Despertar por voz apagado');
@@ -142,7 +167,7 @@
         }
       };
       window.nexoTimerDone = function (label) {
-        if (window.KiuAvatar) KiuAvatar.flash('happy', 3200);
+        stFlash('Disparado', 3200);
         App.toast(label);
         App.speak(label);
       };
@@ -213,14 +238,50 @@
       /* Onboarding: primera vez, preguntamos el nombre */
       setTimeout(function () { self2.onboard(); }, 800);
       document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) { self2.syncReminders(); Sys.refresh(); }
+        if (!document.hidden) { self2.syncReminders(); Sys.refresh(); self2.kiuReschedule(); }
       });
+      setTimeout(function () { self2.kiuReschedule(); }, 1400);
       /* v1.7.0: descargar lista real de modelos + auto-cargar motor interno */
       setTimeout(function () {
         Mod.sync(function () { App.renderModels(); Kiu.ensureLoaded(true); });
       }, 1200);
       /* v1.7.0: saludo por voz al entrar (buenas noches/tardes/días) */
       setTimeout(function () { self2.greet(); }, 1600);
+      /* v2.8.0: avisos que llegan desde Java: una alarma disparada mientras la app
+         está viva y las alarmas que Android restauró tras reiniciar/actualizar.
+         Son los estados 'Disparado' y 'Reprogramado al reiniciar', que antes no
+         los disparaba nadie. */
+      window.nexoAlarmFired = function (title) {
+        stFlash('Disparado', 3500);
+        try { self.refreshMem(); } catch (eR) { }
+        if (title) self.toast(title);
+      };
+      window.nexoRemindersRestored = function (n) {
+        if (!n) return;
+        stFlash('Reprogramado al reiniciar', 3200);
+        try { self.syncReminders(); } catch (eS) { }
+        self.toast('Restauré ' + n + ' alarma' + (n === 1 ? '' : 's') + ' que Android había borrado');
+      };
+      /* v2.8.0: el estado de reposo se calcula una vez con la verdad a la vista
+         (motor disponible, modelos descargados, RAG) en vez de quedar en Inactivo
+         y adivinarse. Los estados 'Motor no soportado', 'Usar nube/Ollama' y
+         'Sin modelo' nunca se veían: acá se encienden. */
+      setTimeout(function () { self2.avatarRest(); }, 900);
+    },
+    /* Estado de reposo del bot: qué puede hacer Kiu ahora mismo con este teléfono. */
+    avatarRest: function () {
+      var k = KS(); if (!k) return;
+      var hasModel = false;
+      try { for (var f in S.dl.done) if (Object.prototype.hasOwnProperty.call(S.dl.done, f)) { hasModel = true; break; } } catch (e) { }
+      if (k.layer('rag') === null) k.set('rag', (window.RAG && RAG.on) ? 'RAG activo' : 'RAG apagado');
+      if (Kiu.available() === false) {
+        /* el teléfono no puede correr el motor interno: se avisa y se queda en la
+           alternativa que sí sirve (nube u Ollama en la red) */
+        k.flash('flash', 'Motor no soportado', 3200);
+        k.set('rest', 'Usar nube/Ollama');
+        return;
+      }
+      k.set('rest', hasModel ? 'Inactivo' : 'Sin modelo');
     },
     /* ---------- v1.7.0: saludo por voz al entrar ---------- */
     greet: function () {
@@ -234,7 +295,7 @@
       var msg = hi + who + '. Soy Kiu. ¿Qué hacemos hoy? ¿En qué te puedo ayudar?';
       var el = document.getElementById('hero-hi');
       if (el) el.textContent = msg.split('. ').slice(0, 2).join('. ');
-      if (window.KiuAvatar) KiuAvatar.flash('happy', 3200);
+      stFlash('Respuesta lista', 3200);
       this.toast(msg);
       /* habla aunque la voz esté apagada: es la bienvenida. Se puede apagar en Ajustes → Voz */
       var clean = msg.replace(/\n+/g, '. ');
@@ -258,7 +319,7 @@
         var b = document.getElementById('tg-conv'); if (b) b.classList.remove('on');
       }
       this.showListening(false);
-      if (window.KiuAvatar) KiuAvatar.set('idle');
+      stClear('voz');
       this.toast('Listo, corté la llamada');
     },
     onboard: function () {
@@ -1153,10 +1214,12 @@
       document.getElementById('cb-url').value = url || '';
       document.getElementById('cb-msg').textContent = note || 'Algunas webs no dejan verse dentro de otras apps: si queda en blanco, usá «Abrir afuera».';
       document.getElementById('cb-frame').src = url || 'about:blank';
-      if (window.KiuAvatar) KiuAvatar.set('search');
+      /* v2.8.0: abrir una web NO es 'Indexando' (la lupa sobre un documento). Es
+         Kiu yendo a buscar algo: estado 'Enrutando', y solo si nada más manda. */
+      stRuta();
       var self = this;
       clearTimeout(this._cbT);
-      this._cbT = setTimeout(function () { if (window.KiuAvatar && KiuAvatar.state() === 'search') KiuAvatar.set('idle'); }, 2600);
+      this._cbT = setTimeout(function () { stClear('ruta'); }, 2600);
     },
     browserGo: function () {
       var u = document.getElementById('cb-url').value.trim();
@@ -1202,7 +1265,7 @@
     webSearch: function (q) {
       var self = this;
       bcrumb('buscando en la web: ' + String(q || '').slice(0, 40));
-      if (window.KiuAvatar) KiuAvatar.set('search');
+      stRuta();
       this.showTyping(true);
       this._cancelled = false;
       var enc = encodeURIComponent(q.replace(/^busca\s+/i, '').trim());
@@ -1239,7 +1302,8 @@
         if (self._cancelled) return;
         self.showTyping(false);
         if (!snippets.length) {
-          if (window.KiuAvatar) KiuAvatar.set('idle');
+          stClear('ruta');
+          stErr('Error', 2600);
           self.botSay('No pude buscar en la web ahora (sin conexión o los servicios no respondieron). Probá de nuevo en un momento.');
           return;
         }
@@ -1251,7 +1315,7 @@
             role: 'user',
             content: q + '\n\n[Información encontrada en la web]\n' + ctx + '\n\nRespondé breve y claro con esa información. Si un dato no está en la lista, decilo en vez de inventarlo.'
           };
-          if (window.KiuAvatar) KiuAvatar.set('think');
+          stRuta();
           self.apiStream('', function () { }, pv, null, msgs).then(function (out) {
             if (out.ok) {
               Rtr.fine(pv.def.id);
@@ -1262,15 +1326,16 @@
               if (last && last.role === 'bot') { last.text += '\n\nFuentes: ' + snippets.slice(0, 3).map(function (s) { return s.t; }).join(' · '); saveHist(hist); }
             } else {
               Rtr.fail(pv.def.id, /clave|401|403|429/.test(out.err));
+              stPausa();   /* ese proveedor se aparta un rato */
               self.botSay('Encontré esto en la web:\n\n' + ctx);
               self.appendSources(snippets);
             }
-            if (window.KiuAvatar) KiuAvatar.set('idle');
+            stClear('ruta');
           });
         } else {
           self.botSay('Esto encontré en la web sobre «' + q + '»:\n\n' + ctx);
           self.appendSources(snippets);
-          if (window.KiuAvatar) KiuAvatar.set('idle');
+          stClear('ruta');
         }
         setTimeout(function () { if (snippets[0]) self.browser(snippets[0].u, 'La búsqueda abrió en el navegador de Kiu, sin salir del chat.'); }, 600);
       });
@@ -1295,6 +1360,11 @@
       inp.addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter') submitChat();
       });
+      /* v2.8.0: 'Entrada' solo cuando se escribe EN EL CHAT. Antes había un
+         listener global en kiu-avatar-boot.js que reaccionaba a cualquier campo de
+         texto: Ajustes, claves de API, el buscador del navegador... y el bot se
+         ponía 'Entrada' mientras el usuario completaba su clave de OpenAI. */
+      inp.addEventListener('input', function () { stFlash('Entrada', 1800); });
       document.getElementById('btn-mic').addEventListener('click', function () { self.startVoice(); });
       var convBtn = document.getElementById('chat-conv-toggle');
       if (convBtn) convBtn.addEventListener('click', function () { self.setConv(S.conv === false); });
@@ -1467,32 +1537,64 @@
         }
       });
     },
+    /* v2.8.0: el pill se arma con los NOMBRES REALES de los 37 estados, no con los
+       13 alias viejos. Antes todo lo que no fuera de esos 13 caía en 'idle' y la
+       pastilla decía «Listo para empezar» mientras el bot estaba descargando un
+       modelo o generando. */
+    chatStateLabel: function () {
+      var av = (window.KiuState && KiuState.get()) ? KiuState.get() : ((window.KiuAvatar && KiuAvatar.state()) || 'Inactivo');
+      var map = {
+        'Inactivo': ['Listo para empezar', ''],
+        'Reposo de voz': ['Sin micrófono', ''],
+        'Entrada': ['Escribiendo…', 'busy'],
+        'Dictando': ['Te escucho…', 'voice'],
+        'Escuchando': ['Te escucho…', 'voice'],
+        'Hablando': ['Hablando…', 'voice'],
+        'Manos libres': ['Te escucho…', 'voice'],
+        'Palabra de activación': ['Esperando «Kiu»', 'voice'],
+        'Armando prompt': ['Armando la respuesta…', 'busy'],
+        'Reglas offline': ['Pensando…', 'busy'],
+        'Enrutando': ['Investigando…', 'busy'],
+        'Generando': ['Generando…', 'busy'],
+        'Proveedor en pausa': ['Probando otro modelo…', 'busy'],
+        'Respuesta lista': ['Listo', ''],
+        'Detenido': ['Detenido', 'busy'],
+        'Error': ['Ups, hubo un error', 'busy'],
+        'Motor no soportado': ['Este teléfono no corre el motor', 'busy'],
+        'Usar nube/Ollama': ['Usando nube u Ollama', ''],
+        'Sin modelo': ['Descargá un modelo', ''],
+        'Descargando': ['Descargando modelo…', 'busy'],
+        'Error de descarga': ['Falló la descarga', 'busy'],
+        'Descargado': ['Modelo descargado', ''],
+        'Importando': ['Importando modelo…', 'busy'],
+        'Cargando': ['Cargando modelo…', 'busy'],
+        'Cargado': ['Modelo listo', ''],
+        'Ocupado': ['Motor ocupado', 'busy'],
+        'Liberado': ['Motor liberado', ''],
+        'Acción del dispositivo': ['Trabajando…', 'busy'],
+        'Sin permiso de alarma exacta': ['Falta permiso de alarma exacta', 'busy'],
+        'Programado': ['Recordatorio programado', ''],
+        'Disparado': ['¡Alarma!', 'busy'],
+        'Cancelado': ['Cancelado', ''],
+        'Reprogramado al reiniciar': ['Alarmas restauradas', ''],
+        'Temporizador nativo': ['Temporizador en marcha', 'busy'],
+        'RAG apagado': ['Sin documentos', ''],
+        'Indexando': ['Leyendo documentos…', 'busy'],
+        'RAG activo': ['Con tus documentos', '']
+      };
+      return { av: av, label: map[av] || map['Inactivo'] };
+    },
     syncChatState: function () {
       var pill = document.getElementById('chat-state');
       var st = document.getElementById('chat-status');
-      var av = window.KiuAvatar ? KiuAvatar.state() : 'idle';
-      var map = {
-        idle: ['Listo para empezar', ''],
-        listen: ['Te escucho…', 'voice'],
-        think: ['Pensando…', 'busy'],
-        search: ['Investigando…', 'busy'],
-        work: ['Trabajando…', 'busy'],
-        create: ['Creando ideas…', 'busy'],
-        code: ['Programando…', 'busy'],
-        focus: ['Concentrada…', 'busy'],
-        speak: ['Hablando…', 'voice'],
-        timer: ['Temporizador en marcha', 'busy'],
-        alert: ['Atención…', 'busy'],
-        happy: ['', ''],
-        error: ['Ups, hubo un error', 'busy']
-      };
-      var m = map[av] || map.idle;
+      var cur = this.chatStateLabel();
+      var av = cur.av, m = cur.label;
       if (pill && m[0]) {
         pill.querySelector('span').textContent = m[0];
         pill.className = 'chat-state' + (m[1] ? ' ' + m[1] : '');
       }
       if (st) {
-        if (av === 'idle') {
+        if (av === 'Inactivo') {
           var act = this.activeProvs();
           st.textContent = (S.mode !== 'local' && act.length) ? ('Listo · ' + act[0].def.name) : 'Listo para empezar';
         } else {
@@ -1504,7 +1606,8 @@
       var hc = document.getElementById('hang-chip');
       var ov = document.getElementById('voice-pulse');
       if (hc) {
-        var busy = (av === 'listen' || av === 'speak' || App.voiceBusy) && (!ov || ov.classList.contains('hidden'));
+        var voice = (av === 'Escuchando' || av === 'Hablando' || av === 'Dictando');
+        var busy = (voice || App.voiceBusy) && (!ov || ov.classList.contains('hidden'));
         hc.classList.toggle('hidden', !busy);
       }
     },
@@ -1584,7 +1687,10 @@
       var self = this;
       bcrumb('enviando: ' + String(text || 'foto').slice(0, 40));
       this.go('chat');
-      if (window.KiuAvatar) KiuAvatar.set(KiuAvatar.pick(text));
+      /* v2.8.0: al mandar un mensaje Kiu todavía no sabe a quién le va a preguntar.
+         Se pone 'Enrutando' y cada rama apaga la suya al terminar. Antes esto usaba
+         KiuAvatar.pick(), que adivinaba 'RAG activo' al pedir un poema. */
+      stRuta();
       this._kiuStuck = false; /* v2.1.1: nuevo mensaje = nuevo derecho a reintento */
       this.pushMsg('user', text, false, imgThumb);
       this.showTyping(true);
@@ -1605,8 +1711,10 @@
           if (skHit) {
             var skOut = KiuSkills.run(skHit);
             if (skOut && skOut.handled) {
+              stClear('ruta'); stSet('tool', 'Reglas offline');
               setTimeout(function () {
                 self.showTyping(false);
+                stClear('tool');
                 self.botSay(skOut.text);
                 if (skOut.say && !S.voiceOn && self.speak) self.speak(skOut.text);
               }, 420);
@@ -1633,8 +1741,10 @@
       }
       var res = KiuBrain.reply(text);
       if (res.handled) {
+        stClear('ruta'); stSet('tool', 'Reglas offline');
         setTimeout(function () {
           self.showTyping(false);
+          stClear('tool');
           self.botSay(res.text);
           KB.reinforce(text);
         }, 420);
@@ -1651,8 +1761,10 @@
         try {
           var ract = KiuReAct.run(text);
           if (ract && ract.handled) {
+            stClear('ruta'); stSet('tool', 'Reglas offline');
             setTimeout(function () {
               self.showTyping(false);
+              stClear('tool');
               self.botSay(ract.text);
               KB.reinforce(text);
             }, 420);
@@ -1676,6 +1788,7 @@
       }
       setTimeout(function () {
         self.showTyping(false);
+        stClear('ruta');
         var fb = KiuBrain.fallback();
         self.botSay(fb || 'Mmm, esa no la tengo.');
         KB.reinforce(text);
@@ -1688,6 +1801,7 @@
       if (i >= targets.length) {
         this.showTyping(false);
         if (live) live.remove();
+        stClear('ruta');
         this.brainFallbackReply(text, img);
         return;
       }
@@ -1725,8 +1839,9 @@
     /* respaldo común: cerebro local */
     brainFallbackReply: function (text, img) {
       var self = this;
+      stClear('ruta');
       if (S.kiu.ok) { this.kiuReply(text, null, img); return; }
-      if (window.KiuAvatar) KiuAvatar.flash('error', 2200);
+      stErr('Error', 2400);
       var fb = KiuBrain.fallback();
       this.botSay('Ahora mismo no tengo un modelo disponible para eso. Descargá uno en Modelos (corre en tu teléfono) o conectá una API.\n\n' + (fb || ''));
       KB.reinforce(text);
@@ -1735,7 +1850,10 @@
        v1.9.0: streaming — la respuesta se pinta palabra por palabra en vivo */
     kiuReply: function (text, liveEl, img, tinyRetry) {
       var self = this;
-      if (window.KiuAvatar) KiuAvatar.set('think');
+      /* 'Generando' lo enciende Kiu.ask cuando arranca de verdad, no al entrar acá:
+         entremedio ensureLoaded() puede estar recargando el modelo, y entonces lo
+         que se ve es 'Cargando', que es la verdad. */
+      stRuta();
       /* v2.1.2: verificación honesta del motor. Si el proceso se reinició, el
        * nativo ya no tiene el modelo aunque el sayState dijera "cargado": se
        * recarga sola y se le avisa al usuario en vez de fallar en vacío. */
@@ -1743,6 +1861,7 @@
         var lst = Kiu.ensureLoaded(false);
         if (lst !== 'ok') {
           this.showTyping(false);
+          stClear('ruta');
           if (lst === 'recargando') this.botSay('El motor se había descargado al cerrar la app. Lo estoy recargando: mandame de nuevo tu mensaje en unos segundos.');
           else if (lst === 'sin-modelo') { this.brainFallbackReply(text); return; }
           else this.botSay('No pude recargar el modelo automáticamente. Entrá a Modelos y cargalo de nuevo.');
@@ -1777,6 +1896,9 @@
         self.showTyping(false);
         if (out.ok && out.text) {
           self._kiuStuck = false;
+          /* Kiu.ask ya apagó la capa 'job' y avisó 'Respuesta lista'; falta soltar
+             'ruta', que si se queda tapa ese aviso (Enrutando 60 > flash 30). */
+          stClear('ruta');
           var tps = out.tps ? ' · ' + out.tps.toFixed(1).replace('.', ',') + ' tok/s en tu teléfono' : '';
           var au = (S.router && S.router.on && self._autoTask) ? ' · Auto: ' + (Rtr.label(self._autoTask) || 'charla') : '';
           var vis = img ? ' · la foto todavía no la puedo ver (usá Servidor o API para visión real)' : '';
@@ -1786,6 +1908,7 @@
         } else {
           clearInterval(elTimer);
           if (live) live.remove();
+          stClear('ruta');
           /* v2.1.2: respuesta vacía del motor = reintento liviano también */
           if (out.ok && !out.text && !self._kiuStuck) {
             self._kiuStuck = true;
@@ -1798,12 +1921,12 @@
              eternamente ni tira "motor ocupado" sin más */
           if (out.stuck && !self._kiuStuck) {
             self._kiuStuck = true;
-            if (window.KiuAvatar) KiuAvatar.set('think');
+            stRuta();
             self.toast('El motor se trabó · reintentando en modo liviano…');
             self.kiuReply(text, null, img, true);
             return;
           }
-          if (window.KiuAvatar) KiuAvatar.flash('error', 2000);
+          stErr('Error', 2400);
           var fb = KiuBrain.fallback();
           self.botSay('El motor interno no pudo responder (' + (out.err || 'error') + '). ' + (fb || ''));
         }
@@ -1816,7 +1939,8 @@
           firstTok = false;
           clearInterval(elTimer);
           self.showTyping(false);
-          if (window.KiuAvatar) KiuAvatar.set('speak');
+          /* sigue generando: Kiu.ask mantiene la capa 'job' en 'Generando'.
+             Recién al terminar se apaga y sale 'Respuesta lista'. */
           var pill = document.getElementById('chat-state');
           if (pill) pill.remove();
           el.insertAdjacentHTML('beforeend', self.msgHTML({ role: 'bot', text: partial }));
@@ -1850,15 +1974,21 @@
         if (next) { next(); return; }
         this.showTyping(false);
         if (live) live.remove();
+        stClear('ruta');
         this.brainFallbackReply(text);
         return;
       }
       var pv = provs[i];
       var liveEl = live;
+      /* v2.8.0: 'Enrutando' mientras espera al proveedor; 'Proveedor en pausa'
+         cuando uno falla y se aparta para probar el siguiente. Los dos estados
+         nunca se veían porque nadie los emitía. */
+      stRuta();
       this.apiStream(text, function (partial) {
         if (self._cancelled) return;
         var el = document.getElementById('chat-messages');
         if (!liveEl) {
+          stClear('ruta');
           self.showTyping(false);
           var pill = document.getElementById('chat-state');
           if (pill) pill.remove();
@@ -1878,13 +2008,15 @@
           pv.st.latency = out.ms || pv.st.latency;
           saveS();
           Rtr.fine(pv.def.id);
+          stClear('ruta');
           self.botSay(out.text, liveEl);
           KB.reinforce(text);
           return;
         }
         if (out.cancelled) {
           if (liveEl) liveEl.remove();
-          if (window.KiuAvatar) KiuAvatar.set('idle');
+          stClear('ruta');
+          stFlash('Detenido', 1500);
           self.toast('Respuesta cancelada');
           return;
         }
@@ -1894,6 +2026,7 @@
         saveS();
         Rtr.fail(pv.def.id, /clave|401|403|429/.test(out.err));
         bcrumb('fallo ' + pv.def.id + ': ' + String(out.err || '').slice(0, 40));
+        stPausa();
         var nextName = (i + 1 < provs.length) ? provs[i + 1].def.name : (next ? 'el próximo modelo de la cadena' : (S.kiu.ok ? 'el motor interno' : 'el cerebro local'));
         if (!liveEl) self.toast(pv.def.name + ' falló (' + out.err + ') · sigo con ' + nextName);
         self.tryProvs(text, provs, i + 1, liveEl, imgFull, task, next);
@@ -1909,7 +2042,9 @@
       }
       this.speak(text);
       if (!S.voiceOn) {
-        if (window.KiuAvatar) { KiuAvatar.set('idle'); KiuAvatar.flash('happy', 1500); }
+        /* sin voz no hay 'Hablando': el bot queda libre y muestra que terminó */
+        stClear('ruta');
+        stFlash('Respuesta lista', 1800);
         if (S.conv && this._voiceDriven) {
           var self = this;
           setTimeout(function () {
@@ -2088,7 +2223,7 @@
       if (window.Kiu && Kiu.pending) {
         Kiu.cancelGen();
         this.showTyping(false);
-        if (window.KiuAvatar) KiuAvatar.set('idle');
+        stClear('ruta');
         this.toast('Generación detenida');
       }
     },
@@ -2910,6 +3045,17 @@
         KiuTools.closeLinterna();
       });
     },
+    /* v2.8.0: Android borra TODAS las alarmas al reiniciar o al actualizar la app;
+       BootReceiver las rearma. Cuando la WebView está viva llega el aviso por
+       nexoRemindersRestored y se ve 'Reprogramado al reiniciar'. Cuando la app
+       todavía no estaba abierta, el puente guarda el número y se consume acá
+       (take-once: al leerlo se borra, así que no se repite). */
+    kiuReschedule: function () {
+      if (!BR || !BR.kiuTakeRescheduled) return;
+      var n = 0;
+      try { n = parseInt(BR.kiuTakeRescheduled(), 10) || 0; } catch (e) { return; }
+      if (n > 0 && window.nexoRemindersRestored) window.nexoRemindersRestored(n);
+    },
     /* ---------- Alarmas ---------- */
     reminders: function () { return store('nexo_alarmas') || []; },
     addReminder: function (title, when) {
@@ -2920,7 +3066,32 @@
       var ok = bridge('setReminder', [id, title, when.getTime()]);
       this.refreshMem();
       this.addActivity('alarmas', title);
+      /* v2.8.0: Android 14 puede bloquear las alarmas exactas. Se programa igual
+         (el puente cae a una alarma no exacta) pero se le dice al usuario, con un
+         diálogo propio, que puede darle permiso para que suene en el minuto. */
+      if (ok) this.avisoAlarmasExactas();
       return ok;
+    },
+    /* v2.8.0: diálogo del permiso de alarma exacta (estado del mapa:
+       'Sin permiso de alarma exacta'). Antes solo había un botón suelto en
+       Ajustes y ningún aviso al agendar un recordatorio. */
+    exactoOk: function () {
+      if (!BR || !BR.canExactAlarms) return true;
+      try { return !!BR.canExactAlarms(); } catch (e) { return true; }
+    },
+    avisoAlarmasExactas: function (alProgramar) {
+      if (this._exactoAvisado === this.exactoOk()) return;
+      if (this.exactoOk()) return;
+      var self = this;
+      this._exactoAvisado = false;
+      var k = KS(); if (k) k.flash('flash', 'Sin permiso de alarma exacta', 4000);
+      this.confirm('Kiu no puede sonar exacto',
+        (alProgramar
+          ? 'La alarma quedó guardada, pero Android 12+ puede delayingarla unos minutos.\n\nSi me das permiso de «alarmas exactas», suena justo a la hora. '
+          : 'Con este permiso Android me deja disparar las alarmas en el minuto exacto. ')
+        + 'Te llevo a Ajustes del sistema; el botón dice «Permitir».',
+        function () { bridge('openExactAlarmSettings'); },
+        { okLabel: 'Abrir Ajustes', cancelLabel: 'Ahora no' });
     },
     cancelReminderByTitle: function (q) {
       q = (q || '').trim().toLowerCase();
@@ -3568,8 +3739,9 @@
           var exact = !!BR.canExactAlarms();
           bExact.textContent = exact ? 'Listo' : 'Permitir';
           if (exact) bExact.disabled = true;
+          self._exactoAvisado = exact;   /* si ya puede, no le volvemos a preguntar */
         } catch (e) { }
-        bExact.addEventListener('click', function () { bridge('openExactAlarmSettings'); });
+        bExact.addEventListener('click', function () { self.avisoAlarmasExactas(false); });
         document.getElementById('btn-test-alarm').addEventListener('click', function () {
           var when = new Date(Date.now() + 10000);
           var ok = self.addReminder('Prueba de alarma de Kiu', when);
@@ -4067,7 +4239,7 @@
       this.voiceBusy = false;
       this.showListening(false);
       if (msg) {
-        if (window.KiuAvatar) KiuAvatar.flash('error', 1600);
+        stErr('Error', 2000);
         this.toast(msg);
       }
     },
@@ -4078,10 +4250,10 @@
         var t = document.getElementById('vp-text');
         if (t) t.textContent = 'Te escucho...';
         pulse.classList.remove('hidden');
-        if (window.KiuAvatar) KiuAvatar.set('listen');
+        stSet('voz', 'Escuchando');
       } else {
         pulse.classList.add('hidden');
-        if (window.KiuAvatar && KiuAvatar.state() === 'listen') KiuAvatar.set('idle');
+        var kk = KS(); if (kk && kk.layer('voz') === 'Escuchando') kk.clear('voz');
       }
     },
     partialVoice: function (text) {
@@ -4109,14 +4281,15 @@
         .replace(/\n+/g, '. ')
         .replace(/[#>]/g, '')
         .slice(0, 600);
-      if (window.KiuAvatar) {
-        KiuAvatar.set('speak');
-        clearTimeout(this._avT);
-        var self2 = this;
-        this._avT = setTimeout(function () {
-          if (window.KiuAvatar && KiuAvatar.state() === 'speak') KiuAvatar.set('idle');
-        }, Math.min(45000, 3500 + clean.length * 70));
-      }
+      /* v2.8.0: 'Hablando' dura lo que dura la voz, no lo que se estima por el largo
+         del texto. En Android llega nexoTtsStart/nexoTtsDone; en el navegador de
+         escritorio el onend hace lo mismo. El temporizador queda solo como red de
+         seguridad para cuando el TTS no reporta nada. */
+      clearTimeout(this._avT);
+      var self2 = this;
+      this._avT = setTimeout(function () {
+        var k2 = KS(); if (k2 && k2.layer('voz') === 'Hablando') k2.clear('voz');
+      }, Math.min(45000, 3500 + clean.length * 70));
       if (bridge('speak', [clean])) return;
       try {
         var u = new SpeechSynthesisUtterance(clean);
@@ -4124,8 +4297,9 @@
         var self3 = this;
         u.onend = function () {
           clearTimeout(self3._avT);
-          if (window.KiuAvatar && KiuAvatar.state() === 'speak') KiuAvatar.set('idle');
+          var k3 = KS(); if (k3 && k3.layer('voz') === 'Hablando') k3.clear('voz');
         };
+        u.onerror = u.onend;
         speechSynthesis.speak(u);
       } catch (e) { }
     },
@@ -4218,6 +4392,7 @@
       var self = this;
       opts = opts || {};
       var okLbl = opts.okLabel || 'Borrar';
+      var noLbl = opts.cancelLabel || 'Cancelar';
       var danger = (opts.danger !== false) && !opts.okLabel; // si pasás okLabel custom, no forzar rojo
       if (opts.danger === true) danger = true;
       if (opts.danger === false) danger = false;
@@ -4226,7 +4401,7 @@
         : 'flex:1;background:var(--grad);box-shadow:none;color:#04211f';
       var html = '<p class="set-hint" style="margin:2px 0 16px">' + esc(msg) + '</p>' +
         '<div style="display:flex;gap:10px">' +
-        '<button class="btn-ghost" id="cf-no" style="flex:1;justify-content:center">Cancelar</button>' +
+        '<button class="btn-ghost" id="cf-no" style="flex:1;justify-content:center">' + esc(noLbl) + '</button>' +
         '<button class="btn-primary" id="cf-yes" style="' + okStyle + '">' + esc(okLbl) + '</button></div>';
       var body = this.modal(title, html);
       if (!body) return;
@@ -4246,7 +4421,11 @@
   window.KiuEng = Kiu;
   window.KiuKB = KB;
   window.KiuCat = MODCAT;
-  window.KiuState = S;
+  /* v2.8.0: este alias se llamaba window.KiuState y chocaba de frente con el
+     controlador de estados del avatar (js/kiu-estados.js), que también necesitaba
+     ese nombre. S sigue siendo el nombre canónico de los ajustes; el alias queda
+     como KiuSettings, que además dice qué es. */
+  window.KiuSettings = S;
 
   /* v2.4.0 (sección 1): restaurar la copia completa que entrega Java (SAF).
      Formato: {app:'Kiu', v:3, settings, memoria, conversaciones, alarmas, kb, uso, rag}. */

@@ -25,6 +25,10 @@ test('el bot pequeño (<60 px) no se desplaza de lado: solo flota', () => {
   for (const c of ['sd', 'sw', 'zg', 'sh', 'tr', 'jt', 'vb']) {
     assert.ok(css.includes('.bot.mini.b-' + c), 'falta .mini para b-' + c);
   }
-  assert.match(src, /bt\.className='bot b-'\+c\[3\]\+\(size<60\?' mini':''\)/);
+  // v2.8.0: el className del cuerpo se arma en una variable y solo se reasigna si
+  // cambió, para no reiniciar la animación en cada set(). La regresión que
+  // importa sigue siendo: el sufijo ' mini' se decide por el tamaño.
+  assert.match(src, /var body='bot b-'\+c\[3\]\+\(size<60\?' mini':''\)/);
+  assert.match(src, /if\(body!==lastBody\)\{bt\.className=body/);
   assert.match(src, /classList\.toggle\('mini',size<60\)/);
 });

@@ -2,6 +2,7 @@ package com.kiu.agent;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -59,6 +60,7 @@ public class MainActivity extends Activity {
     /* v2.4.0: JSON de la copia en vuelo entre kiuDataExport y onActivityResult(7102) */
     volatile String pendingExport = null;
     static MainActivity inst;
+    private BroadcastReceiver alarmFired;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     /* visible-de-paquete: KiuJsPost (mismo paquete) necesita inyectar JS */
@@ -286,6 +288,26 @@ public class MainActivity extends Activity {
             inst = this;
             initTts();
             Alarms.rescheduleAll(this);
+            /* v2.8.0: si hay una alarma disparada mientras la app está viva, el bot
+               se entera (estado 'Disparado'). El broadcast es interno. */
+            alarmFired = new BroadcastReceiver() {
+                @Override // android.content.BroadcastReceiver
+                public void onReceive(Context ctx, Intent i) {
+                    String id = i.getStringExtra("id");
+                    String t = i.getStringExtra("title");
+                    MainActivity.this.js("nexoAlarmFired(" + MainActivity.this.jsStr(t == null ? "" : t)
+                            + "," + MainActivity.this.jsStr(id == null ? "" : id) + ")");
+                }
+            };
+            try {
+                IntentFilter af = new IntentFilter(ReminderReceiver.ACTION_FIRED);
+                if (Build.VERSION.SDK_INT >= 33) {
+                    registerReceiver(alarmFired, af, Context.RECEIVER_NOT_EXPORTED);
+                } else {
+                    registerReceiver(alarmFired, af);
+                }
+            } catch (Exception ignored) {
+            }
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != 0) {
                 requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
             }
@@ -1605,6 +1627,21 @@ public class MainActivity extends Activity {
             return Alarms.canExact(MainActivity.this);
         }
 
+        /* v2.8.0: cuántas alarmas rearmó BootReceiver tras reiniciar/actualizar, y
+           las consume (take-once). La UI lo usa para el estado 'Reprogramado al
+           reiniciar': al leerlo, el contador vuelve a 0 y no se repite el aviso. */
+        @JavascriptInterface
+        public int kiuTakeRescheduled() {
+            try {
+                SharedPreferences sp = MainActivity.this.getSharedPreferences("kiu_native", 0);
+                int n = sp.getInt("resched", 0);
+                if (n > 0) sp.edit().putInt("resched", 0).apply();
+                return n;
+            } catch (Exception unused) {
+                return 0;
+            }
+        }
+
         @JavascriptInterface
         public void openExactAlarmSettings() {
             try {
@@ -1969,6 +2006,10 @@ public class MainActivity extends Activity {
     @Override // android.app.Activity
     protected void onDestroy() {
         inst = null;
+        try {
+            if (alarmFired != null) { unregisterReceiver(alarmFired); alarmFired = null; }
+        } catch (Exception ignored) {
+        }
         try {
             WakeWordEngine.get().stop();
         } catch (Exception unused) {

@@ -100,6 +100,7 @@ code{background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:1
 <h1>Kiu 2.1.2 — mapa de estados</h1>
 <p class="sub">App Android híbrida · WebView + Java + llama.cpp · toca un estado para ver detalle y transiciones</p>
 <div class="note">Reconstruido a partir del README, ARCHITECTURE.md y BRIDGE_API.md del repo. No pude leer <code>app.js</code> ni <code>avatar.js</code>, así que los nombres exactos de estados internos (p. ej. los valores de <code>st</code> en descargas) pueden diferir. Cuando algo está documentado en el puente lo marco con su método.</div>
+<div class="note"><strong>v2.8.0:</strong> los 37 estados siguen igual, pero ya no se adivinan mirando el puente. Uno solo <code>kiu-estados.js</code> (<code>KiuState</code>) los decide por capas con prioridad — <code>err 90 &gt; job 70 &gt; pausa 65 &gt; ruta 60 &gt; voz 50 &gt; tool 35 &gt; flash 30 &gt; rag 25 &gt; rest 10</code> — y cada estado lo enciende el módulo que causa la acción (<code>Kiu.ask</code>, <code>Mod.start</code>, las alarmas, el TTS). Un aviso momentáneo solo se ve si no hay nada de mayor prioridad activo.</div>
 <div class="grid"><div id="list"></div>
 <aside class="panel"><div class="bot" id="bot"><svg viewBox="0 0 200 220" aria-label="Kiu">
 <defs><radialGradient id="bg" cx=".35" cy=".25" r=".95"><stop offset="0" style="stop-color:var(--c1)"/><stop offset="1" style="stop-color:var(--c2)"/></radialGradient></defs>

@@ -161,7 +161,7 @@ window.KiuTools = (function () {
     if (!secs || secs <= 0) { window.KiuApp.toast('Poné un tiempo válido'); return; }
     timerState.running = true;
     timerState.end = Date.now() + secs * 1000;
-    if (window.KiuAvatar) KiuAvatar.set('timer');
+    if (window.KiuState) KiuState.set('flash', 'Temporizador nativo');
     if (body) {
       body.querySelector('#tm-stop').style.display = 'flex';
       body.querySelector('#tm-start').style.display = 'none';
@@ -171,7 +171,7 @@ window.KiuTools = (function () {
   function stopTimer(body) {
     timerState.running = false;
     if (timerState.raf) clearTimeout(timerState.raf);
-    if (window.KiuAvatar && KiuAvatar.state() === 'timer') KiuAvatar.set('idle');
+    if (window.KiuState) KiuState.clear('flash');
     if (body) {
       var d = body.querySelector('#tm-disp');
       if (d) d.textContent = '00:00';
@@ -192,7 +192,7 @@ window.KiuTools = (function () {
     if (left <= 0) {
       timerState.running = false;
       beep(3);
-      if (window.KiuAvatar) KiuAvatar.flash('happy', 2600);
+      if (window.KiuState) KiuState.flash('flash', 'Disparado', 2600);
       window.KiuApp.toast('Se terminó el tiempo');
       if (window.KiuApp) KiuApp.speak('Se terminó el tiempo');
       var st = document.querySelector('#tm-stop'), sa = document.querySelector('#tm-start');

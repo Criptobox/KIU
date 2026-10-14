@@ -51,6 +51,10 @@ Los valores complejos se devuelven como **JSON en texto**.
 `canExactAlarms()`, `openExactAlarmSettings()`, `startTimerNative(seg, etiqueta)`,
 `cancelTimerNative()`.
 
+| Método | Descripción |
+|---|---|
+| `kiuTakeRescheduled()` → int | **v2.8.0.** Cuántas alarmas rearmó `BootReceiver` al reiniciar o actualizar la app (Android borra todas), y consume el contador: al leerlo vuelve a 0. La UI lo usa una sola vez para el estado «Reprogramado al reiniciar». Sin esto el valor se acumularía y el aviso se repetiría en cada apertura. |
+
 ## Seguridad v2.3 (sección 2)
 * **Bóveda de claves** (Keystore, prefs `kiu_keys`): `kiuKeysSet(nombre, valor)`,
   `kiuKeysGet(nombre)`, `kiuKeysHas(nombre)`, `kiuKeysDel(nombre)`, `kiuKeysList()`.
@@ -60,6 +64,11 @@ Los valores complejos se devuelven como **JSON en texto**.
   → `kiuApiStop(id)`. HTTPS siempre; `http://` solo a localhost/LAN privada; tope 8 MB.
   Los valores de headers admiten `{{key:nombre}}`: el proxy los reemplaza por la clave
   real de la bóveda antes de abrir el socket. Lo usa `js/kiu-secure.js` (shim de `fetch`).
+  **v2.8.0**: el placeholder solo se sustituye si el host de destino pertenece a ese
+  proveedor (`PROVIDER_HOSTS` en `KiuApiProxy`): un host de un proveedor conocido nunca
+  recibe la clave de otro. El proveedor personalizado del usuario (`otro`) no tiene lista
+  propia, así que se inyecta igual —la URL y la clave son suyas—, salvo que apunte a un
+  host de un proveedor conocido.
 * **Ferry de datos**: `kiuFerryPut(json)` (guarda y recarga en el origen seguro),
   `kiuFerryGet()`, `kiuFerryClear()`. Interno de `js/kiu-migrate.js`; no llamarlo a mano.
 * **Streaming por push**: el nativo llama `KiuStream.onToken(parcial)` (internamente) y la
@@ -70,6 +79,11 @@ Los valores complejos se devuelven como **JSON en texto**.
   `window.kiuDataRestore(data)` (copia completa), `window.kiuSkillInstall(texto)` (skill por
   SAF), `window.kiuMorningSummary(texto)` (resumen matutino con la app abierta) y los
   `window.nexo*` de voz/wake (listen/TTS/permisos/temporizadores).
+* **Eventos Java → JS de alarmas (v2.8.0)**: `ReminderReceiver` manda un broadcast interno
+  (`com.kiu.agent.REMINDER_FIRED`) cuando una alarma suena; si la WebView está viva,
+  `MainActivity` lo traduce a `window.nexoAlarmFired(titulo, id)` (estado «Disparado»).
+  El reschedule de `BootReceiver` no es un evento: se consulta al abrir la app con
+  `kiuTakeRescheduled()` (ver arriba), porque muchas veces el arranque ocurre sin WebView.
 
 ## Utilidades
 `encSec(texto)` / `decSec(texto)` (cifrado Keystore), `version()`, `pageReady()`, `gc()`.

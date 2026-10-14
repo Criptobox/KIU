@@ -120,7 +120,12 @@ public final class Alarms {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
-    public static void rescheduleAll(Context context) {
+    /* v2.8.0: devuelve cuántas alarmas quedaron realmente programadas. El JS lo
+       usa para el estado 'Reprogramado al reiniciar': Android borra todas las
+       alarmas al reiniciar o al actualizar la app, y hasta ahora no había forma de
+       contar cuántas volvieron (ni de avisarle al usuario). */
+    public static int rescheduleAll(Context context) {
+        int n = 0;
         try {
             JSONArray all = all(context);
             long currentTimeMillis = System.currentTimeMillis();
@@ -129,6 +134,7 @@ public final class Alarms {
                 long optLong = jSONObject.optLong("time", 0L);
                 if (optLong > currentTimeMillis) {
                     schedule(context, jSONObject.optString("id"), jSONObject.optString("title"), optLong);
+                    n++;
                 } else {
                     /* v2.7.2: antes se borraba en silencio. Si venció hace menos de 48 h (telefono
                        apagado / app cerrada), avisamos una sola vez y recien despues se elimina. */
@@ -141,5 +147,6 @@ public final class Alarms {
             }
         } catch (Exception unused) {
         }
+        return n;
     }
 }

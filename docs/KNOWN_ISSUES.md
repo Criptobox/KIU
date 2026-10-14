@@ -120,10 +120,24 @@
       clone limpio; el ZIP de entregas ya no las incluye.
 - [ ] `kiullama_jni.cpp` ya libera el backend (`llama_backend_free` en `freeModel`, tanda 8);
       queda afinar la historia de blobs viejos en Git (ver arriba).
-- [ ] Wake word: Android 14+ no permite iniciar el servicio de micrófono desde BOOT_COMPLETED → mostrar notificación para reactivarlo.
-- [ ] Atar cada clave {{key:x}} a los hosts de su proveedor en KiuApiProxy.
-- [ ] Alarmas exactas en Android 14: `canExactAlarms()` ya se verifica al agendar (fallback no
-      exacto); falta guiar al usuario a habilitar el permiso con un diálogo dedicado.
+- [x] **El bot se movía raro: dos capas peleando por su estado** → `kiu-avatar-boot.js` envolvía
+      `window.KiuBridge` con un `Proxy` que adivinaba el estado mirando cada llamada, mientras
+      `app-ui`/`motor`/`models` llamaban `KiuAvatar.set()` por su cuenta. Nuevo
+      `js/kiu-estados.js`: un solo controlador por capas con prioridad, eventos explícitos desde
+      `Kiu.ask`/`Mod.start`/las alarmas, y fuera el Proxy. Se fueron «Respuesta lista» durante la
+      generación, «Cargado» en cada mensaje, los alias mal mapeados, el listener global de
+      `input` y los timers sueltos. (2026-10, v2.8.0)
+- [x] **Wake word tras reinicio en Android 14** → desde `BOOT_COMPLETED` no se puede arrancar un
+      servicio con micrófono; `BootReceiver` lo intenta y, si el sistema lo bloquea, manda una
+      notificación que lleva a la app para reactivarlo. (2026-10, v2.8.0)
+- [x] **Atar cada clave `{{key:x}}` a los hosts de su proveedor** → `KiuApiProxy` solo inyecta el
+      placeholder si el host de destino pertenece a ese proveedor; un host de un proveedor
+      conocido nunca recibe la clave de otro. (2026-10, v2.8.0)
+- [x] **Alarmas exactas en Android 14** → `canExactAlarms()` se sigue verificando al agendar
+      (con fallback no exacto) y ahora además sale un diálogo que explica el retraso y lleva a
+      Ajustes del sistema; se muestra el estado «Sin permiso de alarma exacta». (2026-10, v2.8.0)
+- [ ] La pastilla de estado del chat se arma con una tabla JS literal en `app-ui.js`: con el
+      i18n terminado conviene moverla a `i18n.js` junto con el resto de las cadenas.
 - [ ] El i18n cubre el chrome (navegación, inicio, ajustes, botones); el texto dinámico de
       `app-ui.js` y las respuestas de `brain.js` siguen en español: falta extraer esas cadenas.
 - [ ] Los tests de arranque (`tests/boot.test.mjs` + `helpers.mjs`) usan un DOM falso: cubren

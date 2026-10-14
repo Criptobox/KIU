@@ -13,6 +13,11 @@
  * API: KiuAvatar.mount(el|selector, {size, state}) -> {set, get, pause, resume, destroy}
  *      KiuAvatar.states  -> lista de los 37 estados
  *      KiuAvatar.alias   -> alias cortos (idle, thinking, speaking, ...)
+ *
+ * v2.8.0: quién manda sobre el estado. kiu-avatar.js SOLO pinta. El estado lo
+ * decide KiuState (js/kiu-estados.js), por capas y prioridad, a partir de eventos
+ * explícitos. KiuAvatar.set/hold/flash quedan como API de pintado; para cambiar el
+ * estado del bot hay que hablar con KiuState.
  */
 (function(global){
 'use strict';
@@ -154,20 +159,43 @@ function mount(target,opts){
   root.innerHTML='<style>'+CSS+'</style><div class="bot" id="bot">'+SVG.replace(/__ID__/g,++uid)+'</div>';
   var size=opts.size||fitSize(host),bt=root.querySelector('.bot');bt.style.width=size+'px';bt.style.height=Math.round(size*209/190)+'px';bt.style.setProperty('--u',(size/190).toFixed(3));
   var q=function(s){return root.querySelector(s);},cur='Inactivo';
+  /* v2.8.0: antes cada set() reescribía el SVG entero (ojos, boca, brazos, antena,
+     objeto y className), y eso reiniciaba TODAS las animaciones del bot aunque no
+     hubieran cambiado: un parpadeo al cambiar de estado, una respiración que
+     arrancaba de cero. Ahora se guarda qué se pintó por última vez y solo se toca
+     la parte que de verdad cambió. El className del cuerpo se reasigna solo si es
+     distinto, porque tocarlo reinicia la animación del cuerpo. */
+  var lastBody='', lastEye='', lastMouth='', lastArmL='', lastArmR='', lastAnt='', lastFx='', lastFxCls='', lastPal='';
   function set(name){
     name=resolve(name);cur=name;var c=C[name],p=PAL[c[0]];
-    bt.className='bot b-'+c[3]+(size<60?' mini':'');bt.style.setProperty('--c1',p[0]);bt.style.setProperty('--c2',p[1]);bt.style.setProperty('--gl',p[2]);
-    var e=q('#eyes');e.setAttribute('class','ey-'+c[1]);e.innerHTML=EY[c[1]];q('#mouth').innerHTML=MO[c[2]];
-    q('#la').setAttribute('class','la A-'+c[4]);q('#ra').setAttribute('class','ra A-'+c[5]);q('#ant').setAttribute('class','ant a-'+c[6]);
-    var f=FX[c[7]]||['',''],x=q('#fx');x.setAttribute('class',f[0]?'m-'+f[0]:'');x.innerHTML=f[1];
-    host.setAttribute('data-kiu-state',name);return name;
+    var body='bot b-'+c[3]+(size<60?' mini':'');
+    if(body!==lastBody){bt.className=body;lastBody=body;}
+    var pal=c[0];
+    if(pal!==lastPal){
+      bt.style.setProperty('--c1',p[0]);bt.style.setProperty('--c2',p[1]);bt.style.setProperty('--gl',p[2]);
+      lastPal=pal;
+    }
+    if(c[1]!==lastEye){var e=q('#eyes');e.setAttribute('class','ey-'+c[1]);e.innerHTML=EY[c[1]];lastEye=c[1];}
+    if(c[2]!==lastMouth){q('#mouth').innerHTML=MO[c[2]];lastMouth=c[2];}
+    if(c[4]!==lastArmL){q('#la').setAttribute('class','la A-'+c[4]);lastArmL=c[4];}
+    if(c[5]!==lastArmR){q('#ra').setAttribute('class','ra A-'+c[5]);lastArmR=c[5];}
+    if(c[6]!==lastAnt){q('#ant').setAttribute('class','ant a-'+c[6]);lastAnt=c[6];}
+    if(c[7]!==lastFx){
+      var f=FX[c[7]]||['',''],x=q('#fx');
+      x.innerHTML=f[1];
+      var fc=f[0]?'m-'+f[0]:'';
+      if(fc!==lastFxCls){x.setAttribute('class',fc);lastFxCls=fc;}
+      lastFx=c[7];
+    }
+    if(host.getAttribute('data-kiu-state')!==name) host.setAttribute('data-kiu-state',name);
+    return name;
   }
   function vis(){if(document.hidden)host.setAttribute('paused','');else if(!host.__manualPause)host.removeAttribute('paused');}
   document.addEventListener('visibilitychange',vis);
   set(opts.state||'Inactivo');
   host.setAttribute('data-kiu-mounted','1');host.__kiuSize=size;
   var inst={set:set,get:function(){return cur;},
-    resize:function(px){if(!px||px<40)return;size=Math.round(px);host.__kiuSize=size;bt.classList.toggle('mini',size<60);bt.style.width=size+'px';bt.style.height=Math.round(size*209/190)+'px';bt.style.setProperty('--u',(size/190).toFixed(3));},
+    resize:function(px){if(!px||px<40)return;size=Math.round(px);host.__kiuSize=size;bt.classList.toggle('mini',size<60);lastBody='';bt.style.width=size+'px';bt.style.height=Math.round(size*209/190)+'px';bt.style.setProperty('--u',(size/190).toFixed(3));},
     pause:function(){host.__manualPause=true;host.setAttribute('paused','');},
     resume:function(){host.__manualPause=false;host.removeAttribute('paused');},
     destroy:function(){document.removeEventListener('visibilitychange',vis);root.innerHTML='';host.removeAttribute('data-kiu-mounted');
@@ -176,33 +204,50 @@ function mount(target,opts){
   return inst;
 }
 /* ---------- registro multi-instancia + compat con la API vieja (avatar.js) ----------
-   app.js / tools.js / brain.js llaman KiuAvatar.set('work'), .flash('error',2200),
-   .state()==='speak', .pick(text) y .mount(): esta capa traduce esos nombres al
-   mapa nuevo de 37 estados y repinta TODOS los bots montados a la vez. */
+   app.js / tools.js / brain.js llamaban KiuAvatar.set('work'), .flash('error',2200),
+   .state()==='speak' y .pick(text). Esa capa traduce los nombres viejos al mapa de
+   37 estados y repinta TODOS los bots montados a la vez.
+
+   v2.8.0 — los alias apuntaban al estado equivocado y por eso el bot se movía raro:
+     think  → 'Armando prompt'   (lupa armando capas) en vez de 'Generando'
+     work   → 'Acción del dispositivo' (engranaje) que se veía al CARGAR o DESCARGAR
+     search → 'Indexando' (lupa sobre un documento) en una búsqueda web
+     create → 'RAG activo' (el libro) al pedir un poema
+   Ahora: think/create/search → 'Generando'/'Enrutando' (lo que de verdad está
+   haciendo) y work → 'Cargando'. La acción en el teléfono se sigue pidiendo con
+   'alert' / 'action', que sí significan eso. */
 var defs=[];
-var OLD2NEW={idle:'Inactivo',listen:'Escuchando',think:'Armando prompt',speak:'Hablando',happy:'Respuesta lista',alert:'Acción del dispositivo',error:'Error',timer:'Temporizador nativo',work:'Acción del dispositivo',create:'RAG activo',search:'Indexando',code:'Reglas offline',focus:'Reglas offline'};
-var NEW2OLD={'Hablando':'speak','Escuchando':'listen','Dictando':'listen','Temporizador nativo':'timer','Indexando':'search','Enrutando':'search','Armando prompt':'think','Generando':'think','Acción del dispositivo':'work','Respuesta lista':'happy','Error':'error','Sin permiso de alarma exacta':'alert','RAG activo':'create','Reglas offline':'code'};
-var cur='Inactivo',base='Inactivo',ft=null;
+var OLD2NEW={idle:'Inactivo',listen:'Escuchando',think:'Generando',speak:'Hablando',happy:'Respuesta lista',alert:'Acción del dispositivo',error:'Error',timer:'Temporizador nativo',work:'Cargando',create:'Generando',search:'Enrutando',code:'Reglas offline',focus:'Reglas offline'};
+var NEW2OLD={'Hablando':'speak','Escuchando':'listen','Dictando':'listen','Temporizador nativo':'timer','Indexando':'search','Enrutando':'search','Armando prompt':'think','Generando':'think','Cargando':'work','Descargando':'work','Acción del dispositivo':'work','Respuesta lista':'happy','Error':'error','Sin permiso de alarma exacta':'alert','RAG activo':'create','Reglas offline':'code'};
+var cur='Inactivo',ft=null;
 function gresolve(n){return resolve(OLD2NEW[n]||n);}
+/* v2.8.0: el estado base ya no vive en kiu-avatar.js. Lo decide KiuState (js/kiu-estados.js)
+   con prioridades; acá solo se pinta. */
 function paintAll(n){for(var i=0;i<defs.length;i++){try{defs[i].av.set(n);}catch(e){}}}
 function gset(n){cur=gresolve(n);paintAll(cur);return cur;}
-function gflash(n,ms){if(ft){clearTimeout(ft);ft=null;}gset(n);ft=setTimeout(function(){ft=null;gset(base);},ms||1800);}
-function ghold(n){if(ft){clearTimeout(ft);ft=null;}base=gresolve(n);gset(base);}
+function gflash(n,ms){if(ft){clearTimeout(ft);ft=null;}gset(n);ft=setTimeout(function(){ft=null;paintAll(cur);},ms||1800);}
+function ghold(n){if(ft){clearTimeout(ft);ft=null;}gset(n);}
 function greset(){ghold('Inactivo');}
-function gstate(){return NEW2OLD[cur]||'idle';}
+/* v2.8.0: state() devuelve el NOMBRE EXACTO del estado del mapa (37), no el alias
+   viejo de 13: 'Hablando', 'Generando', 'Sin modelo'… KiuState.get() manda, y
+   KiuState ya pinta por KiuAvatar.set(), así que KiuAvatar.state() lo refleja. */
+function gstate(){
+  if (global.KiuState && typeof global.KiuState.get==='function') { try { var s=global.KiuState.get(); if(s) return s; } catch(e){} }
+  return cur;
+}
+/* vista de los 13 nombres viejos, para lo que todavía Compare con ellos */
+function gstateOld(){return NEW2OLD[gstate()]||'idle';}
 function pick(text){
   var t=(text||'').toLowerCase();
-  if(/program|c[oó]digo|script|html|javascript|python|\bbug\b/.test(t))return 'code';
-  if(/investig|busca|averigu|qu[eé] es |qui[eé]n es|significa|cu[aá]nt[oa]s? /.test(t))return 'search';
-  if(/\bidea|cre[aá]|invent|escrib[eé]|poema|historia|canci[oó]n|nombre para/.test(t))return 'create';
-  if(/concentr|enfoc|\bfoco\b|pomodoro|estudiar/.test(t))return 'focus';
-  if(/linterna|llam[aá]|whatsapp|abr[ií]|alarma|temporizador|cron[oó]metro|recu[eé]rd|record[aá]|anot[aá]|agreg/.test(t))return 'work';
-  return 'think';
+  if(/program|c[oó]digo|script|html|javascript|python|\bbug\b/.test(t))return 'Reglas offline';
+  if(/concentr|enfoc|\bfoco\b|pomodoro|estudiar/.test(t))return 'Reglas offline';
+  if(/investig|busca|averigu|qu[eé] es |qui[eé]n es|significa|cu[aá]nt[oa]s? /.test(t))return 'Enrutando';
+  return 'Enrutando';
 }
 global.KiuAvatar={
   mount:mount,fitSize:fitSize,mounted:function(){return defs;},
   states:Object.keys(C),alias:ALIAS,oldAlias:OLD2NEW,
-  set:gset,flash:gflash,hold:ghold,reset:greset,state:gstate,pick:pick,
+  set:gset,flash:gflash,hold:ghold,reset:greset,state:gstate,oldState:gstateOld,pick:pick,
   render:function(el,name){for(var i=0;i<defs.length;i++){if(defs[i].host===el){defs[i].av.set(gresolve(name));return;}}mount(el).set(gresolve(name));}
 };
 })(window);

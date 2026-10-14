@@ -75,6 +75,8 @@
       if (document.getElementById('brain-sub')) App.renderRealSubs();
     }
   };
+  /* v2.7.5: motor.js (otro script) usa Sys en pickModel/best: tiene que vivir en window */
+  window.Sys = Sys;
 
   /* ================= USO DE HOY ================= */
   function usage() {

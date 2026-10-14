@@ -2,6 +2,13 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.7.5] — Arreglos de arranque y CI
+
+- **Error «Sys is not defined» al abrir** (`motor.js:596`): `Sys` vivía solo dentro de `app-ui.js`; ahora se exporta a `window`.
+- **El bot grande del inicio no se dibujaba**: `attachShadow` no se permite en `<button>`; `kiu-avatar.js` usa un hijo como host cuando falla.
+- **El bot de la esquina se movía de un lado a otro y tapaba el «Kiu»**: los movimientos del cuerpo estaban en px fijos (pensados para el bot de 190 px) y en el mini de 36 px eran enormes. Ahora escalan con su tamaño (`--u` = tamaño/190).
+- **CI**: `android.useAndroidX=true`, reintento de la descarga de Gradle, `llama_sampler_init_penalties` tolerante a cambios de firma y un resumen con el error real de compilación.
+
 ## [2.7.0] — Tanda 8: refactorización del frontend, RAG en Web Worker y CI blindado
 
 ### Consolidación del avatar

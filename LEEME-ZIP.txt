@@ -1,0 +1,96 @@
+KIU - Tanda 8: refactorización del frontend y motor del agente (v2.7.0)
+=======================================================================
+
+NUEVO EN ESTA TANDA
+- Avatar consolidado (una sola vía):
+  * avatar.js (robot viejo de 13 estados, 12,9 KB que nadie cargaba)
+    ELIMINADO. El bot de kiu-avatar.js (37 estados) es el único avatar.
+  * kiu-avatar-boot.js reescrito como inicialización única: monta solo los
+    huecos [data-avatar] y [data-avatar-mini] del HTML, con un reintento a
+    800 ms y refit para pantallas que se abren después. Fuera el loader
+    dinámico de emergencia, el reemplazo de "avatares ajenos" y el
+    MutationObserver de 20 s. La compatibilidad de nombres viejos sigue
+    (KiuAvatar.set/flash/state/pick).
+- RAG en Web Worker (la UI ya no se congela):
+  * js/rag-worker.js NUEVO: núcleo puro del RAG con dos modos, al estilo
+    pdf.js + pdf.worker. En el hilo principal expone KiuRagCore (tok/chunk/
+    tf/BM25 en UN solo lugar); como worker atiende prep (fragmentación de
+    documentos grandes), sync (espejo del índice), drop y search (BM25).
+  * rag.js v3.1 delega la matemática en el núcleo y agrega searchAsync
+    (guardia de 2 s + fallback síncrono), hits() estructurado y ctxFor().
+  * El chat inyecta el contexto de documentos con ctxFor (worker) antes de
+    armar el prompt: kiuReply y apiStream ahora son asíncronos ahí dentro.
+  * BUG REAL corregido: el paso "docs" del ReAct esperaba un array de
+    RAG.search() pero recibía un STRING (citaba caracteres sueltos). Ahora
+    usa RAG.hits() y hay un test que documenta el descontrato.
+- Puente JS↔Java verificado:
+  * scripts/bridge_audit.py (NUEVO) cruza los 84 métodos @JavascriptInterface
+    de MainActivity contra TODO lo que invoca el JS y los 5 eventos push
+    Java→JS. Resultado: contrato OK, cero llamadas fantasma.
+  * BRIDGE_API.md ahora documenta contacts() y addCalendarEvent() (existían
+    en Java y no estaban en el contrato) y la lista completa de eventos.
+  * Heurística general de API en kiu-secure.js: un proveedor NUEVO ya no
+    exige editar la lista de hosts — HTTPS ajeno al origen con ruta tipo API
+    (/v1, /chat/completions, /messages…) va por el proxy de Java igual.
+- Motor nativo:
+  * freeModel() ahora llama llama_backend_free() (pendiente viejo); loadModel
+    lo re-inicializa solo, así que recargar tras liberar sigue funcionando.
+- ProGuard/R8 blindado (app/proguard-rules.pro):
+  * Reglas explícitas para @JavascriptInterface (cualquier clase), métodos
+    native (contrato JNI por nombre) y KiuStream.onToken (el C++ lo busca
+    con FindClass + GetStaticMethodID). Hoy minify está apagado, pero si se
+    activa, el puente no se rompe.
+- CI/CD en orden:
+  * build.yml corregido: el filtro branches: tenía un YAML roto desde la
+    tanda 6. Ahora [main, 'mejoras/*'].
+  * Orden garantizado: tests → get-tools.sh → vendor_llama.sh → APK firmado
+    con Gradle (needs: tests). Los tests corren con el globo
+    tests/*.test.mjs: los nuevos entran solos.
+  * scripts/get-tools.sh (NUEVO): provisiona JDK 17, cmdline-tools, platform
+    34, build-tools, NDK 27.0.12077973 y cmake 3.22.1 de forma idempotente.
+    Mismo flujo en CI que en tu PC.
+- Suite ampliada de 50 → 85 tests:
+  * app-core.test.mjs (16): env, state, catalog, models, motor (plantillas
+    de chat qwen/llama, KB, streaming por push, bóveda de claves).
+  * rag-worker.test.mjs (9): núcleo + protocolo del worker con FakeWorker.
+  * i18n.test.mjs (4), migrate.test.mjs (4): ferry idempotente, payload
+    corrupto, exportación completa de localStorage.
+  * helpers.mjs (NUEVO): arnés de DOM falso compartido entre tests.
+- App v2.7.0 (versionCode 36). 85 tests en verde.
+
+DE LAS TANDAS ANTERIORES (incluido)
+- Proyecto Gradle estándar (sin apktool/smali) + motor llama.cpp desde fuente
+  + wake word Vosk local.
+- Avatar de 37 estados en hero/chat/perfil y en la esquina del home.
+- WebView seguro (AssetLoader + ferry), claves en Keystore + KiuApiProxy,
+  streaming por push. LICENSE MIT, releases por tags, red segura.
+- app.js dividido en 6 módulos, RAG v3 (IndexedDB + BM25), i18n es/en,
+  protección térmica 46 °C, SHA-256 en descargas, copia completa vía SAF.
+- Skills instalables declarativos, resumen matutino nativo, bucle ReAct.
+- APK liviano: iconos duplicados fuera (−432 KB), logos WebP (−859 KB),
+  .so fuera de Git.
+
+CÓMO PROBAR
+- Motor nativo (primer paso, obligatorio: este ZIP no trae .so):
+    ./scripts/get-tools.sh        (opcional: instala JDK/SDK/NDK a mano)
+    ./scripts/vendor_llama.sh
+- Compilar:  ./gradlew :app:assembleDebug   (JDK 17 + Android SDK 34 + NDK)
+  (con vendor presente, Gradle compila llama.cpp y deja los .so en
+   app/src/main/jniLibs/<ABI>/)
+- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.7.0-release.apk
+- Tests:     node --test tests/*.test.mjs   (Node 18+, 85 tests)
+- Contrato del puente:  python3 scripts/bridge_audit.py
+- RAG sin congelamientos: Ajustes → Documentos, indexá un PDF grande y seguí
+  usando la app mientras indexa (las animaciones no se cortan).
+- Nuevo proveedor de API: poné su URL https://…/v1 en Proveedores; la llamada
+  viaja por el proxy de Java sin tocar el código.
+- Release GitHub: git tag v2.7.0 && git push --tags
+
+NO INCLUIDO
+- vendor/llama.cpp (~200 MB): se restaura con ./scripts/vendor_llama.sh
+- Binarios .so del motor (app/src/main/jniLibs): los genera el build desde
+  fuente o copialos de un build anterior (están fuera de Git a propósito).
+
+Detalles: CHANGELOG.md (tanda 8), docs/ARCHITECTURE.md (worker + avatar),
+docs/BRIDGE_API.md (contacts/addCalendarEvent + auditoría),
+docs/KNOWN_ISSUES.md, README.md.

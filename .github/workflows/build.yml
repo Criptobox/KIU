@@ -1,0 +1,117 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, 'mejoras/*']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---- 1) tests de TODA la carpeta tests/ (node --test, sin dependencias) ----
+  # El globo tests/*.test.mjs toma los tests nuevos automáticamente.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Correr la suite completa
+        run: node --test tests/*.test.mjs
+
+  # ---- 2) build Gradle (necesita que los tests estén en verde) ----
+  # Orden exigido por el flujo: tests → herramientas (get-tools.sh) →
+  # dependencia nativa (vendor_llama.sh) → APK firmado con Gradle.
+  # Los .so del motor NO viven en Git: vendor_llama.sh clona llama.cpp y
+  # Gradle lo compila con NDK + CMake dejándolas en app/src/main/jniLibs/<ABI>.
+  build:
+    needs: tests
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Herramientas de compilación (idempotente: el runner ya trae SDK, el
+      # script completa platform 34, build-tools, NDK 27.0.12077973 y cmake).
+      - name: Preparar herramientas de compilación (JDK/SDK/NDK/CMake)
+        run: chmod +x scripts/get-tools.sh && ./scripts/get-tools.sh
+        env:
+          KIU_SKIP_JDK: '1'
+
+      # Motor nativo: clona vendor/llama.cpp (shallow). Gradle lo compila con
+      # NDK + CMake e inyecta las .so en app/src/main/jniLibs/<ABI>.
+      - name: Vendorizar llama.cpp (motor nativo desde fuente)
+        run: chmod +x scripts/vendor_llama.sh && ./scripts/vendor_llama.sh
+
+      - name: Dar permiso de ejecución al wrapper
+        run: chmod +x gradlew
+
+      # Firma del release: con los secretos KIU_KEYSTORE_BASE64 /
+      # KIU_KEYSTORE_PASSWORD el APK sale firmado con la clave del proyecto;
+      # sin ellos, con la clave debug (solo para probar).
+      - name: Preparar keystore de firma
+        env:
+          KS: ${{ secrets.KIU_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.KIU_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p keystore
+          if [ -n "$KS" ] && [ -n "$PW" ]; then
+            echo "$KS" | base64 -d > keystore/kiu-release.jks
+            echo "KIU_PASS=$PW" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Faltan los secretos KIU_KEYSTORE_BASE64 / KIU_KEYSTORE_PASSWORD. El APK release firma con la clave debug: sirve para probar, no para actualizar la app ya instalada."
+          fi
+
+      - name: Compilar (debug + release firmado)
+        run: ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Chequeo rápido de lint interno
+        run: ./gradlew :app:lintDebug --no-daemon || true
+
+      - name: Subir APK debug
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kiu-APK-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Subir APK release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kiu-APK-release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  # ---- 3) Release: al pushear un tag v* se publican los APK ----
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bajar APK debug
+        uses: actions/download-artifact@v4
+        with:
+          name: Kiu-APK-debug
+          path: dist
+
+      - name: Bajar APK release
+        uses: actions/download-artifact@v4
+        with:
+          name: Kiu-APK-release
+          path: dist
+
+      - name: Publicar Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.apk

@@ -72,7 +72,10 @@ jobs:
           fi
 
       - name: Compilar (debug + release firmado)
-        run: ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+        run: |
+          # Reintenta la descarga del wrapper de Gradle (fallo puntual de DNS en el runner)
+          for i in 1 2 3; do ./gradlew --version --no-daemon && break || sleep 15; done
+          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
 
       - name: Chequeo rápido de lint interno
         run: ./gradlew :app:lintDebug --no-daemon || true

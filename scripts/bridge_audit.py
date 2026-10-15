@@ -32,8 +32,16 @@ for m in missing: print('  -', m)
 if not missing: print('  (ninguno: contrato OK)')
 
 # eventos Java → JS (evaluateJavascript / KiuJsPost)
+# Ojo: hasta v2.8.0 el patrón solo miraba `window.nexoX(` (KiuJsPost) y
+# `window.X(', `, así que los eventos que MainActivity manda con `js("nexoX(...)")`
+# —que son la mayoría— no se auditaban nunca. Con un hook nuevo (nexoWakeError)
+# eso ya es un agujero: un Java→JS sin handler pasa desapercibido.
 print('\n== Eventos Java → JS (window.*) ==')
-evs = sorted(set(re.findall(r"window\.(\w+)\s*\(', ", java)) | set(re.findall(r"window\.(\w+)\(", java)))
+evs = (set(re.findall(r"window\.(\w+)\s*\(', ", java))
+       | set(re.findall(r"window\.(\w+)\(", java))
+       | set(re.findall(r'js\(\s*"(nexo\w+|kiu\w+)\(', java))
+       | set(re.findall(r'js\("([^"]*?)\(", ', java)))
+evs = sorted(e for e in evs if re.match(r'^[A-Za-z_]\w*$', e))
 for e in evs: print('  -', e)
 
 # eventos que el JS escucha
@@ -44,6 +52,12 @@ for f in JS_FILES:
     handled |= set(re.findall(r'window\.(\w+)\s*=\s*function', src))
     handled |= set(re.findall(r'window\.(\w+)\s*=\s*\(', src))
 print(' ', ', '.join(sorted(handled)))
+
+# un evento que Java manda y el JS no escucha = la app se queda muda
+print('\n== Java manda un evento y el JS NO lo escucha ==')
+sin = sorted(e for e in evs if e not in handled)
+for m in sin: print('  !', m)
+if not sin: print('  (ninguno: todo evento Java→JS tiene handler)')
 
 # no-JavascriptInterface públicos en Java que el JS invocaría por error
 print('\n== Nombres JS parecidos a métodos Java pero SIN anotación ==')

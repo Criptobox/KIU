@@ -2,6 +2,114 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.8.1] — La voz volvió (y el avatar del chat se ve)
+
+Estaban rotas tres cosas y la primera explains a las otras dos: **la activación por
+voz y la conversación continua eran el mismo bug**.
+
+### 1 · Causa raíz de la voz: faltaba el `<queries>` del servicio de reconocimiento
+
+`AndroidManifest.xml` no declaraba el servicio de voz del sistema. Desde Android 11
+(API 30) la visibilidad de paquetes hace que **la app no lo vea**:
+
+```
+SpeechRecognizer.isRecognitionAvailable() → false, SIEMPRE
+```
+
+Y ese `false` caía en dos ramas distintas:
+
+| Dónde | Qué pasaba | Qué veía el usuario |
+|---|---|---|
+| `KiuService.cycle()` | `if (!isRecognitionAvailable) { schedule(6000); return; }` | la palabra de activación nunca escuchaba |
+| `MainActivity.startSpeech()` | `convArmed = false` + `nexoVoiceError('unavailable')` | el modo conversación no abría el micrófono |
+
+Es el requisito literal de la documentación de `SpeechRecognizer` para `targetSdk >= 30`:
+
+```xml
+<queries>
+    <intent><action android:name="android.speech.RecognitionService"/></intent>
+    <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>
+</queries>
+```
+
+Fuera de `<application>`: adentro el parser del manifest lo rechaza. También se
+agregó `TTS_SERVICE`, por el mismo motivo con el motor de voz.
+
+### 2 · La wake word escuchaba la palabra y no el pedido
+
+`WakeWordEngine` (Vosk, offline) al detectar «Kiu`» llamaba a `wakePing()`, que solo
+encendía un toast. No había forma de decir qué querés. Ahora `wakeHitAndListen()`:
+avisa que te escucha **y abre el micrófono del comando**; como el comando llega por
+`nexoOnVoice`, la conversación sigue sola.
+
+- **El motor local era código muerto**: solo arrancaba con la preferencia `wwLocal`
+  puesta, y solo la ponía `kiuWWStart()`, que la UI nunca llamaba. Ahora que el modelo
+  esté en `models/vosk-es-small/` alcanza, y se recuerda la elección.
+- **Un solo micrófono**: hay un `AudioRecord` (Vosk) y un `SpeechRecognizer` (el
+  comando). `MainActivity.COMMAND_BUSY` + `pause()/resume()` para que no se peleen, y
+  `reset()` del decodificador al volver, para que la palabra a medio decir de antes no
+  se junte con la frase siguiente y se auto-dispare.
+- **Busy-spin al 100 % de CPU**: con el micro tomado, `a.read()` devuelve `<= 0` y el
+  bucle hacía `continue` a secas, para siempre. Ahora cede el hilo y distingue
+  «ocupado» de «roto».
+- `wakeState()` miraba solo `KiuService.ACTIVE`, así que con el motor local vivo la UI
+  creía que la palabra de activación estaba apagada y la volvía a prender en cada
+  arranque. Ahora pregunta a los dos.
+- Si no hay motor de voz, se avisa (`nexoWakeError`) en vez de fingir que Kiu está
+  despierto: antes la app figuraba encendida sin estar escuchando nada.
+
+### 3 · La conversación continua moría al primer turno
+
+El rearme del micrófono pedía `S.conv && this._voiceDriven`, pero `_voiceDriven` solo
+se encendía al **apretar el botón del micro**. Si la sesión la abría la palabra de
+activación o el fin del TTS —que es justamente el modo manos libres— el bucle se
+caía después del primer turno: hablás, Kiu contesta… y silencio.
+
+Con voz apagada el rearme depende de la App, así que ahora alcanza con `S.conv`.
+Con voz encendida lo maneja Java al terminar el TTS: los dos caminos no se pisan.
+
+- `nexoListenStart` no marcaba `App.voiceBusy`, así que el JS creía que el micrófono
+  estaba libre cuando lo tenía abierto el bucle de Java.
+- `openConvMic()` ahora no reabre si el reconocedor del comando ya está vivo: dos
+  reconocedores compitiendo se pisan y el primero se destruye a mitad de frase.
+- `startSpeech()` soltaba el reconocedor viejo **después** de tomar el nuevo, así que
+  el comando se cancelaba solo.
+
+### 4 · El avatar del chat se dibujaba encima del título
+
+`#chat-avatar`, `#hero-avatar` y `#profile-avatar` no tenían caja. Las clases que los
+dimensionaban (`.kav-hero`, `.kav-big`, `.kav-profile` con `--kav-s`) eran del robot
+viejo de pantalla LED —`avatar.js`, borrado en la 2.7.0— y el bot nuevo vive en su
+Shadow DOM, así que **`--kav-s` ya no lo leía nadie**. Resultado: los `<div>` quedaban
+en `0x0` dentro de su flex, `fitSize()` caía al id (`chat-avatar` → 64 px) y el bot se
+pintaba encima del texto de al lado.
+
+- El hueco ahora tiene caja propia y el tamaño en px; el CSS es la **única** fuente de
+  la medida (`KiuAvatar.declaredSize()` la lee, incluso con la pantalla oculta) en vez
+  de una lista de números en el JS que además se contradecía con el CSS.
+- El tamaño cuelga del **id**, no de la clase: `#chat-avatar` es `kav-mini kav-big` y,
+  si mandara la clase, ganaba la última del archivo y se quedaba en 40 px en vez de 44.
+- `refit()` ya no se salta los hosts sin layout: usaban el tamaño de emergencia para
+  siempre. El piso de tamaño bajó de 54 a 30 px, porque los huecos chicos son de 40 y
+  44 y un piso mayor los desbordaba igual.
+- `logo-mini` se fue del HTML: era el cuadrito con degradado y letra del logo viejo y,
+  por especificidad, le ganaba al ancho del hueco.
+- El bot del chat ya sigue el estado de la tarea como corresponde («Indexando» con la
+  lupa al leer documentos, «Acción del dispositivo» con el engranaje al tocar el
+  teléfono, «Enrutando» al buscar, «RAG activo» con el libro…): el problema era de
+  tamaño, no de estado.
+
+### Otros arreglos
+
+- **`bridge_audit.py` miraba la mitad de los eventos**: solo detectaba `window.nexoX(`
+  (KiuJsPost) y `window.X(', `, así que los que `MainActivity` manda con
+  `js("nexoX(...)")` —la mayoría— nunca se auditaron. Ahora los ve todos y además
+  avisa si Java manda un evento que el JS no escucha. Contrato verificado: 86 métodos,
+  15 eventos Java→JS, cero llamadas fantasma.
+- Suite: 115 → **135 tests**, todos en verde. Los 20 nuevos viven en
+  `tests/voz.test.mjs` y fijan los tres contratos (manifiesto, ciclo del micrófono,
+  rearme del bucle y caja de cada hueco del bot).
+
 ## [2.8.0] — Un solo controlador de estados para el avatar
 
 El bot se movía raro porque **dos capas distintas peleaban por su estado**: `kiu-avatar-boot.js`

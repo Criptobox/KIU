@@ -105,18 +105,16 @@ svg { display:block; }
 .brand-txt.center { text-align:center; }
 .brand-txt.center h1 { font-size:20px; }
 .topbar-spacer { width:40px; flex-shrink:0; }
-.logo-mini {
-  width:38px; height:38px; border-radius:13px; flex-shrink:0;
-  display:grid; place-items:center;
-  font-weight:800; font-size:17px; color:#05231F;
-  background:var(--grad);
-  box-shadow:0 6px 18px rgba(45,212,191,.28);
-}
-.logo-mini.big { width:46px; height:46px; border-radius:15px; font-size:20px; margin:0 auto 10px; }
-/* v2.3: mini-bots del avatar nuevo (esquina del home + bloque Acerca de).
-   El bot SVG vive en Shadow DOM; el fondo del cuadrito queda transparente. */
-.kav-mini { background:transparent; box-shadow:none; overflow:visible; }
-.kav-mini .bot { margin:0; }
+/* v2.8.1: se fue `.logo-mini` / `.logo-mini.big` (el cuadrito con degradado y
+   letra del logo viejo). Los dos huecos que los usaban ahora llevan el bot, y esa
+   clase ganaba en especificidad al `[data-avatar]{width:var(--kav-s)}` y dejaba el
+   hueco con la caja equivocada. El logo de la app es el bot: el host solo
+   reserva espacio (ver "HUECOS DEL BOT" más abajo). */
+/* v2.3: huecos del bot (esquina del home, bloque Acerca de, cabecera del chat).
+   El bot SVG vive en su Shadow DOM, así que acá no se estilan sus partes: el host
+   solo reserva espacio y deja ver el dibujo (el bot es 209/190 de alto, o sea un
+   poco más que la caja cuadrada). El tamaño en px va más abajo, junto a los demás. */
+.kav-mini { overflow:visible; }
 .icon-btn {
   width:38px; height:38px; border-radius:13px; flex-shrink:0;
   display:grid; place-items:center;
@@ -126,7 +124,6 @@ svg { display:block; }
 .icon-btn:active { background:var(--card2); color:var(--txt); }
 .icon-btn.on { color:var(--teal); border-color:rgba(45,212,191,.45); background:rgba(45,212,191,.12); }
 .back-btn svg { width:20px; height:20px; }
-.chat-header .kav-big { --kav-s:44px; }
 .chat-header .brand-txt h1 { font-size:17px; }
 .chat-header .brand-txt p { font-size:11px; }
 
@@ -312,155 +309,34 @@ select { appearance:none; }
 }
 .empty-hint { padding:26px 18px; text-align:center; color:var(--dim2); font-size:12.5px; line-height:1.6; }
 
-/* ============ AVATAR KIU · robot blanco con pantalla LED ============ */
-@property --k1 { syntax:'<color>'; inherits:true; initial-value:#BFD4FF; }
-@property --k2 { syntax:'<color>'; inherits:true; initial-value:rgba(120,170,255,.5); }
-@property --k3 { syntax:'<color>'; inherits:true; initial-value:#EAF3FF; }
-.kav { --k1:#BFD4FF; --k2:rgba(120,170,255,.5); --k3:#EAF3FF;
-  width:var(--kav-s,64px); height:var(--kav-s,64px); position:relative; flex-shrink:0;
-  transition:--k1 .4s, --k2 .4s, --k3 .4s; }
-.kav * { pointer-events:none; }
-.kav-svg { width:100%; height:100%; overflow:visible; display:block;
-  filter:drop-shadow(0 0 calc(var(--kav-s,64px)*.07) var(--k2)); }
-.kav-svg * { transform-box:fill-box; transform-origin:center; }
-.kav-svg .st { fill:none; stroke:var(--k3); stroke-linecap:round; stroke-linejoin:round; }
-.kav-svg .fl { fill:var(--k3); }
-.kav-svg .halo { fill:var(--k3); opacity:.2; }
-.k-scr { stroke:var(--k3); stroke-opacity:.28; stroke-width:1.2; }
-.k-glow { stop-color:var(--k1); }
-.k-eyes { transition:transform .18s ease-out;
-  transform:translate(calc(var(--lx,0)*2.4px), calc(var(--ly,0)*1.8px)); }
+/* ============ HUECOS DEL BOT (kiu-avatar.js, 37 estados) ============
+   v2.8.1 · ARREGLO: hasta acá estas clases eran del robot viejo de pantalla LED
+   (avatar.js, borrado en la 2.7.0) y el bot nuevo vive en Shadow DOM. El único
+   trabajo que queda del host es RESERVAR SU ESPACIO en el layout — el bot se
+   dibuja solo adentro. Como acá solo se declaraba `--kav-s` (una variable que ya
+   nadie leía), los <div data-avatar> se quedaban en 0x0 dentro de su flex: el bot
+   se pintaba al tamaño de emergencia (64 px) y se comía el título de al lado.
+   Ahora el hueco tiene caja propia y el tamaño en px, y `refit()` del boot usa
+   exactamente estos valores cuando la pantalla todavía está oculta. */
+[data-avatar], [data-avatar-mini] {
+  display: block; position: relative; flex-shrink: 0;
+  width: var(--kav-s); height: var(--kav-s);
+}
+/* el contenido del Shadow DOM nunca debe comerse un toque de la UI */
+[data-avatar] > *, [data-avatar-mini] > * { pointer-events: none; }
+[data-avatar] > .kiu-shadow-host, [data-avatar-mini] > .kiu-shadow-host {
+  display: block; width: 100%; height: 100%; overflow: visible;
+}
 
-/* Ojos y boca: se muestran según data-e / data-m */
-.kav-svg .e, .kav-svg .m { display:none; }
-.kav[data-e="open"] .e-open, .kav[data-e="arc"] .e-arc, .kav[data-e="closed"] .e-closed,
-.kav[data-e="angry"] .e-angry, .kav[data-e="goggles"] .e-goggles, .kav[data-e="wink"] .e-wink { display:inline; }
-.kav[data-m="smile"] .m-smile, .kav[data-m="big"] .m-big, .kav[data-m="bars"] .m-bars,
-.kav[data-m="flat"] .m-flat, .kav[data-m="grr"] .m-grr, .kav[data-m="o"] .m-o { display:inline; }
-
-/* Efectos alrededor */
-.k-rings, .k-orbit, .k-fx { opacity:0; transition:opacity .25s; }
-.k-ring { fill:none; stroke:var(--k1); stroke-width:1.2; }
-.kav-svg .k-orbit { transform-box:view-box; transform-origin:50px 46px; }
-.k-dash { fill:none; stroke:var(--k1); stroke-width:1; stroke-dasharray:2 5; opacity:.5; }
-.k-dot { fill:var(--k1); }
-.k-code { font:700 12px/1 ui-monospace,Menlo,monospace; fill:var(--k3); }
-.k-data rect { fill:var(--k1); }
-.k-bang path { fill:none; stroke-linecap:round; }
-.kav[data-state="alert"] .k-bang, .kav[data-state="happy"] .k-bang { opacity:1; }
-.kav[data-state="alert"] .k-bang rect { animation:kpu .6s ease-in-out infinite; }
-
-/* Flotar: cuerpo sube y baja, la sombra respira al revés */
-.k-all { animation:kbob 3.2s ease-in-out infinite; }
-.k-shadow { animation:ksh 3.2s ease-in-out infinite; }
-.arm-l { transform-origin:90% 90%; animation:kwl 2.6s ease-in-out infinite; }
-.arm-r { transform-origin:10% 10%; animation:kwr 3.4s ease-in-out infinite; }
-.e-open .blink { animation:kbl 5.2s infinite; }
-@keyframes kbob { 50% { transform:translateY(-2.4px); } }
-@keyframes ksh { 50% { transform:scale(.82); opacity:.55; } }
-@keyframes kwl { 50% { transform:rotate(-13deg); } }
-@keyframes kwr { 50% { transform:rotate(7deg); } }
-@keyframes kbl { 0%,91%,100% { transform:scaleY(1); } 95% { transform:scaleY(.1); } }
-@keyframes kpu { 50% { transform:scale(1.04); } }
-@keyframes krd { 0% { transform:scale(.9); opacity:.9; } 100% { transform:scale(1.5); opacity:0; } }
-@keyframes kro { to { transform:rotate(360deg); } }
-@keyframes kbo { 45% { transform:translateY(-8px); } }
-@keyframes ksk { 25% { transform:translateX(-3px); } 75% { transform:translateX(3px); } }
-@keyframes kfl { 50% { transform:translate(2px,-3px); } }
-@keyframes ktw { 0%,100% { opacity:.2; transform:scale(.6); } 50% { opacity:1; transform:scale(1.3); } }
-@keyframes kscan { 0%,100% { transform:translateX(-3.5px); } 50% { transform:translateX(3.5px); } }
-@keyframes kcur { 50% { opacity:.2; } }
-@keyframes kdb { 0%,100% { transform:scaleY(.35); } 50% { transform:scaleY(1); } }
-@keyframes kfoc { 50% { opacity:.6; } }
-@keyframes kty { 0%,100% { transform:rotate(0); } 50% { transform:rotate(-9deg); } }
-@keyframes khue { from { filter:drop-shadow(0 0 4px var(--k2)) hue-rotate(0deg); } to { filter:drop-shadow(0 0 4px var(--k2)) hue-rotate(360deg); } }
-
-/* Colores del LED por estado */
-.kav[data-state="listen"] { --k1:#7DEBFF; --k2:rgba(0,212,255,.7); --k3:#7DEBFF; }
-.kav[data-state="think"]  { --k1:#C0A8FF; --k2:rgba(150,90,255,.65); --k3:#C9B6FF; }
-.kav[data-state="speak"]  { --k1:#9CCBFF; --k2:rgba(80,160,255,.6); --k3:#BFE3FF; }
-.kav[data-state="work"]   { --k1:#74BFFF; --k2:rgba(40,150,255,.7); --k3:#3DB5FF; }
-.kav[data-state="create"] { --k1:#E8A6FF; --k2:rgba(230,100,255,.6); --k3:#7DF0FF; }
-.kav[data-state="search"] { --k1:#86E3FF; --k2:rgba(0,200,255,.6); --k3:#86E3FF; }
-.kav[data-state="code"]   { --k1:#97ADFF; --k2:rgba(80,110,255,.65); --k3:#5FD0FF; }
-.kav[data-state="focus"]  { --k1:#7F94D6; --k2:rgba(80,100,200,.4); --k3:#8FB0FF; }
-.kav[data-state="happy"]  { --k1:#A5F2BC; --k2:rgba(48,209,88,.6); --k3:#7BFFB0; }
-.kav[data-state="alert"]  { --k1:#FFD08A; --k2:rgba(255,159,10,.65); --k3:#FFB84D; }
-.kav[data-state="error"]  { --k1:#FF7A70; --k2:rgba(255,69,58,.65); --k3:#FF4D4D; }
-.kav[data-state="timer"]  { --k1:#FFE08A; --k2:rgba(255,214,10,.55); --k3:#FFD24D; }
-
-/* Escucha / alerta / temporizador */
-.kav[data-state="listen"] .k-rings, .kav[data-state="alert"] .k-rings, .kav[data-state="timer"] .k-rings { opacity:1; }
-.kav[data-state="listen"] .k-ring, .kav[data-state="alert"] .k-ring { animation:krd 1.4s ease-out infinite; }
-.kav[data-state="timer"] .k-ring { animation:krd 2.4s ease-out infinite; }
-.k-ring:nth-child(2) { animation-delay:.3s !important; }
-.k-ring:nth-child(3) { animation-delay:.6s !important; }
-.kav[data-state="listen"] .k-all { animation:kpu 1.1s ease-in-out infinite; }
-.kav[data-state="alert"] .k-all { animation:kpu .6s ease-in-out infinite; }
-.kav[data-state="listen"] .e-open { transform:scale(1.15); }
-.kav[data-state="alert"] .e-open { transform:scale(1.22); }
-
-/* Pensando */
-.kav[data-state="think"] .k-orbit { opacity:1; animation:kro 2.4s linear infinite; }
-.kav[data-state="think"] .e-open { transform:translate(3px,-3px); }
-.kav[data-state="think"] .e-open .blink { animation:none; }
-
-/* Hablando: la boca sigue un nivel simulado (--a1..--a5 lo mueve avatar.js) */
-.kav[data-state="speak"] .m-bars rect { transform:scaleY(var(--a1,1)); transition:transform .09s linear; }
-.kav[data-state="speak"] .m-bars rect:nth-child(2) { transform:scaleY(var(--a2,1)); }
-.kav[data-state="speak"] .m-bars rect:nth-child(3) { transform:scaleY(var(--a3,1)); }
-.kav[data-state="speak"] .m-bars rect:nth-child(4) { transform:scaleY(var(--a4,1)); }
-.kav[data-state="speak"] .m-bars rect:nth-child(5) { transform:scaleY(var(--a5,1)); }
-
-/* Trabajando */
-.kav[data-state="work"] .k-orbit { opacity:1; animation:kro 1.3s linear infinite; }
-.kav[data-state="work"] .k-dash { opacity:.9; }
-.kav[data-state="work"] .arm-l { animation:kty .38s ease-in-out infinite; }
-.kav[data-state="work"] .arm-r { animation:kty .38s ease-in-out .19s infinite reverse; }
-
-/* Creativo */
-.kav[data-state="create"] .k-blobs { opacity:1; }
-.kav[data-state="create"] .k-blobs circle { animation:kfl 2.6s ease-in-out infinite; }
-.kav[data-state="create"] .k-blobs circle:nth-child(2) { animation-delay:.5s; }
-.kav[data-state="create"] .k-blobs circle:nth-child(3) { animation-delay:1s; }
-.kav[data-state="create"] .k-blobs circle:nth-child(4) { animation-delay:1.5s; }
-.kav[data-state="create"] .kav-svg { animation:khue 6s linear infinite; }
-
-/* Investigando */
-.kav[data-state="search"] .k-data { opacity:1; }
-.kav[data-state="search"] .k-data rect { animation:kdb 1.2s ease-in-out infinite; }
-.kav[data-state="search"] .k-data rect:nth-child(2n) { animation-delay:.3s; }
-.kav[data-state="search"] .k-data rect:nth-child(3n) { animation-delay:.6s; }
-.kav[data-state="search"] .e-open { animation:kscan 2s ease-in-out infinite; }
-.kav[data-state="search"] .e-open .blink { animation:none; }
-
-/* Programando */
-.kav[data-state="code"] .k-codefx { opacity:1; }
-.kav[data-state="code"] .k-code { animation:kcur 1s steps(2) infinite; }
-.kav[data-state="code"] .arm-l, .kav[data-state="code"] .arm-r { animation:kty .5s ease-in-out infinite; }
-
-/* Enfoque */
-.kav[data-state="focus"] .k-all { animation:kbob 6s ease-in-out infinite; }
-.kav[data-state="focus"] .k-shadow { animation-duration:6s; }
-.kav[data-state="focus"] .arm-l, .kav[data-state="focus"] .arm-r { animation:none; }
-.kav[data-state="focus"] .e-closed { animation:kfoc 3s ease-in-out infinite; }
-
-/* Feliz: brazos arriba */
-.kav[data-state="happy"] .k-all { animation:kbo .65s ease-in-out 2; }
-.kav[data-state="happy"] .arm-l { animation:none; transform:rotate(-24deg); }
-.kav[data-state="happy"] .arm-r { animation:none; transform:rotate(-34deg); }
-.kav[data-state="happy"] .k-conf { opacity:1; }
-.kav[data-state="happy"] .k-conf * { animation:ktw 1.3s ease-in-out infinite; }
-.kav[data-state="happy"] .k-conf *:nth-child(2n) { animation-delay:.4s; }
-.kav[data-state="happy"] .k-conf *:nth-child(3n) { animation-delay:.8s; }
-
-/* Enojado: brazos caídos y temblor */
-.kav[data-state="error"] .k-all { animation:ksk .5s ease-in-out 2; }
-.kav[data-state="error"] .arm-l { animation:none; transform:rotate(30deg); }
-.kav[data-state="error"] .arm-r { animation:none; transform:rotate(-10deg); }
-
-/* Temporizador */
-.kav[data-state="timer"] .k-orbit { opacity:1; animation:kro 9s linear infinite; }
+/* Tamaño por hueco, y SOLO por atributo: si el tamañoDepends de una clase
+   estética, el host que las junta dos hereda la de la última en el archivo y no
+   la suya (el del chat es `kav-mini kav-big` y con `.kav-mini` al final se
+   quedaba en 40 px en vez de sus 44). `.kav-mini/.kav-big/.kav-hero/.kav-profile`
+   quedan como nombres legibles; el que manda es el id del hueco. */
+[data-avatar-mini]           { --kav-s:40px; }  /* esquina del home + bloque Acerca de */
+#hero-avatar, .kav-hero      { --kav-s:150px; } /* home, dentro de .hero-avatar-wrap (158) */
+#chat-avatar, .kav-big       { --kav-s:44px;  } /* cabecera del chat */
+#profile-avatar, .kav-profile{ --kav-s:54px;  } /* tarjeta de Ajustes */
 
 /* Accesibilidad: texto de estado solo para lectores de pantalla */
 .sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); border:0; white-space:nowrap; }
@@ -495,9 +371,7 @@ select { appearance:none; }
 }
 @keyframes halo { 50% { transform:scale(1.08); opacity:.8; } }
 .kav-hero { background:none; border:none; padding:0; cursor:pointer; }
-.kav-hero.kav { --kav-s:142px; }
 .kav-hero:active { transform:scale(.94); }
-.kav-mini.kav { --kav-s:40px; }
 .hero-hi { font-size:13px; font-weight:700; color:var(--teal); letter-spacing:.3px; position:relative; }
 .hero-title { font-size:22px; font-weight:800; letter-spacing:-.4px; margin-top:4px; position:relative; }
 .hero-pill {
@@ -874,7 +748,6 @@ select { appearance:none; }
   display:flex; align-items:center; gap:14px; width:100%; text-align:left;
   padding:16px; margin-bottom:6px;
 }
-.kav-profile { --kav-s:54px; }
 .profile-txt { flex:1; min-width:0; }
 .profile-txt strong { display:block; font-size:16px; font-weight:800; }
 .profile-txt span { display:block; font-size:11.5px; color:var(--dim); margin-top:2px; }

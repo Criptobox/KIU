@@ -15,7 +15,24 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
 
+    <!-- v2.8.1 · BUG CRÍTICO: desde Android 11 (API 30) la app NO ve los servicios de
+         voz del sistema sin esto. Documentación oficial de SpeechRecognizer:
+         "For apps targeting Android 11 interaction with a speech recognition service
+         requires element to be added to the manifest file". Sin el <queries>:
+           · SpeechRecognizer.isRecognitionAvailable() devuelve false SIEMPRE
+           · KiuService.cycle() reprograma cada 6 s y nunca escucha → la palabra de
+             activación no responde nunca
+           · MainActivity.startSpeech() entra por la rama 'unavailable' → el modo
+             conversación continua no abre el micrófono nunca
+         Los dos fallos que se reportaban eran el mismo. -->
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <!-- motor de TTS: sin esto el WebView tampoco resuelve el motor de voz -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
+        </intent>
         <package android:name="com.whatsapp"/>
         <package android:name="com.instagram.android"/>
         <package android:name="com.facebook.katana"/>

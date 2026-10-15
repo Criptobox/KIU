@@ -25,12 +25,37 @@ Los valores complejos se devuelven como **JSON en texto**.
 |---|---|
 | `kiuWWStart()` → bool | Activa la escucha local y guarda la preferencia `wwLocal`; false si falta el modelo o el mic |
 | `kiuWWStop()` | Detiene la escucha local y apaga la preferencia |
-| `kiuWWState()` → JSON | `{st: idle/load/run, present: bool, err, path}` |
-| — (automático) | Con `wwLocal` activo, `startWake()` usa el engine local en vez del servicio de Google; al detectar dispara `nexoWakeHit()` |
+| `kiuWWState()` → JSON | `{st: idle/load/run/pause, present: bool, err, path}` |
+| — (automático) | `startWake()` elige el engine local si el modelo está instalado, si no el servicio de Google. Al detectar dispara `nexoWakeHit()` **y abre el micrófono del comando** (`nexoOnVoice`) |
 
 > El modelo (`vosk-model-small-es-0.42`, ~40 MB) va en
 > `files/models/vosk-es-small/` (se baja con el gestor de descargas y se
 > descomprime ahí; presencia detectada por `final.mdl`).
+>
+> **v2.8.1**: que el modelo esté en la carpeta ya alcanza (antes hacía falta la
+> preferencia `wwLocal`, que solo ponía `kiuWWStart()` y la UI nunca llamaba: el
+> motor local era código muerto). `wakeState()` ahora pregunta a los dos motores, y
+> al detectar «Kiu» se abre el micrófono del comando en vez de mostrar un toast y
+> quedarse ahí. Hay un solo micro: `MainActivity.COMMAND_BUSY` + `pause()/resume()`
+> hacen que Vosk ceda el paso al reconocedor del comando.
+
+### Eventos Java → JS de voz
+| Evento | Cuándo |
+|---|---|
+| `nexoWakeHit()` | se detectó la palabra de activación (y se abre el micro del comando) |
+| `nexoWakeCmd(texto)` | comando completo con la palabra y el pedido |
+| `nexoWakeState(on)` | la palabra de activación se prendió o se apagó |
+| `nexoWakeError(msg)` | (v2.8.1) no se pudo arrancar (sin modelo, micro tomado, sin servicio de voz) |
+| `nexoOnVoice(texto)` | transcripción del micrófono de la conversación |
+| `nexoListenStart()` / `nexoListenEnd()` | el micrófono se abre y se cierra |
+| `nexoVoicePartial(texto)` / `nexoVoiceError(código)` | parcial y error de la transcripción |
+| `nexoTtsStart()` / `nexoTtsDone()` | el TTS arranca y termina de verdad |
+
+> **v2.8.1 —REQUIRED**: el manifiesto declara
+> `<queries><intent><action android:name="android.speech.RecognitionService"/></intent></queries>`
+> (fuera de `<application>`). Sin eso, desde Android 11
+> `SpeechRecognizer.isRecognitionAvailable()` devuelve `false` siempre y no hay ni
+> palabra de activación ni conversación continua. Lo fija `tests/voz.test.mjs`.
 
 ## Acciones del dispositivo
 `dial`, `sms`, `waChat`, `email`, `maps`, `ytSearch`, `webSearch`, `camera`, `torch`, `share`,

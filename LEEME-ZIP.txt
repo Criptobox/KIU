@@ -1,5 +1,46 @@
-KIU - Tanda 8: refactorización del frontend y motor del agente (v2.7.0)
-=======================================================================
+KIU - Tanda 9: la voz, la conversación continua y el avatar del chat (v2.8.1)
+===============================================================================
+
+LO QUE ESTABA ROTO
+- La palabra de activación NO respondía y el modo conversación continua tampoco.
+  Eran el mismo bug: al manifiesto le faltaba el <queries> del servicio de voz del
+  sistema, así que desde Android 11 SpeechRecognizer.isRecognitionAvailable()
+  devolvía false SIEMPRE y ninguna de las dos rutas llegaba a escuchar.
+- La wake word local (Vosk) detectaba «Kiu» y solo encendía un toast: no había
+  forma de decir el pedido. Y era código muerto: la UI nunca llamaba a kiuWWStart.
+- El bucle de la conversación moría al primer turno si lo había abierto la palabra
+  de activación o el fin del TTS en vez del botón del micro.
+- En la pantalla de conversación el bot se dibujaba encima del título: su hueco no
+  tenía caja (las clases que lo dimensionaban eran del avatar viejo, borrado en 2.7.0).
+
+QUÉ CAMBIÓ
+- AndroidManifest.xml: <queries> con android.speech.RecognitionService y
+  android.intent.action.TTS_SERVICE, fuera de <application>.
+- WakeWordEngine: al detectar «Kiu» abre el micrófono del comando; cede el micro
+  (pause/resume) mientras el reconocedor habla; el bucle ya no gira al 100 % de CPU
+  cuando el micro está tomado; y se elige solo si el modelo está instalado.
+- MainActivity: COMMAND_BUSY, wakeHitAndListen(), wakeState() pregunta a los dos
+  motores, y avisa (nexoWakeError) si no hay con qué escuchar en vez de fingir que
+  está despierto. startSpeech() suelta el reconocedor viejo antes de tomar el nuevo.
+- app-ui.js: el rearme del micro ya no depende de _voiceDriven; nexoListenStart
+  marca que el micrófono está ocupado; nuevo hook nexoWakeError.
+- app.css / index.html: cada hueco del bot tiene caja y tamaño declarados en el CSS
+  (única fuente de la medida); se fueron las reglas del robot viejo y logo-mini.
+- scripts/bridge_audit.py ahora ve los 15 eventos Java→JS y avisa si alguno no tiene
+  handler.
+- App v2.8.1 (versionCode 37). 135 tests en verde (20 nuevos en tests/voz.test.mjs).
+
+CÓMO PROBAR
+- Decí «Kiu» con la palabra de activación prendida: ahora Kiu abre el micrófono y
+  entiende el pedido, y sigue escuchando el turno siguiente.
+- Abrí el chat, prendé «Modo conversación» con la voz apagada y hablá: la
+  conversación no se corta después del primer turno.
+- Entrá al chat: el bot de la cabecera se ve de 44 px, en su caja, y cambia de
+  diseño con la tarea (lupa al indexar, engranaje al tocar el teléfono, libro con
+  RAG, ondas al escuchar, altavoz al hablar).
+- Si tenés el modelo Vosk en files/models/vosk-es-small/, Kiu lo usa solo.
+
+LO DE SIEMPRE
 
 NUEVO EN ESTA TANDA
 - Avatar consolidado (una sola vía):
@@ -49,14 +90,13 @@ NUEVO EN ESTA TANDA
   * scripts/get-tools.sh (NUEVO): provisiona JDK 17, cmdline-tools, platform
     34, build-tools, NDK 27.0.12077973 y cmake 3.22.1 de forma idempotente.
     Mismo flujo en CI que en tu PC.
-- Suite ampliada de 50 → 85 tests:
+- Suite ampliada de 50 → 85 tests (tanda 8):
   * app-core.test.mjs (16): env, state, catalog, models, motor (plantillas
     de chat qwen/llama, KB, streaming por push, bóveda de claves).
   * rag-worker.test.mjs (9): núcleo + protocolo del worker con FakeWorker.
   * i18n.test.mjs (4), migrate.test.mjs (4): ferry idempotente, payload
     corrupto, exportación completa de localStorage.
   * helpers.mjs (NUEVO): arnés de DOM falso compartido entre tests.
-- App v2.7.0 (versionCode 36). 85 tests en verde.
 
 DE LAS TANDAS ANTERIORES (incluido)
 - Proyecto Gradle estándar (sin apktool/smali) + motor llama.cpp desde fuente
@@ -77,20 +117,20 @@ CÓMO PROBAR
 - Compilar:  ./gradlew :app:assembleDebug   (JDK 17 + Android SDK 34 + NDK)
   (con vendor presente, Gradle compila llama.cpp y deja los .so en
    app/src/main/jniLibs/<ABI>/)
-- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.7.0-release.apk
-- Tests:     node --test tests/*.test.mjs   (Node 18+, 85 tests)
+- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.8.1-release.apk
+- Tests:     node --test tests/*.test.mjs   (Node 18+, 135 tests)
 - Contrato del puente:  python3 scripts/bridge_audit.py
 - RAG sin congelamientos: Ajustes → Documentos, indexá un PDF grande y seguí
   usando la app mientras indexa (las animaciones no se cortan).
 - Nuevo proveedor de API: poné su URL https://…/v1 en Proveedores; la llamada
   viaja por el proxy de Java sin tocar el código.
-- Release GitHub: git tag v2.7.0 && git push --tags
+- Release GitHub: git tag v2.8.1 && git push --tags
 
 NO INCLUIDO
 - vendor/llama.cpp (~200 MB): se restaura con ./scripts/vendor_llama.sh
 - Binarios .so del motor (app/src/main/jniLibs): los genera el build desde
   fuente o copialos de un build anterior (están fuera de Git a propósito).
 
-Detalles: CHANGELOG.md (tanda 8), docs/ARCHITECTURE.md (worker + avatar),
+Detalles: CHANGELOG.md (tanda 9 · 2.8.1) y (tanda 8), docs/ARCHITECTURE.md (worker + avatar),
 docs/BRIDGE_API.md (contacts/addCalendarEvent + auditoría),
 docs/KNOWN_ISSUES.md, README.md.

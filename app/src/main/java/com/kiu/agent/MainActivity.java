@@ -57,6 +57,10 @@ public class MainActivity extends Activity {
     private static final int REQ_MIC = 4242;
     private static final int REQ_NOTIF = 4243;
     public static volatile boolean SPEAKING;
+    /* v2.8.1: hay UN solo micrófono. Cuando el motor de wake word local (Vosk) tiene
+       el suyo agarrado, el reconocedor del comando no puede abrirlo; esta bandera le
+       dice a WakeWordEngine que ceda el paso y espere. */
+    public static volatile boolean COMMAND_BUSY;
     /* v2.4.0: JSON de la copia en vuelo entre kiuDataExport y onActivityResult(7102) */
     volatile String pendingExport = null;
     static MainActivity inst;
@@ -441,6 +445,13 @@ public class MainActivity extends Activity {
 
     /* JADX INFO: Access modifiers changed from: private */
     public void openConvMic() {
+        /* v2.8.1: si el micrófono del comando ya está abierto, no lo reabrimos. El
+           rearme lo disparan dos cosas (el fin del TTS en Java y, sin voz, el propio
+           JS): con dos reconocidores vivos el segundo destruye al primero a mitad de
+           frase y la conversación se corta sola. */
+        if (COMMAND_BUSY) {
+            return;
+        }
         if (this.handsFree && this.resumed && !SPEAKING) {
             startSpeech();
         }
@@ -533,17 +544,67 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* v2.8.1 — la palabra de activación tiene que abrir la puerta, no solo tocar el
+       timbre. Antes (y sobre todo en el motor local Vosk) «Kiu» encendía un toast y se
+       quedaba ahí: el usuario no tenía forma de decir el pedido. Ahora:
+         1) avisa que te escucha (nexoWakeHit → el bot se pone en 'Escuchando'),
+         2) cede el micro al reconocedor del comando,
+         3) abre el micrófono para que digas lo que querés,
+         4) como el comando llega por nexoOnVoice, Kiu contesta; que después siga
+            escuchando es lo que decide el modo manos libres (startSpeech arma
+            convArmed con handsFree), no esta llamada.
+       No lo hace con la app en segundo plano ni mientras suena el TTS: una sesión
+       de manos libres no interrumpe lo que Kiu está diciendo. */
+    static void wakeHitAndListen(Context context) {
+        final MainActivity m = inst;
+        if (m == null) {
+            return;
+        }
+        m.js("nexoWakeHit()");
+        if (!m.resumed || SPEAKING || COMMAND_BUSY) {
+            return;
+        }
+        m.tHandler.post(new Runnable() {
+            @Override // java.lang.Runnable
+            public void run() {
+                if (COMMAND_BUSY) {
+                    return;
+                }
+                m.startSpeech();
+            }
+        });
+    }
+
     /* JADX INFO: Access modifiers changed from: private */
     public void startWakeNow() {
         runOnUiThread(new Runnable() { // from class: com.kiu.agent.MainActivity.6
             @Override // java.lang.Runnable
             public void run() {
-                // wake word 100% local (Vosk): sin Google, sin red
+                /* v2.8.1: wake word 100% local (Vosk) sin Google ni red, si el modelo
+                   está instalado. Antes esto solo ocurría con la preferencia wwLocal
+                   puesta, y esa preferencia solo la ponía kiuWWStart(), que la UI
+                   nunca llamaba: el motor local era código muerto. Ahora que el modelo
+                   esté en la carpeta alcanza, y se recuerda que ya se eligió local. */
                 SharedPreferences sp = MainActivity.this.getSharedPreferences("kiu_native", 0);
-                if (sp.getBoolean("wwLocal", false) && WakeWordEngine.modelPresent(MainActivity.this)) {
+                boolean wwLocal = sp.getBoolean("wwLocal", false) || WakeWordEngine.modelPresent(MainActivity.this);
+                if (wwLocal && WakeWordEngine.modelPresent(MainActivity.this)) {
                     boolean ok = WakeWordEngine.get().start(MainActivity.this);
-                    MainActivity.this.getSharedPreferences("kiu_native", 0).edit().putBoolean("wake", ok).apply();
+                    MainActivity.this.getSharedPreferences("kiu_native", 0)
+                            .edit().putBoolean("wwLocal", true).putBoolean("wake", ok).apply();
+                    if (!ok) {
+                        MainActivity.this.js("nexoWakeError('"
+                                + WakeWordEngine.get().getErr().replace("'", "") + "')");
+                    }
                     MainActivity.this.js("nexoWakeState(" + ok + ")");
+                    return;
+                }
+                if (!SpeechRecognizer.isRecognitionAvailable(MainActivity.this)) {
+                    /* v2.8.1: sin motor de reconocimiento no hay palabra de activación
+                       posible, y antes arrancaba igual el servicio: la app figuraba
+                       "despierta" para siempre sin escuchar nada. */
+                    MainActivity.this.getSharedPreferences("kiu_native", 0).edit().putBoolean("wake", false).apply();
+                    MainActivity.this.js("nexoWakeError('no hay servicio de voz en el sistema')");
+                    MainActivity.this.js("nexoWakeState(false)");
                     return;
                 }
                 if (Build.VERSION.SDK_INT >= 33 && MainActivity.this.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != 0) {
@@ -1543,6 +1604,15 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean wakeState() {
+            /* v2.8.1: solo miraba KiuService.ACTIVE, así que con el motor local
+               (Vosk) vivo la UI creía que la palabra de activación estaba apagada y
+               la volvía a prender en cada arranque. Ahora pregunta a los dos. */
+            try {
+                if (WakeWordEngine.get().isRunning()) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
             return KiuService.ACTIVE;
         }
 
@@ -1778,16 +1848,26 @@ public class MainActivity extends Activity {
     /* JADX INFO: Access modifiers changed from: private */
     public void startSpeech() {
         KiuService.suspend();
+        /* primero soltar el reconocedor anterior (stopSpeech devuelve el micro), y
+           recién después tomar el nuevo: al revés, el comando se cancelaba solo. */
+        stopSpeech();
+        /* v2.8.1: hay un solo micrófono. Si el motor local de wake word (Vosk) lo
+           tiene agarrado, se le avisa que ceda el paso; al soltar, vuelve. */
+        try {
+            WakeWordEngine.get().pause();
+        } catch (Throwable ignored) {
+        }
+        COMMAND_BUSY = true;
         this.convArmed = this.handsFree && this.resumed;
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             this.convArmed = false;
+            commandMicFree();
             js("nexoVoiceError('unavailable')");
             js("nexoListenEnd()");
             this.pendingListen = false;
             KiuService.resumeSoon();
             return;
         }
-        stopSpeech();
         SpeechRecognizer createSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         this.recognizer = createSpeechRecognizer;
         createSpeechRecognizer.setRecognitionListener(new RecognitionListener() { // from class: com.kiu.agent.MainActivity.7
@@ -1898,6 +1978,23 @@ public class MainActivity extends Activity {
             } catch (Exception unused) {
             }
             this.recognizer = null;
+        }
+        commandMicFree();
+    }
+
+    /* v2.8.1: devuelve el micrófono al motor de wake word local y marca que ya no
+       hay nadie escuchando un comando. Idempotente. */
+    private void commandMicFree() {
+        if (!COMMAND_BUSY) {
+            return;
+        }
+        COMMAND_BUSY = false;
+        try {
+            WakeWordEngine ww = WakeWordEngine.get();
+            if (ww.isRunning()) {
+                ww.resume();
+            }
+        } catch (Throwable ignored) {
         }
     }
 

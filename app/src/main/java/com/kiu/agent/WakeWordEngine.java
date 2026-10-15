@@ -23,7 +23,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * (se puede bajar con el gestor de descargas de la app e importar con KiuImport)
  *
  * Uso desde el puente JS: kiuWWStart() / kiuWWStop() / kiuWWState()
- * Al detectar "kiu" dispara el mismo hook que el servicio: nexoWakeHit()
+ * Al detectar "kiu" dispara el mismo hook que el servicio: nexoWakeHit() y,
+ * además, MainActivity.wakeHitAndListen() abre el micrófono del comando (v2.8.1:
+ * antes solo encendía un toast y se quedaba ahí, sin forma de pedir nada).
  */
 public class WakeWordEngine {
     private static final String DIR_NAME = "vosk-es-small";
@@ -37,6 +39,7 @@ public class WakeWordEngine {
     private volatile Recognizer recognizer;
     private volatile AudioRecord mic;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean paused = new AtomicBoolean(false);
     private volatile boolean loading = false;
     private volatile String err = "";
     private long lastHit = 0;
@@ -87,6 +90,8 @@ public class WakeWordEngine {
                 return false;
             }
             err = "";
+            paused.set(false);
+            lastHit = 0;
             loading = true;
             new Thread(new Runnable() {
                 @Override
@@ -120,6 +125,7 @@ public class WakeWordEngine {
             a.startRecording();
 
             short[] buf = new short[3200]; // 200 ms
+            boolean limpio = true;
             running.set(true);
             loading = false;
             if (MainActivity.inst != null) {
@@ -128,12 +134,43 @@ public class WakeWordEngine {
             while (running.get()) {
                 int n = a.read(buf, 0, buf.length);
                 if (n <= 0) {
+                    /* v2.8.1: el mic puede estar tomado (el reconocedor de comando,
+                       otra app, o una interrupción de audio). Antes esto era un
+                       busy-spin: 100 % de CPU de un hilo, para siempre. Ahora se
+                       cede el hilo y se distingue "ocupado" de "roto". */
+                    if (n == AudioRecord.ERROR_INVALID_OPERATION || n == AudioRecord.ERROR_BAD_VALUE
+                            || n == AudioRecord.ERROR_DEAD_OBJECT) {
+                        err = "microfono no disponible (ocupado por otra app)";
+                    }
+                    try {
+                        Thread.sleep(80L);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                     continue;
                 }
-                // mientras Kiu habla por TTS no escuchamos (evita auto-disparo)
-                if (MainActivity.SPEAKING) {
+                /* Mientras Kiu habla por TTS no escuchamos (evita auto-disparo), y
+                   tampoco mientras el reconocedor de comando tiene el micro: este
+                   bucle ya lo consumió, así que no puede volver a activarse. */
+                if (MainActivity.SPEAKING || MainActivity.COMMAND_BUSY || paused.get()) {
+                    /* Al entrar en silencio se resetea el decodificador UNA vez: si no,
+                       la palabra a medio decir de antes se junta con la próxima frase
+                       y «Kiu» vuelve a dispararse solo. (org.vosk.Recognizer no tiene
+                       setPartialHypothesis; reset() sí, y es lo correcto acá.) */
+                    if (!limpio) {
+                        Recognizer rr = recognizer;
+                        if (rr != null) {
+                            try {
+                                rr.reset();
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                        limpio = true;
+                    }
                     continue;
                 }
+                limpio = false;
                 Recognizer r = recognizer;
                 if (r == null) {
                     break;
@@ -190,15 +227,30 @@ public class WakeWordEngine {
                 long now = System.currentTimeMillis();
                 if (now - lastHit > COOLDOWN_MS) {
                     lastHit = now;
-                    Context c = mic == null ? null : appCtx();
-                    MainActivity main = MainActivity.inst;
-                    if (main != null) {
-                        MainActivity.wakePing(c != null ? c : main);
-                    }
+                    /* v2.8.1: antes esto solo encendía nexoWakeHit() (un toast) y
+                       se moría ahí. La palabra de activación sin comando detrás no
+                       sirve de nada. Ahora el mismo hook del servicio: avisar que
+                       te escuchan Y abrir el micrófono para que digas el pedido.
+                       El bucle se pausa solo mientras el comando se escucha
+                       (MainActivity.COMMAND_BUSY) para no pelear por el micro. */
+                    MainActivity.wakeHitAndListen(appCtx());
                 }
             }
         } catch (Throwable unused) {
         }
+    }
+
+    /** Cede el micrófono mientras otro reconocedor (el del comando) está activo. */
+    public void pause() {
+        paused.set(true);
+    }
+
+    public void resume() {
+        paused.set(false);
+    }
+
+    public boolean isPaused() {
+        return paused.get();
     }
 
     private Context appCtx() {
@@ -209,6 +261,7 @@ public class WakeWordEngine {
     /** Detiene la escucha local y libera el modelo (idempotente). */
     public void stop() {
         running.set(false);
+        paused.set(false);
         try {
             AudioRecord a = mic;
             if (a != null) {
@@ -225,7 +278,7 @@ public class WakeWordEngine {
     /** JSON de estado para el puente JS. */
     public String statusJson(Context ctx) {
         boolean present = modelPresent(ctx);
-        String s = running.get() ? "run" : (loading ? "load" : "idle");
+        String s = running.get() ? (paused.get() ? "pause" : "run") : (loading ? "load" : "idle");
         StringBuilder sb = new StringBuilder();
         sb.append("{\"st\":\"").append(s).append("\"");
         sb.append(",\"present\":").append(present);

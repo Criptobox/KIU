@@ -129,7 +129,11 @@
         else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
         else App.voiceError(null);
       };
-      window.nexoListenStart = function () { App.showListening(true); };
+      /* v2.8.1: nexoListenStart marcaba la UI pero no App.voiceBusy, así que el JS
+         creía que el micrófono estaba libre cuando en realidad lo tenía abierto el
+         bucle de Java (palabra de activación o fin del TTS). Con voz apagada eso
+         hacía que el rearme de la App chocara contra un reconocedor vivo. */
+      window.nexoListenStart = function () { App.voiceBusy = true; App.showListening(true); };
       window.nexoListenEnd = function () { App.voiceBusy = false; App.showListening(false); };
       window.nexoVoicePartial = function (text) {
         var el = document.getElementById('vp-text');
@@ -161,7 +165,17 @@
         if (tg) tg.classList.toggle('on', !!on);
         App.toast(on ? 'Despertar por voz activo: decí «Kiu»' : 'Despertar por voz apagado');
       };
-      window.nexoPerm = function (what, ok) {
+      /* v2.8.1: si el motor no pudo arrancar (sin modelo, micro ocupado, sin servicio
+         de voz del sistema) hay que decirlo. Antes el toast decía "activo" y después
+         la app se quedaba en silencio sin explicación. */
+      window.nexoWakeError = function (msg) {
+        S.wake = false; saveS();
+        stSet('voz', null);
+        var tg = document.getElementById('tg-wake');
+        if (tg) tg.classList.remove('on');
+        stErr('Error', 3000);
+        App.toast('No pude activar el despertar por voz: ' + (msg || 'motivo desconocido'));
+      };      window.nexoPerm = function (what, ok) {
         if (what === 'contacts') {
           App.toast(ok ? 'Permiso de contactos concedido' : 'Sin permiso de contactos');
         }
@@ -588,7 +602,7 @@
       var pr = document.getElementById('profile-name');
       if (pr) pr.textContent = S.name || 'Tu nombre';
       var ps = document.getElementById('profile-sub');
-      if (ps) ps.textContent = 'Kiu v2.7.0 · Agente personal';
+      if (ps) ps.textContent = 'Kiu v2.8.1 · Agente personal';
       var psub = document.getElementById('persona-sub');
       if (psub) psub.textContent = ({ normal: 'Normal', divertida: 'Divertida', tecnica: 'Técnica', breve: 'Breve' })[S.persona] + ' · ajustá cómo te habla';
       this.renderRealSubs();
@@ -2045,9 +2059,17 @@
         /* sin voz no hay 'Hablando': el bot queda libre y muestra que terminó */
         stClear('ruta');
         stFlash('Respuesta lista', 1800);
-        if (S.conv && this._voiceDriven) {
+        /* v2.8.1: el rearme pedía S.conv Y this._voiceDriven, pero _voiceDriven solo
+           se encendía al apretar el botón del micro. Si la sesión la abrió la palabra
+           de activación o el fin del TTS (que es justamente el modo manos libres), el
+           bucle moría después del primer turno: hablás, Kiu contesta… y silencio.
+           Ahora con el modo conversación encendido el micro vuelve siempre; si el
+           TTS está apagado el loop lo maneja esta App, si está encendido lo maneja
+           Java al terminar de hablar (acá no se pisan). */
+        if (S.conv) {
           var self = this;
-          setTimeout(function () {
+          clearTimeout(this._convT);
+          this._convT = setTimeout(function () {
             if (S.conv && !self.voiceBusy) self.startVoice();
           }, 800);
         }
@@ -4179,7 +4201,7 @@
     getName: function () { return S.name; },
     exportData: function () {
       var payload = {
-        app: 'Kiu', version: '2.7.0', exported: new Date().toISOString(),
+        app: 'Kiu', version: '2.8.1', exported: new Date().toISOString(),
         settings: { name: S.name, mode: S.mode },
         memoria: KiuMem.data,
         alarmas: this.reminders(),

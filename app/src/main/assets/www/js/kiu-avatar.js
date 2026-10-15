@@ -132,12 +132,30 @@ listening:'Escuchando',speaking:'Hablando',handsfree:'Manos libres',noalarm:'Sin
 rebooted:'Reprogramado al reiniciar',timer:'Temporizador nativo',ragoff:'RAG apagado',indexing:'Indexando',rag:'RAG activo'};
 var uid=0;
 function resolve(n){return C[n]?n:(ALIAS[n]&&C[ALIAS[n]]?ALIAS[n]:'Inactivo');}
-/* Tamaño según el hueco real del host (con defaults por id conocidos) */
+/* v2.8.1: el CSS es la UNICA fuente del tamaño del hueco (`[data-avatar]{width:
+   var(--kav-s)}` en app.css). Antes el tamaño vivía duplicado —una vez en el
+   `--kav-s` que el CSS declaraba y nadie leía, otra en estos números fijos acá— y
+   los dos se contradecían: el host del chat medía 0x0 (caja sin dimensionar) y caía
+   al id, 64 px, que se comían el título de al lado. */
+function declaredSize(host){
+  try{
+    var v=host.ownerDocument&&host.ownerDocument.defaultView
+      ?host.ownerDocument.defaultView.getComputedStyle(host).getPropertyValue('--kav-s'):'';
+    var n=parseFloat(v);
+    if(n>=24&&n<=400)return Math.round(n);
+  }catch(e){}
+  return 0;
+}
+/* Tamaño del bot según el hueco real. Si la pantalla está oculta el rect mide 0x0
+   (todavía no hay layout), así que se lee el valor declarado en el CSS: el bot
+   aparece con su tamaño correcto en vez de con el de emergencia. */
 function fitSize(host){
   var r=host.getBoundingClientRect(),s=0;
   if(r&&r.width>=24&&r.height>=24)s=Math.round(Math.min(r.width,r.height)*0.95);
-  if(!s){var id=host.id;s=id==='hero-avatar'?170:(id==='chat-avatar'?64:(id==='profile-avatar'?60:130));}
-  return Math.max(54,Math.min(200,s));
+  if(!s){var d=declaredSize(host);s=Math.round((d||64)*0.95);}
+  /* piso en 30 (no en 54): los huecos chicos del chat y de la esquina son de
+     44 y 40 px, y un piso de 54 los desbordaba otra vez. */
+  return Math.max(30,Math.min(200,s));
 }
 function mount(target,opts){
   if(!target){ /* llamada vieja sin argumentos (KiuAvatar.mount()): montar todos los [data-avatar] */
@@ -195,7 +213,7 @@ function mount(target,opts){
   set(opts.state||'Inactivo');
   host.setAttribute('data-kiu-mounted','1');host.__kiuSize=size;
   var inst={set:set,get:function(){return cur;},
-    resize:function(px){if(!px||px<40)return;size=Math.round(px);host.__kiuSize=size;bt.classList.toggle('mini',size<60);lastBody='';bt.style.width=size+'px';bt.style.height=Math.round(size*209/190)+'px';bt.style.setProperty('--u',(size/190).toFixed(3));},
+    resize:function(px){if(!px||px<30)return;size=Math.round(px);host.__kiuSize=size;bt.classList.toggle('mini',size<60);lastBody='';bt.style.width=size+'px';bt.style.height=Math.round(size*209/190)+'px';bt.style.setProperty('--u',(size/190).toFixed(3));},
     pause:function(){host.__manualPause=true;host.setAttribute('paused','');},
     resume:function(){host.__manualPause=false;host.removeAttribute('paused');},
     destroy:function(){document.removeEventListener('visibilitychange',vis);root.innerHTML='';host.removeAttribute('data-kiu-mounted');
@@ -245,7 +263,7 @@ function pick(text){
   return 'Enrutando';
 }
 global.KiuAvatar={
-  mount:mount,fitSize:fitSize,mounted:function(){return defs;},
+  mount:mount,fitSize:fitSize,declaredSize:declaredSize,mounted:function(){return defs;},
   states:Object.keys(C),alias:ALIAS,oldAlias:OLD2NEW,
   set:gset,flash:gflash,hold:ghold,reset:greset,state:gstate,oldState:gstateOld,pick:pick,
   render:function(el,name){for(var i=0;i<defs.length;i++){if(defs[i].host===el){defs[i].av.set(gresolve(name));return;}}mount(el).set(gresolve(name));}

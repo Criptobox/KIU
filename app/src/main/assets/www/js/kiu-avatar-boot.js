@@ -38,8 +38,10 @@
     var els = document.querySelectorAll('[data-avatar-mini]'), n = 0;
     for (var i = 0; i < els.length; i++) {
       if (els[i].getAttribute('data-kiu-mounted')) { n++; continue; }
-      var sz = (els[i].id === 'about-avatar') ? 42 : 36;
-      try { KiuAvatar.mount(els[i], { size: sz }); n++; } catch (e) { log('mini no montada', els[i].id || i, e.message); }
+      /* v2.8.1: sin tamaño fijo. KiuAvatar.fitSize() mide el hueco y, si la pantalla
+         todavía no tiene layout, lee el --kav-s del CSS. El 36/42 fijo de antes
+         quedaba corto apenas se ajustaba el ancho de pantalla. */
+      try { KiuAvatar.mount(els[i], {}); n++; } catch (e) { log('mini no montada', els[i].id || i, e.message); }
     }
     return n;
   }
@@ -56,16 +58,22 @@
   }
 
   /* Reajusta tamaños cuando el host cambia de dimensión (pantalla que se abre,
-     giro del teléfono...). Barato: son 2-3 bots. */
+     giro del teléfono...). Barato: son 2-3 bots.
+     v2.8.1: si el host todavía no tiene layout (pantalla oculta → rect 0x0) no se
+     lo salta: usa el tamaño declarado en el CSS, que es el mismo que le va a tocar
+     cuando la pantalla se abra. Antes esos huecos quedaban con el tamaño de
+     emergencia para siempre. */
   function refit() {
     if (typeof KiuAvatar === 'undefined' || !KiuAvatar.mounted) return;
     var ds = KiuAvatar.mounted();
     for (var i = 0; i < ds.length; i++) {
       var h = ds[i].host; if (!document.contains(h)) continue;
       var r = h.getBoundingClientRect();
-      if (!(r && r.width >= 24 && r.height >= 24)) continue;
-      var s = Math.round(Math.min(r.width, r.height) * 0.95);
-      if (s >= 40 && Math.abs(s - (h.__kiuSize || 0)) > 6) ds[i].av.resize(s);
+      var s;
+      if (r && r.width >= 24 && r.height >= 24) s = Math.round(Math.min(r.width, r.height) * 0.95);
+      else s = Math.round((KiuAvatar.declaredSize ? KiuAvatar.declaredSize(h) : 0) * 0.95);
+      if (!(s >= 30)) continue;
+      if (Math.abs(s - (h.__kiuSize || 0)) > 6) ds[i].av.resize(s);
     }
   }
 

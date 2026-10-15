@@ -1,6 +1,18 @@
 # Pendientes y mejoras sugeridas
 
 ## Resueltas
+- [x] **La palabra de activación y la conversación continua no funcionaban** → eran el mismo
+      bug: al manifiesto le faltaba el `<queries>` de `android.speech.RecognitionService`, así
+      que desde Android 11 `SpeechRecognizer.isRecognitionAvailable()` devolvía `false` siempre
+      y ninguna de las dos rutas llegaba a escuchar. Agregado (junto con `TTS_SERVICE`).
+      Además la wake word local Vosk detectaba «Kiu» y solo encendía un toast: ahora abre el
+      micrófono del comando; y el bucle de la conversación moría al primer turno si lo había
+      abierto la wake word en vez del botón del micro. Detalle en `CHANGELOG.md` 2.8.1. (2026-10)
+- [x] **El avatar del chat se dibujaba encima del título** → `#chat-avatar` (y `hero-avatar`,
+      `profile-avatar`) no tenían caja: las clases que los dimensionaban eran del robot viejo
+      (`avatar.js`, borrado en 2.7.0) y el `--kav-s` que declaraban ya no lo leía nadie, así
+      que el div quedaba en 0x0 y el bot se pintaba al tamaño de emergencia por encima. Ahora
+      el hueco tiene caja y el CSS es la única fuente del tamaño. (2026-10)
 - [x] **Iconos adaptativos duplicados** → en las 5 densidades convivían `ic_launcher_bg.png`/
       `ic_launcher_fg.png` (apktool) con `ic_launcher_background.png`/`ic_launcher_foreground.png`
       (los que usan los XML de `mipmap-anydpi-v26`). Borrado el par sin referencias (−432 KB) y el

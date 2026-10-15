@@ -82,7 +82,11 @@
     <header class="topbar">
       <div class="brand">
         <!-- v2.3: el bot nuevo de 37 estados vive tambien en la esquina -->
-        <div class="logo-mini kav-mini" data-avatar-mini id="brand-avatar" role="img" aria-label="Kiu"></div>
+        <!-- v2.8.1: sin `logo-mini`. Esa clase era el cuadrito con degradado y letra del
+             logo viejo; con el bot adentro estorba (pinta fondo) y además gana en
+             especificidad al `[data-avatar-mini]{width:var(--kav-s)}` y deja el hueco
+             con la caja equivocada. El bot se dibuja solo: el host solo reserva espacio. -->
+        <div class="kav-mini" data-avatar-mini id="brand-avatar" role="img" aria-label="Kiu"></div>
         <div class="brand-txt">
           <h1>Kiu</h1>
           <p id="home-sub" data-i18n="home.sub">Tu agente personal</p>
@@ -682,7 +686,7 @@
 
       <div class="about-block">
         <!-- v2.3: bot nuevo también en el bloque Acerca de -->
-        <div class="logo-mini big kav-mini" data-avatar-mini id="about-avatar" role="img" aria-label="Kiu"></div>
+        <div class="kav-mini" data-avatar-mini id="about-avatar" role="img" aria-label="Kiu"></div>
         <strong>Kiu 2.7.0</strong>
         <span>Agente personal · Motor interno + orquestador multi-modelo + APIs</span>
         <span class="dim">Motor local desde fuente · Wake word offline · WebView seguro (AssetLoader) · Claves en el Keystore · Streaming por push · Skills instalables · Resumen matutino · Bucle ReAct</span>

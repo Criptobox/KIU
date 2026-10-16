@@ -35,8 +35,8 @@ android {
         applicationId = "com.kiu.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 37
-        versionName = "2.8.1"
+        versionCode = 41
+        versionName = "2.9.3"
 
         if (buildNative) {
             ndk {

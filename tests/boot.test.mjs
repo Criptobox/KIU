@@ -20,6 +20,7 @@ const SCRIPTS = [
   'js/skills.js',
   'js/react.js',
   'js/tools.js',
+  'js/kiu-agente.js',
   'js/kiu-estados.js',
   'js/kiu-avatar.js',
   'js/kiu-avatar-boot.js',
@@ -45,7 +46,7 @@ const MUST_EXIST = {
   Kiu: 'object', Comp: 'object', Rtr: 'object', Orch: 'object', KB: 'object',
   icon: 'function', esc: 'function', store: 'function', bridge: 'function',
   KiuBrain: 'object', KiuTools: 'object', RAG: 'object',
-  KiuSkills: 'object', KiuReAct: 'object',
+  KiuSkills: 'object', KiuReAct: 'object', KiuAgente: 'object',
   KiuRagCore: 'object', KiuI18n: 'object', KiuAvatarBoot: 'object',
   KiuState: 'object', KiuSettings: 'object',
 };

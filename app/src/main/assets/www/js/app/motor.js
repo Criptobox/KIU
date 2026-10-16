@@ -284,7 +284,13 @@
       }
       return out;
     },
-    ask: function (msgs, maxT, cb, onTok) {
+    /* v2.9.2: `gbnf` es opcional y solo lo pasa KiuAgente. Si viene, se pone la
+       gramatica de muestreo ANTES de arrancar la generacion y el nativo la
+       consume en esta: el motor solo puede emitir tokens que encajen, asi que el
+       JSON sale valido sin depender de que el modelo sea bueno AMLando llaves.
+       Si el motor no la soporta, la generacion sigue igual (sin restringir) y el
+       bucle cae al parse + reintento, que hace falta tener igual. */
+    ask: function (msgs, maxT, cb, onTok, gbnf) {
       var self = this;
       /* v2.3.0 (sección 2): estado del streaming por push — el nativo manda
          parciales via window.kiuPush y el sondeo queda como respaldo. */
@@ -303,6 +309,14 @@
       var genPrompt = this.fmt(msgs);
       var genMaxT = Math.min(maxT || 350, 512);
       var genTemp = (typeof S.temp === 'number' ? S.temp : 0.7);
+      /* la gramatica va con temp 0: si el conjunto esta restringido por la
+         gramatica, la temperatura elige DENTRO de ese conjunto y no puede sacar
+         la respuesta de ahi. Con temp alta el sampler aleatorio pelea con el
+         modelo y, cuando hay conflicto, la decision "gana" el que selektee. */
+      if (gbnf) {
+        genTemp = 0;
+        try { rawBridge('kiuGenSetGrammar', [String(gbnf)]); } catch (eG) { }
+      }
       /* v2.1.1: si el job nativo anterior murió mal, KiuGenJob.busy quedaba pegado,
          kiuGen devolvía false y fallábamos AL INSTANTE con "motor ocupado" para
          siempre (el lado nativo jamás se recuperaba solo). Ahora: stop + reset

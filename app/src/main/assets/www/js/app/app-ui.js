@@ -178,6 +178,9 @@
       };      window.nexoPerm = function (what, ok) {
         if (what === 'contacts') {
           App.toast(ok ? 'Permiso de contactos concedido' : 'Sin permiso de contactos');
+        } else if (what === 'calendar') {
+          App.toast(ok ? 'Permiso de agenda concedido: ya sé qué tenés'
+                       : 'Sin permiso de agenda: no puedo leer tus eventos');
         }
       };
       window.nexoTimerDone = function (label) {
@@ -602,7 +605,7 @@
       var pr = document.getElementById('profile-name');
       if (pr) pr.textContent = S.name || 'Tu nombre';
       var ps = document.getElementById('profile-sub');
-      if (ps) ps.textContent = 'Kiu v2.8.1 · Agente personal';
+      if (ps) ps.textContent = 'Kiu v2.9.3 · Agente personal';
       var psub = document.getElementById('persona-sub');
       if (psub) psub.textContent = ({ normal: 'Normal', divertida: 'Divertida', tecnica: 'Técnica', breve: 'Breve' })[S.persona] + ' · ajustá cómo te habla';
       this.renderRealSubs();
@@ -1786,6 +1789,42 @@
           }
         } catch (eRa) { }
       }
+      /* v2.9.1 — AGENTE: que el MODELO elija la herramienta.
+         Va DESPUÉS de skills, cerebro y ReAct a propósito: esas tres resuelven lo
+         conocido al instante y sin gastar un solo token — y ninguna de las tres
+         conoce una herramienta que todavía no existe. El agente entra para lo que
+         los regex no saben, y solo si hay un modelo local cargado: sin modelo,
+         Kiu.ask falla y el flujo sigue exactamente igual que antes.
+
+         Va ANTES de la generación normal porque si el agente ejecutó algo, esa ES
+         la respuesta: generar un párrafo encima sería tirar el trabajo. Si no
+         ejecutó nada, se sigue como si nada. */
+      if (S.kiu.ok && window.KiuAgente && S.agentOn) {
+        try {
+          this.showTyping(true);
+          stSet('ruta', 'Enrutando', 30000);
+          var selfA = this;
+          KiuAgente.run({ habla: [text] }, function (ag) {
+            if (selfA._cancelled) return;
+            if (ag && ag.ok && ag.text) {
+              stClear('ruta'); stSet('tool', 'Acción del dispositivo');
+              selfA.showTyping(false);
+              stClear('tool');
+              selfA.botSay(ag.text);
+              KB.reinforce(text);
+              return;
+            }
+            /* el agente no encontró nada que hacer: sigue el flujo normal */
+            selfA.tryAfterAgent(text, task);
+          });
+          return;
+        } catch (eAg) { /* si el agente explota, el flujo normal continúa */ }
+      }
+      this.tryAfterAgent(text, task);
+    },
+    /* lo que venía después del punto donde se inserta el agente */
+    tryAfterAgent: function (text, task) {
+      var self = this;
       var targets = Orch.targets(task);
       if (targets.length) {
         this._cancelled = false;
@@ -3709,6 +3748,23 @@
         tgConv.classList.toggle('on', S.conv !== false);
         tgConv.addEventListener('click', function () { self.setConv(S.conv === false); });
       }
+      /* v2.9.1: el agente. Encenderlo sin modelo cargado no sirve de nada, así que
+         el toggle lo avisa en vez de fingir que quedó activo. */
+      var tgAgent = document.getElementById('tg-agent');
+      if (tgAgent) {
+        tgAgent.classList.toggle('on', !!S.agentOn);
+        tgAgent.addEventListener('click', function () {
+          S.agentOn = !S.agentOn; saveS();
+          tgAgent.classList.toggle('on', S.agentOn);
+          if (S.agentOn && !S.kiu.ok) {
+            self.toast('El agente necesita un modelo cargado: descargá uno en Modelos y volvé a prenderlo');
+            return;
+          }
+          self.toast(S.agentOn
+            ? 'Agente activo: Kiu elige la herramienta con el modelo. Suma una generación por mensaje'
+            : 'Agente apagado: Kiu sigue usando los patrones de siempre');
+        });
+      }
       /* v2.4.0: protección térmica del motor (sección 3-c) */
       var tgTh = document.getElementById('tg-thermal');
       if (tgTh) {
@@ -4201,7 +4257,7 @@
     getName: function () { return S.name; },
     exportData: function () {
       var payload = {
-        app: 'Kiu', version: '2.8.1', exported: new Date().toISOString(),
+        app: 'Kiu', version: '2.9.3', exported: new Date().toISOString(),
         settings: { name: S.name, mode: S.mode },
         memoria: KiuMem.data,
         alarmas: this.reminders(),
@@ -4364,6 +4420,20 @@
         if (r === 'NEED_PERM') return 'NEED_PERM';
         return JSON.parse(r || '[]');
       } catch (e) { return null; }
+    },
+    /* v2.9.0 — leer la agenda. Mismo contrato que contactSearch(): JSON o 'NEED_PERM'. */
+    calendarQuery: function (q, fromMs, toMs) {
+      if (!BR || !BR.calendarList) return null;
+      try {
+        var r = BR.calendarList(String(q || ''), Math.round(fromMs || 0), Math.round(toMs || 0));
+        if (r === 'NEED_PERM') return 'NEED_PERM';
+        return JSON.parse(r || '[]');
+      } catch (e) { return null; }
+    },
+    /* el permiso ya denied de forma permanente: volver a pedir no abre nada */
+    calendarPermission: function (ok) {
+      if (ok) { this.askPerm('calendar'); return; }
+      this.toast('Sin permiso de agenda: no puedo leer tus eventos');
     },
     askPerm: function (what) { bridge('requestPerm', [what]); },
     torch: function (on) { return bridge('torch', [!!on]); },

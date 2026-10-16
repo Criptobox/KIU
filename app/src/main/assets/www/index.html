@@ -592,6 +592,13 @@
             <div><strong>Modo conversación</strong><span>Kiu sigue escuchando después de responder: manos libres</span></div>
             <button class="toggle" id="tg-conv" aria-label="Modo conversación"></button>
           </div>
+          <!-- v2.9.1: el agente. Apagado por defecto porque gasta una generación
+               extra por mensaje; la fila dice qué es para que la decisión sea
+               informada y no un misterio. -->
+          <div class="set-row">
+            <div><strong>Agente con herramientas</strong><span>Que el modelo elija la herramienta (alarma, agenda, documentos) en vez de acertar con los patrones de siempre. Necesita un modelo cargado</span></div>
+            <button class="toggle" id="tg-agent" aria-label="Agente con herramientas"></button>
+          </div>
           <div class="set-row">
             <div><strong data-i18n="set.thermal">Protección térmica</strong><span data-i18n="set.thermal.sub">Corta la generación del motor si el teléfono pasa de 46°</span></div>
             <button class="toggle" id="tg-thermal" aria-label="Protección térmica"></button>
@@ -723,6 +730,9 @@
 <script src="js/skills.js"></script>
 <script src="js/react.js"></script>
 <script src="js/tools.js"></script>
+<!-- v2.9.1: el registro de herramientas que el MODELO elige. Va después de
+     react.js/tools.js porque los referencia por nombre al ejecutar, no al cargar. -->
+<script src="js/kiu-agente.js"></script>
 <script src="js/kiu-estados.js"></script>
 <script src="js/kiu-avatar.js"></script>
 <script src="js/kiu-avatar-boot.js"></script>

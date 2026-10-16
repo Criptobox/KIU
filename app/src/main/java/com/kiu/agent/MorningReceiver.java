@@ -141,6 +141,37 @@ public class MorningReceiver extends BroadcastReceiver {
             }
         } catch (Exception ignored) { }
 
+        /* v2.9.0: la agenda del día. El resumen decía "no tengo recordatorios para
+           hoy" y nada más, que es distinto de "no tenés nada hoy": los eventos del
+           calendario del sistema son la mitad de lo que la gente tiene anotado, y
+           antes Kiu no los podía leer. Solo si el permiso está concedido: sin él
+           el resumen sigue igual de útil, no arranca a pedir permisos a las 8am. */
+        try {
+            if (c.checkSelfPermission("android.permission.READ_CALENDAR") == 0) {
+                StringBuilder ev = new StringBuilder();
+                int en = 0;
+                long d0 = System.currentTimeMillis();
+                long d1 = d0 + 86400000L;
+                android.database.Cursor cur = c.getContentResolver().query(
+                        android.provider.CalendarContract.Instances.CONTENT_URI,
+                        new String[]{"title", "begin"},
+                        "begin >= ? AND begin < ? AND deleted = 0",
+                        new String[]{String.valueOf(d0), String.valueOf(d1)},
+                        "begin ASC");
+                while (cur != null && cur.moveToNext() && en < 5) {
+                    long b = cur.isNull(1) ? 0L : cur.getLong(1);
+                    if (b <= 0) continue;
+                    ev.append("• ").append(DateFormat.getTimeFormat(c).format(new Date(b)))
+                      .append(" — ").append(cur.isNull(0) ? "" : cur.getString(0)).append("\n");
+                    en++;
+                }
+                if (cur != null) cur.close();
+                if (en > 0) {
+                    sb.append("\nAgenda de hoy: ").append(en == 1 ? "1 cosa:\n" : en + " cosas:\n").append(ev);
+                }
+            }
+        } catch (Exception ignored) { }
+
         /* batería */
         try {
             Intent b = c.registerReceiver(null, new android.content.IntentFilter("android.intent.action.BATTERY_CHANGED"));

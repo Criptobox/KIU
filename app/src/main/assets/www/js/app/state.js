@@ -174,6 +174,11 @@
     name: '', mode: 'hybrid',
     apiUrl: '', apiKey: '', apiModel: '',
     voiceOn: false, rate: 1, conv: true, voiceName: '', pitch: 1,
+    /* v2.9.1: que el MODELO elija herramientas. Apagado por defecto a propósito:
+       consume una generación extra por mensaje, así que no puede ser surprise.
+       Con el on, Kiu igual prueba primero cerebro y ReAct (gratis) y recién ahí
+       pregunta al modelo. */
+    agentOn: false,
     prov: {},
     persona: 'normal', personaX: '', temp: 0.7, maxTok: 700,
     acc: '', chatFs: 'm',

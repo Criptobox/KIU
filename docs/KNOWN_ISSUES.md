@@ -1,6 +1,16 @@
 # Pendientes y mejoras sugeridas
 
 ## Resueltas
+- [x] **El motor nativo compilaba contra `llama.cpp` de `master`** → el CI y
+      `vendor_llama.sh` clonaban la punta de la rama: un commit de upstream podía romper
+      el build sin cambiar nada del repo y no había forma de volver atrás (el clon local
+      ya lo había pisado). Ahora hay pin (v0.7.0 + SHA) en `vendor_llama.sh`, se trae el
+      tag y se verifica el commit, y el CI lo muestra en el resumen del run. **Pendiente
+      de confirmar**: que el JNI actual compile contra v0.7.0. (2026-10)
+- [x] **Kiu no podía leer la agenda** → `MainActivity.calendarList()` (mismo molde que
+      `contacts()`), permiso `READ_CALENDAR` solo lectura, ventana temporal o por texto contra
+      `CalendarContract.Instances`, e intents en `KiuBrain` para "¿qué tengo mañana?" y
+      "¿tengo dentista?". El resumen matutino incluye los eventos del día. (2026-10)
 - [x] **La palabra de activación y la conversación continua no funcionaban** → eran el mismo
       bug: al manifiesto le faltaba el `<queries>` de `android.speech.RecognitionService`, así
       que desde Android 11 `SpeechRecognizer.isRecognitionAvailable()` devolvía `false` siempre

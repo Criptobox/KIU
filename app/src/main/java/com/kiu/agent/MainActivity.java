@@ -54,6 +54,8 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private static final Map<String, String> APP_MAP;
     private static final int REQ_CONTACTS = 4244;
+    /* v2.9.0: leer la agenda ("¿qué tengo mañana?") */
+    private static final int REQ_CALENDAR = 4245;
     private static final int REQ_MIC = 4242;
     private static final int REQ_NOTIF = 4243;
     public static volatile boolean SPEAKING;
@@ -1567,6 +1569,8 @@ public class MainActivity extends Activity {
                 public void run() {
                     if ("contacts".equals(str)) {
                         MainActivity.this.requestPermissions(new String[]{"android.permission.READ_CONTACTS"}, MainActivity.REQ_CONTACTS);
+                    } else if ("calendar".equals(str)) {
+                        MainActivity.this.requestPermissions(new String[]{"android.permission.READ_CALENDAR"}, MainActivity.REQ_CALENDAR);
                     }
                 }
             });
@@ -1617,6 +1621,35 @@ public class MainActivity extends Activity {
         }
 
         /* ---- wake word 100% local (Vosk) ---- */
+
+        /* v2.9.2: gramatica de muestreo para la proxima generacion. La aplica
+           SOLO la siguiente: ni el chat normal, ni un resumen, ni un nombre de
+           conversacion quedan atados a la decision de una herramienta. */
+        @JavascriptInterface
+        public void kiuGenSetGrammar(String str) {
+            try {
+                KiuNative.setGrammar(str == null ? "" : str);
+            } catch (Throwable th) {
+            }
+        }
+
+        @JavascriptInterface
+        public String kiuGenGrammarPending() {
+            try {
+                return KiuNative.grammarPending();
+            } catch (Throwable th) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public boolean kiuGenGrammarOk() {
+            try {
+                return KiuNative.grammarOk();
+            } catch (Throwable th) {
+                return false;
+            }
+        }
 
         @JavascriptInterface
         public String kiuWWState() {
@@ -1719,6 +1752,76 @@ public class MainActivity extends Activity {
                     MainActivity.this.startActivity(new Intent("android.settings.REQUEST_SCHEDULE_EXACT_ALARM", Uri.parse("package:" + MainActivity.this.getPackageName())));
                 }
             } catch (Exception unused) {
+            }
+        }
+
+        /* v2.9.0 — LEER la agenda. Kiu ya escribía eventos (addCalendarEvent abre el
+           calendario del sistema), pero no leía: no había forma de responder "¿qué
+           tengo mañana?" ni de enriquecer el resumen matutino con la agenda.
+
+           Mismo molde que contacts(): devuelve JSON en texto, o "NEED_PERM" si falta
+           el permiso para que la UI lo pida y avise. Solo lectura.
+
+           - Ventana temporal: [desde, hasta) en epoch ms. El filtro por texto es
+             opcional y busca en título y lugar.
+           - Se excluyen los eventos CANCELLED y los todo el día sin hora (BEGIN_TIME
+             null) porque no ordenan bien contra un rango con horas.
+           - Tope de 40 y de 60 días hacia atrás: una agenda con 5000 eventos Old es
+             un problema de memoria y de usefulness, no de información. */
+        @JavascriptInterface
+        public String calendarList(String query, long fromMs, long toMs) {
+            android.database.Cursor cur = null;
+            try {
+                if (MainActivity.this.checkSelfPermission("android.permission.READ_CALENDAR") != 0) {
+                    return "NEED_PERM";
+                }
+                long from = fromMs > 0 ? fromMs : System.currentTimeMillis();
+                long to = toMs > from ? toMs : from + 14L * 86400000L;
+                if (to - from > 60L * 86400000L) {
+                    to = from + 60L * 86400000L;
+                }
+                String q = query == null ? "" : query.trim();
+                String proj = "title,begin,end,event_location";
+                String sel;
+                String[] args;
+                if (q.isEmpty()) {
+                    /* sin texto: los que empiezan dentro de la ventana. BEGIN_TIME >=
+                       es el filtro que devuelve lo que viene, que es lo que se pregunta. */
+                    sel = "begin >= ? AND begin < ? AND deleted = 0";
+                    args = new String[]{String.valueOf(from), String.valueOf(to)};
+                } else {
+                    String like = "%" + q + "%";
+                    sel = "begin < ? AND end > ? AND deleted = 0 AND ("
+                            + "title LIKE ? OR event_location LIKE ?)";
+                    args = new String[]{String.valueOf(to), String.valueOf(from), like, like};
+                }
+                cur = MainActivity.this.getContentResolver().query(
+                        android.provider.CalendarContract.Instances.CONTENT_URI,
+                        new String[]{proj}, sel, args, "begin ASC");
+                JSONArray arr = new JSONArray();
+                while (cur != null && cur.moveToNext() && arr.length() < 40) {
+                    long b = cur.isNull(1) ? 0L : cur.getLong(1);
+                    long e = cur.isNull(2) ? 0L : cur.getLong(2);
+                    if (b <= 0) {
+                        continue;   /* evento sin hora: no se puede ubicar en el día */
+                    }
+                    JSONObject o = new JSONObject();
+                    o.put("t", cur.isNull(0) ? "" : cur.getString(0));
+                    o.put("b", b);
+                    o.put("e", e > b ? e : b);
+                    o.put("w", cur.isNull(3) ? "" : cur.getString(3));
+                    arr.put(o);
+                }
+                return arr.toString();
+            } catch (Exception unused) {
+                return "[]";
+            } finally {
+                if (cur != null) {
+                    try {
+                        cur.close();
+                    } catch (Exception unused2) {
+                    }
+                }
             }
         }
 
@@ -2022,12 +2125,18 @@ public class MainActivity extends Activity {
     @Override // android.app.Activity
     public void onRequestPermissionsResult(int i, String[] strArr, int[] iArr) {
         if (i != REQ_MIC) {
-            if (i == REQ_CONTACTS) {
+            if (i == REQ_CONTACTS || i == REQ_CALENDAR) {
                 boolean z = iArr.length > 0 && iArr[0] == 0;
-                StringBuilder sb = new StringBuilder("nexoPerm('contacts',");
+                StringBuilder sb = new StringBuilder("nexoPerm('");
+                sb.append(i == REQ_CALENDAR ? "calendar" : "contacts").append("',");
                 sb.append(z ? "true" : "false");
                 sb.append(")");
                 js(sb.toString());
+                /* v2.9.0: si le dieron el permiso y Kiu estaba pidiendo la agenda,
+                   no hay que pedirle que repita la pregunta. */
+                if (i == REQ_CALENDAR && z) {
+                    js("window.App && App.calendarPermission(true);");
+                }
                 return;
             }
             if (i == REQ_NOTIF) {

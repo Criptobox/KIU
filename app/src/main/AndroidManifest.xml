@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.SET_ALARM"/>
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <!-- v2.9.0: poder LEER la agenda. Kiu ya sabía escribir eventos (addCalendarEvent
+         abre el calendario del sistema), pero no leer: "¿qué tengo mañana?" no tenía
+         respuesta. Solo lectura, y se pide en el momento, no al instalar. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
 
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>

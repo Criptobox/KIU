@@ -106,6 +106,74 @@ window.KiuBrain = (function () {
     try { return KiuApp.contactSearch(q); } catch (e) { return null; }
   }
 
+  /* ================= v2.9.0: LEER LA AGENDA =================
+     Kiu ya sabía escribir eventos (addCalendarEvent abre el calendario del
+     sistema) pero no leerlos, así que "¿qué tengo mañana?" no tenía respuesta.
+     Estas funciones son el puente con KiuApp.calendarQuery().
+
+     Devuelven {items, needPerm} para que quien las llama no tenga que Repeater
+     el caso 'NEED_PERM' en cada sitio. */
+  function calItems(q, fromMs, toMs) {
+    if (!window.KiuApp || !window.KiuApp.calendarQuery) return { items: null, needPerm: false };
+    var r;
+    try { r = window.KiuApp.calendarQuery(q || '', fromMs, toMs); } catch (e) { return { items: null, needPerm: false }; }
+    if (r === 'NEED_PERM') return { items: null, needPerm: true };
+    if (!r || !r.length) return { items: [], needPerm: false };
+    return { items: r, needPerm: false };
+  }
+  function askCalPerm() {
+    if (window.KiuApp) window.KiuApp.askPerm('calendar');
+  }
+
+  /* ¿"hoy" / "mañana" / "el martes" / "esta semana"…? Devuelve la ventana
+     [desde, hasta) en epoch ms, o null si la frase no habla de un día. */
+  function calWindow(t) {
+    var now = new Date();
+    var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    function day(n) {
+      var d = new Date(d0.getTime());
+      d.setDate(d.getDate() + n);
+      return d;
+    }
+    var D = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+    var DACC = ['domingo', 'lunes', 'martes', 'mieresoles', 'jueves', 'viernes', 'sabado'];
+    if (/\b(hoy|esta noche|ahorita|ahora|mas tarde|esta tarde)\b/.test(t)) {
+      return { from: Math.min(d0.getTime(), now.getTime() - 3600000), to: day(1).getTime(), txt: 'hoy' };
+    }
+    if (/\b(manana|mañana|manana a la tarde|manana por la tarde)\b/.test(t)) {
+      return { from: day(1).getTime(), to: day(2).getTime(), txt: 'mañana' };
+    }
+    if (/\b(pasado manana)\b/.test(t)) {
+      return { from: day(2).getTime(), to: day(3).getTime(), txt: 'pasado mañana' };
+    }
+    if (/\b(esta semana|esta semana que viene|los proximos dias|proximos dias|lo que viene)\b/.test(t)) {
+      return { from: now.getTime(), to: day(7).getTime(), txt: 'esta semana' };
+    }
+    for (var i = 0; i < D.length; i++) {
+      var re = new RegExp('\\b(?:' + D[i] + '|' + DACC[i] + ')\\b');
+      if (re.test(t)) {
+        /* el "próximo" lunes puede ser hoy o dentro de 7 días: si hoy ya es ese día,
+           hablamos de la semana que viene */
+        var target = (d0.getDay() === i) ? 7 : ((d0.getDay() < i) ? (i - d0.getDay()) : (7 - d0.getDay() + i));
+        return { from: day(target).getTime(), to: day(target + 1).getTime(), txt: DACC[i] };
+      }
+    }
+    if (/\b(semana que viene|proxima semana|la semana que viene)\b/.test(t)) {
+      return { from: day(7).getTime(), to: day(14).getTime(), txt: 'la semana que viene' };
+    }
+    return null;
+  }
+
+  function fmtHour(ms) {
+    var d = new Date(ms);
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function fmtEvt(e) {
+    var s = fmtHour(e.b) + ' ' + (e.t || '(sin título)');
+    if (e.w) s += ' — ' + e.w;
+    return s;
+  }
+
   function doSearch(where, q) {
     if (where === 'youtube' || where === 'yt') {
       var okY = B('ytSearch', [q]);
@@ -603,6 +671,58 @@ window.KiuBrain = (function () {
     }
     if (/(animame|motivame|estoy mal|andar mal|me siento mal|un empujon|animo)/.test(t)) {
       return { handled: true, text: pick(MOTIV) };
+    }
+
+    // ============ v2.9.0: AGENDA (leer) ============
+    // Va antes de "buscar en web" y de "compartir" a propósito: un "¿qué tengo
+    // mañana?" mal ruteado caería en el navegador o en "manda esto".
+    //
+    // Ojo con norm(): se come el "¿", así que "¿tengo dentista mañana?" llega como
+    // "tengo dentista manana?". Los patrones se aplican sobre `t` nunca ven el signo, así
+    // que no se puede contar con él para distinguir una cosa de otra.
+    //
+    // Dos preguntas distintas, y una sola decide cuál es:
+    //   · por VENTANA   "¿qué tengo mañana?"     → todo lo que hay ese día
+    //   · por CONTENIDO "¿tengo dentista mañana?" → solo lo que matchea el texto
+    // La diferencia está en la palabra que sigue al verbo: si es un día ("mañana")
+    // o un sustantivo genérico ("algo", "reunión") es ventana; si es un nombre
+    // propio ("dentista") es contenido. Antes no había esta regla y el "¿qué
+    // tengo mañana?" se tomaba como búsqueda con q="manana", que no matchea nada.
+    var calDia = /\b(hoy|manana|pasado manana|esta semana|proxima semana|semana que viene|proximos dias|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/;
+    var calPalabra = /\b(agenda|calendario|eventos?|reuniones?|citas?|compromisos?)\b/.test(t);
+    var calVerbo = /\b(tengo|pagaste|agendo|agendaste|hay)\b/.test(t);
+    if (calPalabra || (calVerbo && calDia.test(t))) {
+      var win = calWindow(t) || { from: Date.now(), to: Date.now() + 14 * 86400000, txt: 'próximos días' };
+      /* La palabra que sigue al verbo decide ventana vs contenido. Las temporales
+         y las genéricas NO son un nombre a buscar: son la pregunta misma. */
+      var TEMPORAL = /^(algo|algun|alguno|una|unos|un|el|la|los|las|hoy|manana|mas|esta|este|ese|esa|proximo|proxima|pasado|ayer|ahora|tarde|noche|dias|dia|evento|eventos|reunion|reuniones|cita|citas|agenda|pendiente|pendientes|compromiso|compromisos)$/;
+      var q = '';
+      var mc = t.match(/\b(?:reunion con|cita con)\s+([a-z0-9]{3,30})/);
+      if (mc) {
+        q = mc[1];
+      } else {
+        var mv = t.match(/\b(?:tengo|pagaste|agendo|agendaste)\s+(?:algo de\s+|de\s+)?([a-z0-9]{3,30})/);
+        if (mv && !TEMPORAL.test(mv[1])) q = mv[1];
+      }
+      var res = calItems(q, win.from, win.to);
+      if (res.needPerm) {
+        askCalPerm();
+        return { handled: true, text: 'Para leerte la agenda necesito permiso de calendario. Tocá "Permitir" en el cartel y preguntame de nuevo.' };
+      }
+      if (res.items === null) {
+        return { handled: true, text: 'No pude leer la agenda ahora. Probá en un rato.' };
+      }
+      if (!res.items.length) {
+        return { handled: true, text: (q
+          ? 'No tenés ningún evento con "' + q + '" ' + win.txt + '.'
+          : 'No tenés nada agendado ' + win.txt + '.') };
+      }
+      var lines = res.items.slice(0, 8).map(fmtEvt);
+      var extra = res.items.length > 8 ? '\n…y ' + (res.items.length - 8) + ' más.' : '';
+      var head = (q ? 'Tus eventos con "' + q + '" ' + win.txt + ':'
+                    : 'Tu agenda de ' + win.txt + ':');
+      return { handled: true, text: head + '\n' + lines.join('\n') + extra
+        + '\nTenés el primero a las ' + fmtHour(res.items[0].b) + '.' };
     }
 
     // --- Buscar en web --- v1.7.0: se resuelve dentro del chat con el navegador de Kiu

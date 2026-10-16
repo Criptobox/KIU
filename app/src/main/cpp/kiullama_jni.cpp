@@ -33,6 +33,24 @@ llama_sampler* kiu_penalties_impl(long, A...) { return nullptr; }
 template <typename... A>
 llama_sampler* kiu_penalties(A... a) { return kiu_penalties_impl(0, a...); }
 
+// v2.9.2: shim de la firma de llama_sampler_init_grammar, con el mismo criterio que
+// el de las penalidades: si el vendor no la tiene, devuelve nullptr y el sampler se
+// omite — la generacion sigue funcionando SIN gramatica (el parse + reintento del
+// bucle es la ruta que hace falta tener igual). Que el build se rompa porque
+// upstream renombró algo NO puede ser el precio de una mejora opcional.
+//
+// Firma conocida (estable desde b1xxx): (const llama_vocab*, const char* grammar_str,
+// const char* grammar_root). Si upstream le agrega un parámetro, el 0 de abajo ya no
+// compila contra la versión nueva y cae al overload de respaldo.
+template <typename... A>
+auto kiu_grammar_impl(int, A... a) -> decltype(llama_sampler_init_grammar(a...)) {
+    return llama_sampler_init_grammar(a...);
+}
+template <typename... A>
+llama_sampler* kiu_grammar_impl(long, A...) { return nullptr; }
+template <typename... A>
+llama_sampler* kiu_grammar(A... a) { return kiu_grammar_impl(0, a...); }
+
 std::mutex g_mtx;                 // protege model/ctx y la generación completa
 llama_model*    g_model = nullptr;
 llama_context*  g_ctx   = nullptr;
@@ -52,6 +70,15 @@ std::string g_err;
 bool g_backend_ready = false;
 
 std::atomic<bool> g_running{false};   // v2.7.3: hay una generacion en curso (para "done" real)
+
+// v2.9.2: gramatica de muestreo pendiente (GBNF). La aplica la PROXIMA generate()
+// y se consume: si no se consumiera, toda generación posterior de la app —una
+// respuesta normal de chat, un resumen— quedaría atada a la gramática de la última
+// decisión del agente, que es la peor forma de forgetting: un bug que aparece
+// mucho después y parece de otro lado.
+std::mutex g_gram_mtx;
+std::string g_grammar_pending;
+std::atomic<bool> g_grammar_ok{true};
 
 // v2.7.3: NewStringUTF exige "modified UTF-8": los tokens pueden cortar un caracter a la mitad
 // (ñ, tildes, emojis de 4 bytes) y los emojis no son validos en modified UTF-8 -> con CheckJNI
@@ -278,6 +305,12 @@ Java_com_kiu_agent_KiuNative_lastError(JNIEnv* env, jclass) {
 JNIEXPORT void JNICALL
 Java_com_kiu_agent_KiuNative_stopGen(JNIEnv*, jclass) {
     g_stop = true;
+    // v2.9.2: si se cancela una decisión, su gramatica no debe quedar esperando
+    // la proxima generacion (que podria ser un chat normal, de otra cosa).
+    {
+        std::lock_guard<std::mutex> lk(g_gram_mtx);
+        g_grammar_pending.clear();
+    }
 }
 
 JNIEXPORT jfloat JNICALL
@@ -319,6 +352,41 @@ Java_com_kiu_agent_KiuNative_genStatus(JNIEnv* env, jclass) {
              g_toks.load(), g_tps.load(), done ? "true" : "false");
     std::string s = "{\"text\":\"" + esc + "\"" + buf;
     return mk_jstring(env, s);
+}
+
+// v2.9.2 — gramatica de muestreo para la PROXIMA generación.
+//
+// Se separa de generate() a propósito: cambiar la firma de un método nativo
+// rompe el puente JS entero (kiuGen es el que llama motor.js) y obliga a tocar
+// dos lados. Con un setter aparte, el JS pone la gramatica justo antes de pedir
+// la decisión y el resto de la app sigue usando generate(prompt, max, temp) sin
+// enterarse de que existe.
+//
+// Vaciar con "" desactiva. Consumir en la generate() siguiente es obligatorio:
+// una gramatica pegada para siempre deixa atada toda generación posterior.
+JNIEXPORT void JNICALL
+Java_com_kiu_agent_KiuNative_setGrammar(JNIEnv* env, jclass, jstring gbnf) {
+    std::string g = (gbnf == nullptr) ? std::string() : j2s(env, gbnf);
+    std::lock_guard<std::mutex> lk(g_gram_mtx);
+    g_grammar_pending = g;
+}
+
+// v2.9.2: ¿la ultima gramatica se pudo aplicar? El JS lo consulta para saber si
+// está suponiendo una gramática que en realidad no restringió nada — que es
+// peor que no tenerla, porque el bucle cree que el JSON va a salir bien.
+JNIEXPORT jboolean JNICALL
+Java_com_kiu_agent_KiuNative_grammarOk(JNIEnv*, jclass) {
+    return g_grammar_ok.load() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_kiu_agent_KiuNative_grammarPending(JNIEnv* env, jclass) {
+    std::string g;
+    {
+        std::lock_guard<std::mutex> lk(g_gram_mtx);
+        g = g_grammar_pending;
+    }
+    return mk_jstring(env, g);
 }
 
 JNIEXPORT jstring JNICALL
@@ -395,6 +463,42 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
         llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
         llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
         llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
+
+    // v2.9.2: la gramatica va SIEMPRE al final de la cadena. Es lo que decide si
+    // el motor descarta un token: lo que no encaje con la gramatica no se puede
+    // emitir. Si fuera antes, los samplers de arriba verian tokens que despues
+    // se rechazan y el resultado seria incoherente.
+    //
+    // OJO: si viniera temp > 0 habria un sampler de_dist ALEATORIO antes. El
+    // de abajo (la gramatica) va ultimo y es el que decide, asi que el resultado
+    // igual quedaria restringido: la gramatica acota el conjunto, la temperatura
+    // elige dentro. Aun asi, motor.js manda temp=0 cuando manda gramatica, para
+    // no depender de cual de los dos gana el conflicto.
+    std::string gbnf;
+    {
+        std::lock_guard<std::mutex> glk(g_gram_mtx);
+        gbnf.swap(g_grammar_pending);   // consumir: una gramatica es de UNA generación
+    }
+    g_grammar_ok = true;
+    if (!gbnf.empty()) {
+        const llama_vocab* gv = llama_model_get_vocab(g_model);
+        if (gv == nullptr) {
+            set_err("no pude obtener el vocabulario para la gramatica");
+        } else {
+            llama_sampler* gs = kiu_grammar(gv, gbnf.c_str(), "root");
+            if (gs != nullptr) {
+                llama_sampler_chain_add(smpl, gs);
+            } else {
+                // No se pudo crear el sampler. OJO: esto NO es un error de
+                // generacion — la generacion sigue y sale texto normal, sin
+                // restringir. Por eso no va por set_err() (que se lee cuando la
+                // generacion falla y envenenaría el próximo error real). Va por
+                // su propio canal para que el JS lo sepa por kiuGrammarOk().
+                std::lock_guard<std::mutex> glk2(g_gram_mtx);
+                g_grammar_ok = false;
+            }
+        }
     }
 
     llama_batch_ext* batch = llama_batch_ext_init(g_ctx);

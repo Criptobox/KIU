@@ -45,7 +45,7 @@ no deja actualizar la app instalada y habría que desinstalarla (se pierden los 
 En GitHub: subí tu clave como secretos `KIU_KEYSTORE_BASE64` (`base64 -w0 kiu-release.jks`) y
 `KIU_KEYSTORE_PASSWORD`; cada push a `main` genera los APK en *Actions → Artifacts* (debug y
 release), y al pushear un tag `v*` (por ejemplo `git tag v2.6.0 && git push --tags`) se publica
-una **Release** con ambos APK. La suite de 135 tests (brain, secure, rag, rag-worker, boot,
+una **Release** con ambos APK. La suite de 206 tests (brain, secure, rag, rag-worker, boot,
 app-core, skills, react, i18n, migrate) corre en cada push (job `tests`); el build espera a
 que estén en verde y provisiona sus herramientas con `scripts/get-tools.sh`.
 

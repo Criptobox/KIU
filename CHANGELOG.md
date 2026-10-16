@@ -2,6 +2,272 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.9.3] — La gramática llega al motor (y se forgets sola, a propósito)
+
+En 2.9.2 el generador GBNF existía y estaba testeado, pero no tenía a quién
+mandarle la gramática: el `KiuNative.generate()` no aceptaba una y no había forma de
+pasársela. Esta tanda cierra el circuito.
+
+### 1 · `setGrammar` en vez de cambiar la firma de `generate`
+
+El camino obvio era `generate(prompt, maxT, temp, gbnf)`. Es el que **no** se hizo:
+cambiar la firma de un método nativo rompe el puente JS entero (`kiuGen` lo invoca
+`motor.js`) y obliga a tocar los dos lados de un puente que hoy anda.
+
+En vez de eso hay un setter aparte. El JS pone la gramática justo antes de pedir la
+decisión y el resto de la app sigue llamando `generate(prompt, maxT, temp)` sin
+enterarse de que existe. Tres métodos nuevos:
+
+| | |
+|---|---|
+| `setGrammar(gbnf)` | la aplica la **próxima** generación; `""` desactiva |
+| `grammarPending()` | cuál espera (diagnóstico y tests) |
+| `grammarOk()` | si la última se pudo aplicar |
+
+El tercero es el que más importa, y es para una trampa concreta: **si el motor no la
+aplica, la generación sale igual y sin restringir.** Un bucle que cree que la gramática
+está activa y en realidad no lo está se apoya en un parse que nunca va a venir bien, y
+el síntoma —"sale JSON roto"— apunta a la validación, que es la innocent. Con
+`grammarOk()` el JS lo sabe y el parse + reintento deja de ser un plan B theoretical.
+
+### 2 · La gramática se CONSUME, y eso es un test
+
+La generate() hace `gbnf.swap(g_grammar_pending)`: la toma y la borra. Y `stopGen()` la
+limpia también.
+
+Sin esto la gramática queda pegada: el `{"tool":...}` de la última decisión del agente
+sigue esperando, y la respuesta de chat que viene después de al lado sale forzada a
+emitir un JSON de herramienta. No se ve como un bug de gramática — se ve como un bug de
+chat, en otra pantalla, más tarde, en la conversación que no tenía nada que ver. Es
+forgetting con forma de fantasma, así que está testeado en las dos vías.
+
+### 3 · Va al final de la cadena, y con temp 0
+
+`llama_sampler_chain_add(smpl, gs)` va **último**, después de greedy/dist. Es lo que
+decide si un token se puede emitir: lo que no encaja con la gramática no existe. Si
+fuera antes, los samplers de arriba verían tokens que después se rechazan.
+
+Y con `temp > 0` hay un `dist` aleatorio justo antes. El de abajo igual manda, así que
+el resultado quedaría restringido igual — pero `motor.js` manda **temp 0** cuando manda
+gramática, para no depender de cuál de los dos gana el conflicto.
+
+### 4 · El shim, otra vez
+
+`kiu_grammar()` tiene la misma estructura de dos overloads que `kiu_penalties()`: si el
+vendor no expone la firma, cae a un overload que devuelve `nullptr`, el sampler se omite
+y la generación sigue **sin gramática**. Romper el APK porque upstream renombró algo no
+puede ser el precio de una mejora opcional.
+
+### Un test que pasaba por el motivo equivocado
+
+Al testear el camino nuevo apareció un `typeof g === 'object'`. No era un bug del
+producto: el arnés no definía `rawBridge` (que vive en `app/env.js` y lee
+`window.KiuBridge`), el `ReferenceError` lo comía el `try/catch` del agente, y `gbnf`
+quedaba `null` — y `typeof null` es `'object'`. El test pasaba antes, cuando la
+asertación era la débil; con la asertación fuerte, se comió el problema.
+
+Vale la pena dejarlo anotado porque es el patrón que más me gusta de esta tanda: **el
+try/catch correcto escondió un test que no estaba probando lo que decía probar.** El
+fix no fue relajar la asertación sino definir `rawBridge` en el arnés, para que la ruta
+real se ejercite.
+
+**Suite: 199 → 206 tests**, todos en verde.
+
+**Lo que sigue sin verificar**: que el C++ compile. `kiu_grammar_impl(0, a...)` con
+`a...` vacía — el overload que se elige es el `int` y `llama_sampler_init_grammar(gv,
+gbnf.c_str(), "root")` es una llamada directa de 3 argumentos, que es la firma conocida.
+El SFINAE hace su trabajo, pero eso solo lo confirma un compilador.
+
+## [2.9.2] — El motor deja de flotar, y el agente deja de ser lento de arrancar
+
+Tres cosas, en orden de importance para lo que vas a sentir en el teléfono.
+
+### 1 · El motor nativo estaba anclado a `master`
+
+`vendor_llama.sh` clonaba `llama.cpp` de `master` y el CI hacía lo mismo. Eso es una
+dependencia flotante: un commit de upstream puede romper el build **sin que cambie nada
+del repo**, y no había forma de volver atrás porque el clon local ya lo había pisado con
+`reset --hard`.
+
+No es teórico. El propio `kiullama_jni.cpp` tiene un shim por `llama_sampler_init_penalties`
+porque **esa firma ya les cambió una vez**. Compilar contra `master` todos los días es
+esperar el próximo.
+
+Ahora:
+- `LLAMA_TAG` + `LLAMA_SHA` (**v0.7.0**) en `vendor_llama.sh`, que es la única fuente de
+  verdad; el CI la lee de ahí.
+- Se trae el **tag** (una ref de verdad, se puede traer siempre) y se **verifica** que el
+  commit sea el SHA esperado. Si alguien movió el tag upstream, el script para con un
+  ruido en vez de compilar código distinto del que creés.
+- `--show` imprime el pin y el estado local.
+- El CI lo muestra en el `$GITHUB_STEP_SUMMARY`: un fallo de compilación dice contra qué
+  commit fue y se puede reproducir.
+- El header documenta cómo se cambia el pin — y que un cambio de API se **shimmea**, no se
+  esquiva bajando el requisito.
+
+### 2 · El prefill del agente era el 80 % del costo de una decisión
+
+Cada decisión del agente paga el prompt entero en el prefill de la CPU del teléfono, y el
+proyecto ya sabe que ahí está el cuello de botella (el comentario de PROMPT LIVIANO en
+`app-ui.js` dice que el prompt grande "tardaba minutos").
+
+| | antes | ahora |
+|---|---|---|
+| manifiesto | 1.565 car ≈ **435 tok** | 934 car ≈ **259 tok** |
+| prompt de una decisión | 1.957 car ≈ **544 tok** | 1.263 car ≈ **351 tok** |
+| salida que se pide | 120 tok | 120 tok |
+
+**−35 % de prefill**, y además se encontró que el mensaje del usuario iba **dos veces** en
+el prompt (una en `TAREA:` del system, otra como mensaje del user). Con historial, la
+`TAREA:` ya no se manda: el último mensaje del usuario *es* la tarea.
+
+Las descripciones pasaron de párrafos a disparadores ("Programar una alarma o recordatorio."
+en vez de explicar cuándo usarla), y el manifiesto es una línea por herramienta. **Y hay un
+techo en los tests** (`budget()`, 280 tokens de manifiesto): si alguien vuelve a escribir un
+párrafo ahí, el test se pone rojo.
+
+### 3 · Gramática GBNF derivada del mismo esquema
+
+`KiuAgente.grammar()` genera la gramática de muestreo desde el **mismo** `args` que valida y
+que documenta el prompt. No hay tres lugares que mantener: si mañana agregás un argumento,
+los tres lo toman solos, y hay un test que lo verifica agregando una herramienta de mentira.
+
+Lo que aporta, con sus límites:
+- Los **ENUM** quedan enumerados: `device_action.what` no es texto libre, es una de las 8
+  acciones. Y `validate()` los revisa **también**, porque la gramática no siempre está
+  activa (sin JNI, o cuando la decisión va por un proveedor).
+- Los opcionales generan las alternativas que existen: `set_alarm` produce la rama con
+  `when` y la rama con `when`+`label`.
+- **No arregla el problema de fondo.** La gramática garantiza que el JSON sea válido, no
+  que la herramienta sea la correcta: un modelo puede llamar `set_alarm` cuando debía leer
+  la agenda, y la gramática lo deja pasar. Para eso están la validación y la observación
+  que vuelve al bucle. **Gramática = menos reintentos. Validación = menos errores.**
+
+El generador es JS puro y está testeado entero, con un validador de GBNF chiquito (paréntesis
+y comillas balanceados, raíz que menciona todas las reglas) porque llama.cpp tira excepción
+si la gramática está mal formada y eso no se ve hasta el build.
+
+**Lo que falta para usarla**: el pegamento JNI (`kiuGenGrammar` +
+`llama_sampler_init_grammar(vocab, texto, "root")`). Son ~40 líneas que no se pueden compilar
+ni probar acá, y por eso esta tanda **no** las incluye.
+
+**Suite: 180 → 199 tests**, todos en verde.
+
+## [2.9.1] — Que el MODELO elija la herramienta
+
+Hasta acá Kiu no era un agente: `brain.js` tenía ~200 regex que decidían qué era cada
+pedido y el modelo solo redactaba la respuesta final. `js/kiu-agente.js` agrega el registro
+de herramientas y el bucle que le pregunta al modelo qué hacer.
+
+### El registro
+```js
+{ name, desc, args: { <k>: {type, required, desc} }, run(args) -> {ok, text}, risk }
+```
+Seis herramientas: `set_alarm`, `read_calendar`, `find_contact`, `call_contact`,
+`search_docs` y `device_action`. Cada una **envuelve algo que ya existía** (brain, RAG, el
+puente) en vez de reimplementarlo: `call_contact` delega la resolución del contacto a
+`brain.js`, y `device_action` tiene su `what` acotado a una lista de 8 valores en vez de
+ser 8 herramientas distintas — menos superficie que inventar.
+
+### El modelo elige, este archivo decide qué se ejecuta
+Un modelo chico inventa nombres, deja argumentos sueltos y mete JSON en un ```json. El
+bucle no confía, y **el motivo del rechazo vuelve al modelo** (que es lo que hace que el
+segundo intento acierte):
+
+| El modelo mandó | Qué pasa |
+|---|---|
+| herramienta inexistente | se rechaza, con la lista de las que sí existen |
+| argumento que no está en el esquema | se rechaza, con los nombres reales de los argumentos |
+| obligatorio que falta | se rechaza nombrando el argumento |
+| tipo que no cierra | se rechaza |
+| argumento enorme (>200) | se rechaza: eso es prompt injection, no un dato |
+| JSON inválido | se rechaza y se reintenta |
+
+### Una sola fuente de verdad
+`args` genera **dos** cosas: el texto del prompt y la validación. No pueden desalinearse
+porque salen del mismo objeto. Cuando el nativo soporte
+`llama_sampler_init_grammar`, la gramática GBNF se deriva de ahí —y hasta entonces el
+parse + reintento hace falta igual, porque un modelo chico va a fallar el JSON de vez en
+cuando.
+
+### BUG que encontraron los tests
+`isDone()` devolvía `true` siempre que el JSON **no** trajera la palabra `listo`. O sea que
+`{"tool":"set_alarm","args":{...}}` —que es exactamente lo que contesta un modelo que no
+entendió "si no necesitás ninguna: {listo:true}"— se leía como "terminado" y **el bucle
+cortaba antes de ejecutar nada**. Kiu se quedaba mudo. Ahora: si el objeto trae una
+herramienta, no está terminado, diga lo que diga el resto.
+
+### Enrutado
+El agente va **después** de skills, cerebro y ReAct (lo conocido se resuelve al instante y
+sin gastar un token; ninguna de las tres conoce una herramienta que todavía no existe) y
+**antes** de la generación final (si ejecutó algo, esa ES la respuesta). Si no ejecutó nada,
+`tryAfterAgent()` sigue el flujo de siempre: el mensaje no se pierde, y el fallback final
+sigue estando.
+
+**Apagado por defecto** (`S.agentOn`), con su toggle en Ajustes. Consume una generación
+extra por mensaje, así que no puede activarse por sorpresa; y si lo prendés sin modelo
+cargado, te lo dice en vez de fingir que quedó activo.
+
+### Lo que NO se hizo (y por qué)
+- **GBNF en el nativo**: `vendor_llama.sh` clona `llama.cpp` de `master` **sin pin**. Tocar
+  el JNI con eso flotando es Gamble; hay que fijar el commit primero.
+- **Confirmación antes de actuar**: `call_contact` abre el marcador (no llama solo) y
+  `device_action` tiene su lista acotada, pero no hay diálogo de confirmación. Es la
+  costura obvia para una versión con efectos detrás.
+- **Visión on-device**: `mtmd` + `.mmproj` son ~300 líneas de C++ en un loop de decode a
+  mano, y sin NDK ni llama.cpp vendorizado no hay forma de probarlas. Lo que ya funciona
+  (foto → `image_url`, y el modelo de visión local por Ollama) queda como está.
+
+**Suite: 151 → 180 tests**, todos en verde (29 nuevos en `tests/agente.test.mjs`).
+
+## [2.9.0] — Leer la agenda
+
+Kiu sabía **escribir** eventos (`addCalendarEvent` abre el calendario del sistema) pero no
+**leerlos**: no había forma de responder "¿qué tengo mañana?" ni de que el resumen matutino
+supiera qué día es hoy de verdad.
+
+### Nuevo: `calendarList(query, desde, hasta)` en el puente
+Igual que `contacts()`: devuelve JSON o `"NEED_PERM"` para que la UI pida el permiso y avise.
+Consulta `CalendarContract.Instances` (que ya resuelve recurrencias) con ventana temporal o
+por texto, y:
+
+- excluye lo borrado (`deleted = 0`) y lo que no tiene hora, que no se puede ubicar en el día;
+- **tope de 40 eventos y de 60 días de ventana**: una agenda con 5000 eventos no es
+  información, es ruido;
+- `READ_CALENDAR` es solo lectura. No se pide `WRITE_CALENDAR`: para escribir se sigue usando
+  el `Intent` `INSERT`, que deja elegir la app de calendario y es lo que el usuario espera.
+
+### `KiuBrain` entiende las dos preguntas distintas
+
+La diferencia entre "¿qué tengo mañana?" y "¿tengo dentista mañana?" no es una palabra suelta:
+es **qué palabra sigue al verbo**. Si es un día ("mañana") o un sustantivo genérico
+("algo", "reunión") es una consulta por ventana; si es un nombre ("dentista") es por
+contenido. `calWindow()` resuelve hoy / mañana / pasado mañana / esta semana / cada día de la
+semana, con el reloj congelado en los tests.
+
+> Ojo con `norm()`: se come el `¿`, así que "¿tengo dentista mañana?" llega como
+> `"tengo dentista manana?"`. Los patrones nunca ven el signo de apertura.
+
+**Lo que NO hace, y es lo importante:** sin permiso la respuesta dice que necesita permiso.
+Devolver una agenda vacía haría creer al usuario que no tiene eventos, que es peor que un
+error — es mentirle con formato de verdad.
+
+### Resumen matutino con la agenda
+`MorningReceiver` mete los eventos del día (tope 5) entre los recordatorios y la batería. Todo
+el bloque está dentro del `if` del permiso: a las 8am la app no le pide nada a nadie, y sin
+permiso el resumen sigue siendo igual de útil.
+
+### Arreglo de paso
+`brain.js` mezclaba `window.KiuApp` (en las guardas) con `KiuApp` pelado (en las llamadas). En
+el WebView son lo mismo y nunca se rompió, pero **el arnés de tests de `brain.test.mjs` usa
+`{window: {}}`** —un objeto aparte del global— así que ahí cualquier referencia pelada es
+`ReferenceError`. Por eso esa suite, que tiene 13 tests, nunca ejercitó ni una sola de las
+ramas que usan `KiuApp` (contactos, acciones del dispositivo, y ahora la agenda). El arnés de
+`tests/calendario.test.mjs` modela `window === global` como el navegador de verdad, y al
+escribirlo saltó el bug al instante.
+
+**Suite: 135 → 151 tests**, todos en verde (16 nuevos en `tests/calendario.test.mjs`).
+
 ## [2.8.1] — La voz volvió (y el avatar del chat se ve)
 
 Estaban rotas tres cosas y la primera explains a las otras dos: **la activación por

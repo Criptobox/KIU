@@ -62,6 +62,16 @@ Los valores complejos se devuelven como **JSON en texto**.
 `openUrl`, `openApp`, `openSettings`, `setAlarmDevice`, `setTimerDevice`, `vibrate`, `keepOn`,
 `bright`, `toast`, `requestPerm`.
 
+### Calendario (v2.9.0)
+| Método | Descripción |
+|---|---|
+| `calendarList(query, desdeMs, hastaMs)` → JSON | Eventos en la ventana, o por texto en título/lugar. `[{t: título, b: begin, e: end, w: lugar}]`. Devuelve `"NEED_PERM"` si falta `READ_CALENDAR`, `"[]"` ante cualquier fallo. Tope 40 eventos / 60 días |
+| `addCalendarEvent(titulo, ms)` | Abre el calendario del sistema con el evento listo (no escribe directo: no se pide `WRITE_CALENDAR`) |
+| `requestPerm('calendar')` | Pide `READ_CALENDAR`; responde `nexoPerm('calendar', ok)` |
+
+Solo lectura. `CalendarContract.Instances` (no `Events`) a propósito: `Instances` ya expande
+la recurrencia, así que "todos los lunes" aparece todos los lunes.
+
 ### Contactos y calendario
 | Método | Descripción |
 |---|---|

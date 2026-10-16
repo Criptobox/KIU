@@ -47,10 +47,26 @@ jobs:
         env:
           KIU_SKIP_JDK: '1'
 
-      # Motor nativo: clona vendor/llama.cpp (shallow). Gradle lo compila con
-      # NDK + CMake e inyecta las .so en app/src/main/jniLibs/<ABI>.
-      - name: Vendorizar llama.cpp (motor nativo desde fuente)
-        run: chmod +x scripts/vendor_llama.sh && ./scripts/vendor_llama.sh
+      # Motor nativo: deja vendor/llama.cpp en el commit FIJADO de
+      # scripts/vendor_llama.sh y Gradle lo compila con NDK + CMake inyectando
+      # las .so en app/src/main/jniLibs/<ABI>.
+      #
+      # v2.9.2: antes clonaba `master` y el motor era una dependencia flotante
+      # — un commit de upstream podía romper el build sin que cambiara nada del
+      # repo. Ahora el pin está en vendor_llama.sh (una sola fuente de verdad) y
+      # este step lo muestra en el log para que un fallo de compilación diga
+      # CONTRA QUÉ commit fue, y se pueda reproducir.
+      - name: Vendorizar llama.cpp (motor nativo desde fuente, commit fijado)
+        run: |
+          chmod +x scripts/vendor_llama.sh
+          ./scripts/vendor_llama.sh --show
+          ./scripts/vendor_llama.sh
+          {
+            echo "### motor nativo"
+            echo '```'
+            git -C vendor/llama.cpp log -1 --format='%H  %ad' --date=short
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dar permiso de ejecución al wrapper
         run: chmod +x gradlew

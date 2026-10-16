@@ -1,5 +1,148 @@
-KIU - Tanda 9: la voz, la conversación continua y el avatar del chat (v2.8.1)
+KIU - Tanda 13: la gramatica llega al motor (v2.9.3)
 ===============================================================================
+
+NUEVO EN ESTA TANDA
+- La gramatica GBNF ya no es un generador sin destino: hay setGrammar en el nativo
+  y el agente se la pasa antes de pedir la decision. El motor solo puede emitir
+  tokens que encajen, asi que el JSON sale valido sin depender de que el modelo sea
+  bueno AMLando llaves.
+  Se resolvio con un setter aparte y NO cambiando la firma de generate(), que
+  habria roto el puente JS entero (kiuGen) y obligado a tocar los dos lados. El JS
+  pone la gramatica justo antes de pedir la decision; el resto de la app sigue
+  llamando generate(prompt, maxT, temp) sin enterarse.
+- TRES metodos nuevos, y el tercero importa:
+    kiuGenSetGrammar(gbnf)  la aplica la PROXIMA generacion; "" la desactiva
+    kiuGenGrammarPending()  cual espera (diagnostico / tests)
+    kiuGenGrammarOk()       si la ultima se pudo aplicar
+  El tercero es para una trampa: si el motor no la aplica, la generacion sale igual
+  y SIN restringir. Un bucle que cree que esta activa se apoya en un parse que nunca
+  va a venir bien, y el sintoma ("sale JSON roto") apunta a la validacion, que es la
+  innocent.
+- La gramatica se CONSUME (generate() la toma y la borra) y stopGen() la limpia.
+  Sin esto queda pegada y la respuesta de chat que viene despues sale forzada a
+  emitir un {"tool":...}. No se ve como un bug de gramatica: se ve como un bug de
+  chat, en otra pantalla, mas tarde. Hay test para las dos vias.
+- Va al FINAL de la cadena de samplers (es lo que decide si un token se puede
+  emitir) y motor.js manda temp 0 cuando manda gramatica, para no depender de
+  cual de los dos gana el conflicto con el sampler aleatorio.
+- Shim de la firma igual que el de las penalidades: si el vendor no la expone, se
+  omite el sampler y la generacion sigue sin gramatica. Perder una mejora opcional
+  no puede romper el APK.
+- App v2.9.3 (versionCode 41). 206 tests en verde.
+
+PENDIENTE DE ESTA TANDA
+- Que el C++ compile. El SFINAE de kiu_grammar_impl(0, a...) elige el overload
+  int para una llamada directa de 3 argumentos (la firma conocida), pero eso solo
+  lo confirma un compilador. Es lo primero que va a decir ./gradlew :app:assembleDebug.
+
+CÓMO PROBAR
+- ./gradlew :app:assembleDebug
+- Con el agente prendido y un modelo chico: mandale un pedido que llame a una
+  herramienta. Con la gramatica activa el JSON sale al primer intento; mirá si
+  bajan los reintentos respecto de v2.9.2.
+- Para ver si la gramatica se aplico de verdad: kiuGenGrammarOk() tiene que devolver
+  true. Si devuelve false, el motor genero texto sin restringir y el bucle cae al
+  parse + reintento (que igual hace falta: un modelo chico va a fallar el JSON de
+  vez en cuando).
+
+TANDA 12 (v2.9.2)
+- El motor nativo ya NO se compila contra llama.cpp de master. El pin esta en
+  scripts/vendor_llama.sh (v0.7.0 + su SHA) y el CI lo lee de ahi. Antes un commit
+  de upstream podia romper el build sin que cambiara nada del repo, sin forma de
+  volver atras. El script trae el TAG y VERIFICA que el commit sea el esperado: si
+  upstream movio el tag, para con ruido en vez de compilar otro codigo. El CI lo
+  muestra en el resumen del run, asi un fallo de compilacion dice contra que commit
+  fue.
+  * PROBADO: ./scripts/vendor_llama.sh --show  ->  imprime el pin y el estado local
+  * PENDIENTE: correr ./gradlew :app:assembleDebug para confirmar que v0.7.0
+    compila contra el JNI actual. No se pudo verificar aca (no hay NDK).
+- Prefill del agente: -35%. El manifiesto era 435 tokens y era el 80% del costo de
+  una decision (544 tok) en la CPU del telefono. Ahora 259 y 351. Ademas el
+  mensaje del usuario iba DOS veces en el prompt; con historial ya no se repite.
+  Descripciones de parrafo -> disparadores, y un TECHO en los tests: si alguien
+  vuelve a escribir un parrafo ahi, se pone rojo.
+- KiuAgente.grammar(): genera la GBNF desde el mismo esquema que valida y que
+  documenta el prompt. Los ENUM quedan enumerados (device_action no es texto
+  libre) y validate() los revisa tambien, porque la gramatica no siempre esta
+  activa. Generador en JS puro, testeado con un validador de GBNF.
+  OJO: la gramatica hace que el JSON sea VALIDO, no que la herramienta sea la
+  CORRECTA. Para eso siguen la validacion y la observacion que vuelve al bucle.
+- Falta el pegamento JNI (kiuGenGrammar + llama_sampler_init_grammar): ~40 lineas
+  que no se pueden compilar ni probar aca, asi que no las incluye esta tanda.
+- App v2.9.2 (versionCode 40). 199 tests en verde.
+
+CÓMO PROBAR
+- ./scripts/vendor_llama.sh --pull  y después  ./gradlew :app:assembleDebug
+  (el primer build con el pin: si el JNI no compila contra v0.7.0, se shimmea).
+- Con el agente prendido: mandale un pedido largo y mirá que la espera por la
+  decisión no se alargue respecto de v2.9.1.
+
+TANDA 11 (v2.9.1)
+- js/kiu-agente.js NUEVO: registro de herramientas que el MODELO elige.
+  Seis herramientas (alarma, agenda, contactos, llamar, documentos, acción del
+  teléfono), cada una envolviendo algo que ya existía en vez de reimplementarlo.
+- El modelo propone, este archivo decide qué se ejecuta: nombre inexistente,
+  argumento inexistente, obligatorio que falta, tipo que no cierra o argumento
+  gigante -> se rechaza, y el MOTIVO vuelve al modelo para que el segundo intento
+  acierte.
+- args (el esquema) genera a la vez el prompt y la validación: no pueden
+  desalinearse. La gramática GBNF se va a derivar de ahí cuando el nativo la
+  soporte.
+- Enrutado DESPUÉS de skills/cerebro/ReAct (lo conocido no gasta un token) y
+  ANTES de la generación final. Si no hizo nada, el flujo sigue igual.
+- Apagado por defecto, con toggle en Ajustes. Si lo prendés sin modelo cargado,
+  te avisa en vez de fingir que quedó activo.
+- BUG REAL que encontraron los tests: isDone() daba "terminado" cuando el JSON
+  no traía la palabra "listo", así que un modelo que solo devolvía la herramienta
+  (sin entender la instrucción) veía el bucle cortar ANTES de ejecutar nada.
+- App v2.9.1 (versionCode 39). 180 tests en verde (29 nuevos en
+  tests/agente.test.mjs).
+
+CÓMO PROBAR
+- Modelos -> descargá y cargá un modelo. Ajustes -> prendé "Agente con herramientas".
+- Probá con pedidos que los regex no cubren, tipo "dejame un recordatorio para
+  sacar las gallinas" o "decime que hay en mi agenda el jueves".
+- Mirá que no rompe nada: "poné una alarma a las 7" la sigue agarrando el cerebro
+  al instante, sin gastar un token.
+
+LO QUE NO SE HIZO Y POR QUE
+- GBNF en el nativo: vendor_llama.sh clona llama.cpp de master SIN PIN. Tocar el
+  JNI con eso flotando es Gamble; hay que fijar el commit primero.
+- Confirmación antes de actuar: llamar abre el marcador (no llama solo), pero no
+  hay diálogo de confirmación. Es la costura obvia para la próxima.
+- Visión on-device: mtmd + .mmproj son ~300 líneas de C++ en un loop de decode a
+  mano, sin forma de probarlas sin NDK ni llama.cpp vendorizado.
+
+TANDA 10 (v2.9.0)
+- Leer la agenda. Kiu ya sabía escribir eventos pero no leerlos, así que
+  "¿qué tengo mañana?" no tenía respuesta:
+  * MainActivity.calendarList(query, desde, hasta) — mismo molde que contacts(),
+    devuelve JSON o "NEED_PERM". Consulta CalendarContract.Instances (que ya expande
+    la recurrencia), con tope de 40 eventos y 60 días de ventana.
+  * READ_CALENDAR, solo lectura. Para escribir se sigue usando el Intent INSERT del
+    sistema: no se pide WRITE_CALENDAR.
+  * KiuBrain entiende las DOS preguntas distintas: "¿qué tengo mañana?" (por
+    ventana) y "¿tengo dentista mañana?" (por contenido). Lo decide qué palabra
+    sigue al verbo, no una palabra suelta.
+  * El resumen matutino mete los eventos del día (tope 5), y todo el bloque está
+    dentro del if de permiso: a las 8am la app no le pide nada a nadie.
+  * Sin permiso, Kiu DICE que necesita permiso. Devolver una agenda vacía haría
+    creer al usuario que no tiene eventos, que es peor que un error.
+- Arreglo de paso: brain.js mezclaba window.KiuApp y KiuApp pelado. En el WebView
+  son lo mismo, pero el arnés de tests usa {window:{}} (objeto aparte del global),
+  así que brain.test.mjs —con 13 tests— nunca ejercitó ni una rama que use KiuApp:
+  contactos, acciones del dispositivo, y ahora la agenda. El arnés nuevo modela
+  window === global como el navegador.
+- App v2.9.0 (versionCode 38). 151 tests en verde (16 nuevos en
+  tests/calendario.test.mjs).
+
+CÓMO PROBAR
+- Decile "¿qué tengo mañana?", "¿qué tengo el viernes?", "¿tengo dentista mañana?".
+- Ajustes → activa el permiso de agenda la primera vez que lo pidas.
+- Esperá el resumen de la mañana: ahora lista los eventos del día.
+
+LO DE SIEMPRE
+
 
 LO QUE ESTABA ROTO
 - La palabra de activación NO respondía y el modo conversación continua tampoco.
@@ -117,14 +260,14 @@ CÓMO PROBAR
 - Compilar:  ./gradlew :app:assembleDebug   (JDK 17 + Android SDK 34 + NDK)
   (con vendor presente, Gradle compila llama.cpp y deja los .so en
    app/src/main/jniLibs/<ABI>/)
-- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.8.1-release.apk
-- Tests:     node --test tests/*.test.mjs   (Node 18+, 135 tests)
+- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.9.3-release.apk
+- Tests:     node --test tests/*.test.mjs   (Node 18+, 206 tests)
 - Contrato del puente:  python3 scripts/bridge_audit.py
 - RAG sin congelamientos: Ajustes → Documentos, indexá un PDF grande y seguí
   usando la app mientras indexa (las animaciones no se cortan).
 - Nuevo proveedor de API: poné su URL https://…/v1 en Proveedores; la llamada
   viaja por el proxy de Java sin tocar el código.
-- Release GitHub: git tag v2.8.1 && git push --tags
+- Release GitHub: git tag v2.9.3 && git push --tags
 
 NO INCLUIDO
 - vendor/llama.cpp (~200 MB): se restaura con ./scripts/vendor_llama.sh

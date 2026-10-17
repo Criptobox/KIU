@@ -2,6 +2,50 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.10.0] — El error siguiente: un miembro que no existe
+
+`r.resolveInfo.serviceInfo` no compila. **`ResolveInfo` ES el tipo**: su `serviceInfo`
+va directo, no anidado bajo un `resolveInfo`. Doble anidamiento, y `cannot find
+symbol`.
+
+O sea, el arreglo de 2.9.9 funcionó — el build pasó de «el script no compila» a
+`compileDebugJavaWithJavac`, ochenta líneas de log más adentro. Esto es el error
+que decía que podía venir detrás.
+
+### El aviso estaba en la línea 52, y yo estaba mirando la 1800
+
+El mismo log traía un warning que era el comienzo de todo:
+
+```
+AndroidManifest.xml:63:9-41: Warning: android:extractNativeLibs should not be
+specified in this source AndroidManifest.xml file
+```
+
+No lo miré, porque estaba buscando la línea 1800 del error. El warning decía que
+`android:extractNativeLibs` tiene que estar en el archivo de build — y ya estaba
+(`jniLibs.useLegacyPackaging = true`). Estaba en los dos lados, y el del manifiesto
+no hacía nada.
+
+**Lo saqué del manifiesto. Y casi rompo todo por hacerlo.** Puse el comentario
+explicativo entre los atributos del `<application>`, y en XML **un comentario no
+puede ir adentro de un start-tag**. El manifiesto dejó de parsear entero. Lo agarró
+el test que escribí para verificar el cambio, tres segundos después — que es la
+única razón de que no haya llegado al CI.
+
+### Y ahora sí puedo verificar Java de verdad
+
+Apareció una forma de bajar un `android.jar` (API 15, de Maven Central). Con eso
+compilo el proyecto y filtro lo que la API vieja no tiene (`NotificationChannel`,
+`Voice`, `checkSelfPermission`, `R`, `androidx.webkit`, Vosk…). **Los dos errores
+que reportó el CI no aparecen, y no queda ninguno sin explicar por la versión
+del SDK.**
+
+Es un chequeo parcial — el SDK real es API 34 y esto es API 15 — pero convierte
+«no puedo distinguir si falta la clase o si usé mal un miembro» en una respuesta.
+Eso era exactamente lo que me frenaba.
+
+**Suite: 252 → 255 tests.**
+
 ## [2.9.9] — El build se cayó en el CI por dos líneas
 
 Sin cambios de comportamiento: el arreglo es que el build compile. El CI lo dijo

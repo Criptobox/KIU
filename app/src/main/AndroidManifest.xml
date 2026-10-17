@@ -58,9 +58,16 @@
         <package android:name="com.google.android.apps.youtube.music"/>
     </queries>
 
+    <!-- v2.9.9: extractNativeLibs se fue de acá. AGP avisa que ese atributo tiene
+         que estar en el archivo de build, y ya está: packaging { jniLibs.useLegacyPackaging
+         = true }. Estaba en los dos lados y el que manda es el build; el del manifiesto
+         era ruido que además generaba un warning en cada compilación.
+
+         OJO: el comentario va antes del tag, no adentro. En XML un comentario no
+         puede ir entre los atributos de un start-tag, y ponerlo ahí rompe el
+         manifiesto entero. -->
     <application
         android:allowBackup="false"
-        android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

@@ -1805,7 +1805,14 @@ public class MainActivity extends Activity {
                         new Intent("android.speech.RecognitionService"), 0);
                 for (ResolveInfo r : ri) {
                     if (nSvc > 0) svc.append(',');
-                    svc.append(q(r.resolveInfo == null ? "?" : r.resolveInfo.serviceInfo.packageName));
+                    /* ResolveInfo ES el tipo del elemento: su serviceInfo va
+                       directo, no anidado bajo resolveInfo. El doble anidamiento no
+                       compila ("cannot find symbol: resolveInfo").
+                       Y serviceInfo puede ser null aunque r no lo sea, así que el
+                       chequeo va sobre él: un null acá tiraba NPE en un equipo con
+                       un servicio de voz raro. */
+                    svc.append(q(r == null || r.serviceInfo == null
+                            ? "?" : r.serviceInfo.packageName));
                     nSvc++;
                 }
             } catch (Throwable th) {

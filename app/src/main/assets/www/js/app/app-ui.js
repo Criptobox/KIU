@@ -4287,7 +4287,7 @@
     getName: function () { return S.name; },
     exportData: function () {
       var payload = {
-        app: 'Kiu', version: '2.9.9', exported: new Date().toISOString(),
+        app: 'Kiu', version: '2.10.0', exported: new Date().toISOString(),
         settings: { name: S.name, mode: S.mode },
         memoria: KiuMem.data,
         alarmas: this.reminders(),

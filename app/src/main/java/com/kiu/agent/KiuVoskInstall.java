@@ -36,6 +36,8 @@ public final class KiuVoskInstall {
         volatile long files = 0;
         volatile long bytes = 0;
         volatile int skipped = 0;
+        volatile long got = 0;      // v2.10.1: bytes copiados (importar desde el selector)
+        volatile long total = 0;    // -1 si el proveedor no informa el tamaño
         volatile boolean cancel = false;
     }
 
@@ -81,32 +83,12 @@ public final class KiuVoskInstall {
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    job.state = "unzip";
-                    ZipInstall.Result res = ZipInstall.extract(zipAbs, destDir, new ZipInstall.Progress() {
-                        @Override
-                        public void onBytes(long total) {
-                            job.bytes = total;
-                        }
-
-                        @Override
-                        public void onFile(long bytes) {
-                            job.files++;
-                        }
-                    });
-                    job.bytes = res.bytes;
-                    job.skipped = res.skipped;
-                    job.err = esc(res.err);
-                    /* Instalar y que no sirva es peor que no instalar: antes de decir
-                       que terminó se comprueba que el modelo quede donde el motor lo
-                       busca. Si no, el usuario ve «listo» y después la palabra de
-                       activación no funciona, sin forma de saber por qué. */
-                    if (!res.ok) {
-                        job.state = "error";
-                    } else if (!ZipInstall.sirveComoModelo(destDir)) {
-                        job.state = "error";
-                        job.err = "el modelo quedó mal puesto: falta am/final.mdl";
-                    } else {
-                        job.state = "done";
+                    extractInto(job, zipAbs, destDir);
+                    /* v2.10.1: un zip que no descomprime está corrupto o cortado; si
+                       se deja, «Bajar» lo vuelve a encontrar «ya descargado» y falla
+                       igual para siempre. Se borra para que el próximo intento baje de nuevo. */
+                    if ("error".equals(job.state)) {
+                        new File(zipAbs).delete();
                     }
                 }
             }, "kiu-vosk-unzip").start();
@@ -114,6 +96,134 @@ public final class KiuVoskInstall {
         } catch (Throwable th) {
             return "{\"st\":\"error\",\"err\":\"" + esc(String.valueOf(th)) + "\"}";
         }
+    }
+
+
+    /** Descomprime y comprueba que el modelo quede donde lo busca el motor. */
+    private static void extractInto(final Job job, String zipAbs, String destDir) {
+        job.state = "unzip";
+        ZipInstall.Result res = ZipInstall.extract(zipAbs, destDir, new ZipInstall.Progress() {
+            @Override
+            public void onBytes(long total) {
+                job.bytes = total;
+            }
+
+            @Override
+            public void onFile(long bytes) {
+                job.files++;
+            }
+        });
+        job.bytes = res.bytes;
+        job.skipped = res.skipped;
+        job.err = esc(res.err);
+        /* Instalar y que no sirva es peor que no instalar: antes de decir que terminó
+           se comprueba que el modelo quede donde el motor lo busca. */
+        if (!res.ok) {
+            job.state = "error";
+        } else if (!ZipInstall.sirveComoModelo(destDir)) {
+            job.state = "error";
+            job.err = "el modelo quedó mal puesto: falta am/final.mdl";
+        } else {
+            job.state = "done";
+        }
+    }
+
+    /** Id fijo del trabajo de «cargar un zip que ya tengo»: el JS lo consulta con wwUnzipStatus. */
+    public static final String IMPORT_ID = "vimport";
+    public static final int REQ_PICK = 7105;
+
+    /** v2.10.1 · Abre el selector de archivos para elegir el .zip del modelo que el usuario
+        ya bajó, para no tener que descargarlo otra vez. El resultado llega a
+        MainActivity.onActivityResult (7105) y de ahí a {@link #importFrom}. */
+    public static void pick(final android.app.Activity activity) {
+        JOBS.remove(IMPORT_ID);
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                    i.setType("*/*");
+                    activity.startActivityForResult(i, REQ_PICK);
+                } catch (Throwable th) {
+                    Job j = new Job();
+                    j.state = "error";
+                    j.err = "no pude abrir el selector de archivos";
+                    JOBS.put(IMPORT_ID, j);
+                }
+            }
+        });
+    }
+
+    /** Copia el zip elegido a la carpeta de modelos y lo instala. */
+    public static void importFrom(final android.content.Context ctx, final android.net.Uri uri) {
+        final Job job = new Job();
+        job.state = "copy";
+        job.total = -1;
+        JOBS.put(IMPORT_ID, job);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                File zip = null;
+                try {
+                    android.database.Cursor c = null;
+                    try {
+                        c = ctx.getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.SIZE}, null, null, null);
+                        if (c != null && c.moveToFirst() && !c.isNull(0)) {
+                            job.total = c.getLong(0);
+                        }
+                    } catch (Throwable ignore) {
+                    } finally {
+                        if (c != null) {
+                            c.close();
+                        }
+                    }
+                    File dir = KiuDownload.modelsDir(ctx);
+                    dir.mkdirs();
+                    zip = new File(dir, "vosk-import.zip");
+                    java.io.InputStream in = ctx.getContentResolver().openInputStream(uri);
+                    if (in == null) {
+                        throw new java.io.IOException("no pude leer el archivo elegido");
+                    }
+                    java.io.FileOutputStream out = new java.io.FileOutputStream(zip);
+                    try {
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while ((n = in.read(buf)) > 0) {
+                            if (job.cancel) {
+                                throw new java.io.IOException("cancelado");
+                            }
+                            out.write(buf, 0, n);
+                            job.got += n;
+                        }
+                    } finally {
+                        try {
+                            in.close();
+                        } catch (Throwable ignore) {
+                        }
+                        out.close();
+                    }
+                    /* un .zip empieza por «PK»: si no, el usuario eligió otra cosa */
+                    java.io.FileInputStream chk = new java.io.FileInputStream(zip);
+                    int b0 = chk.read();
+                    int b1 = chk.read();
+                    chk.close();
+                    if (b0 != 'P' || b1 != 'K') {
+                        job.err = "ese archivo no es un .zip (busca vosk-model-small-es-0.42.zip)";
+                        job.state = "error";
+                        return;
+                    }
+                    extractInto(job, zip.getAbsolutePath(), dir(ctx));
+                } catch (Throwable th) {
+                    job.err = esc(String.valueOf(th.getMessage() != null ? th.getMessage() : th));
+                    job.state = "error";
+                } finally {
+                    if (zip != null) {
+                        zip.delete();
+                    }
+                }
+            }
+        }, "kiu-vosk-import").start();
     }
 
     public static String cancel() {
@@ -130,6 +240,8 @@ public final class KiuVoskInstall {
         }
         StringBuilder b = new StringBuilder(160);
         b.append("{\"st\":\"").append(j.state).append("\"");
+        b.append(",\"got\":").append(j.got);
+        b.append(",\"total\":").append(j.total);
         b.append(",\"files\":").append(j.files);
         b.append(",\"bytes\":").append(j.bytes);
         b.append(",\"skipped\":").append(j.skipped);

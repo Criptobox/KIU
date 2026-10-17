@@ -170,6 +170,11 @@ public class MainActivity extends Activity {
             KiuImport.begin(this, data);
             return;
         }
+        /* v2.10.1: modelo de voz (zip) elegido desde el selector, sin volver a descargarlo */
+        if (i == KiuVoskInstall.REQ_PICK) {
+            KiuVoskInstall.importFrom(this, data);
+            return;
+        }
         /* v2.4.0 (sección 1): copia de seguridad completa vía SAF */
         if (i == 7102) {
             writeDataBackup(data);
@@ -1707,10 +1712,17 @@ public class MainActivity extends Activity {
                     str2 = "android.settings.WIFI_SETTINGS";
                 } else if ("bluetooth".equals(str)) {
                     str2 = "android.settings.BLUETOOTH_SETTINGS";
-                } else if ("sonido".equals(str)) {
+                } else if ("sonido".equals(str) || "volumen".equals(str)) {
+                    /* v2.10.1: el cerebro pide «volumen» y «brillo» (así se llaman sus
+                       claves), pero aquí solo se conocían «sonido» y «pantalla»: caían
+                       en los ajustes generales sin avisar. */
                     str2 = "android.settings.SOUND_SETTINGS";
-                } else if ("pantalla".equals(str)) {
+                } else if ("pantalla".equals(str) || "brillo".equals(str)) {
                     str2 = "android.settings.DISPLAY_SETTINGS";
+                } else if ("tts".equals(str)) {
+                    str2 = "com.android.settings.TTS_SETTINGS";
+                } else if ("voiceinput".equals(str)) {
+                    str2 = "android.settings.VOICE_INPUT_SETTINGS";
                 } else if ("bateria".equals(str)) {
                     str2 = "android.settings.BATTERY_SAVER_SETTINGS";
                 } else if ("apps".equals(str)) {
@@ -1999,6 +2011,14 @@ public class MainActivity extends Activity {
                 return KiuVoskInstall.unzip(MainActivity.this, path);
             } catch (Throwable th) {
                 return "{\"st\":\"error\",\"err\":\"no pude descomprimir\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public void wwPick() {
+            try {
+                KiuVoskInstall.pick(MainActivity.this);
+            } catch (Throwable unused) {
             }
         }
 

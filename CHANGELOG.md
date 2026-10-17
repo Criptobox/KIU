@@ -13,6 +13,9 @@ Formato basado en Keep a Changelog. Fechas en 2026.
 - **Descargas de modelos:** la barra aparecía y desaparecía porque Java informa «downloading»/«cancelled» y el JS solo conocía «run»/«cancel»: al empezar a bajar, el trabajo se borraba de la lista. Se normalizan los estados y el progreso se pinta en sitio (antes se rehacía la lista cada 0,9 s y los botones Pausar/Cancelar perdían el toque).
 - **Modelo de voz (Vosk):** barra de progreso real (descarga) e indeterminada (instalación); los errores de Java («err», «none») ya no dejan el botón en «Bajando…» para siempre; `puedeInstalar` ya no arranca la descarga al consultarlo. Botón «Dar permiso de micrófono» en el diagnóstico.
 - **Crash `W.verReal is not a function`** al terminar de instalar el modelo de voz. **Versión «v?» / «código 0»:** `verReal` usaba `bridge()` (devuelve booleano) en vez de `rawBridge()`; y «Kiu 2.7.0» estaba escrito a mano en `index.html`. Ahora sale del paquete instalado. Versión 2.10.1 (código 49).
+- **Cargar el modelo de voz que ya bajaste:** botón «Cargar el modelo que ya bajé (.zip)» (selector de archivos → copia → instala, con barra). Además, si el zip ya estaba en el teléfono, «Bajar» ahora lo detecta (Java devuelve «done» sin id) y lo instala sin volver a descargar; antes caía en «no pude empezar la descarga». Un zip que no descomprime se borra para no quedar atascado.
+- **Ajustes del sistema:** «volumen» y «brillo» abrían los ajustes generales (Java solo conocía «sonido» y «pantalla»). Nuevos botones en el diagnóstico: ajustes de la voz del teléfono (TTS) y de entrada de voz.
+- **Encabezado:** el título y el subtítulo se mezclaban con el contenido que pasaba por debajo (Modelos, Ajustes).
 - Tests: `tests/voz-comandos.test.mjs`. 263 pasan. **El Java no se pudo compilar acá (sin Android SDK): lo verifica el CI.**
 
 ## [2.10.0] — El error siguiente: un miembro que no existe

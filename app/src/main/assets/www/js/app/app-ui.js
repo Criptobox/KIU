@@ -236,9 +236,15 @@
       if (dvb) {
         dvb.addEventListener('click', function (ev) {
           var tgt = ev.target;
+          if (tgt && tgt.id === 'btn-tts-set') { bridge('openSettings', ['tts']); return; }
+          if (tgt && tgt.id === 'btn-rec-set') { bridge('openSettings', ['voiceinput']); return; }
           if (tgt && tgt.id === 'btn-mic-perm') {
             bridge('listen');   /* pide el permiso; al concederlo empieza a escuchar */
             setTimeout(function () { KiuDiagVoz.verReal(); self.renderDiagVoz(); }, 4000);
+            return;
+          }
+          if (tgt && tgt.id === 'btn-ww-import') {
+            KiuDiagVoz.importar(function () { self.renderDiagVoz(); });
             return;
           }
           var b = tgt && tgt.id === 'btn-ww-install' ? tgt : null;

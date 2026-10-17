@@ -89,11 +89,14 @@ svg { display:block; }
   position:absolute; top:0; left:0; right:0; z-index:8;
   display:flex; align-items:center; gap:10px;
   padding:calc(16px + env(safe-area-inset-top,0px)) max(18px, env(safe-area-inset-right,0px)) 14px max(18px, env(safe-area-inset-left,0px));
-  background:linear-gradient(180deg, rgba(7,11,22,.9) 0%, rgba(7,11,22,.6) 60%, rgba(7,11,22,0) 100%);
+  /* v2.10.1: el degradado llegaba a transparente a media altura del subtítulo y el
+     contenido que pasaba por debajo se leía mezclado con el título (capturas de
+     Modelos y Ajustes). Ahora es casi opaco hasta el final del texto. */
+  background:linear-gradient(180deg, rgba(7,11,22,.97) 0%, rgba(7,11,22,.95) 82%, rgba(7,11,22,0) 100%);
   -webkit-backdrop-filter:blur(18px);
   backdrop-filter:blur(18px);
-  -webkit-mask-image:linear-gradient(180deg,#000 72%,transparent);
-  mask-image:linear-gradient(180deg,#000 72%,transparent);
+  -webkit-mask-image:linear-gradient(180deg,#000 88%,transparent);
+  mask-image:linear-gradient(180deg,#000 88%,transparent);
 }
 .topbar { justify-content:flex-start; }
 .chat-header { justify-content:flex-start; }

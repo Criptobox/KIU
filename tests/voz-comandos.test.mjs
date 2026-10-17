@@ -226,3 +226,42 @@ test('versión: ninguna cadena fija «2.7» en la interfaz', () => {
   assert.doesNotMatch(html, /Kiu v?2\.7\.0/);
   assert.match(html, /id="about-ver"/);
 });
+
+/* ---- v2.10.1: cargar el modelo de voz que ya se bajó ---- */
+const vosk = readFileSync(path.join(javaDir, 'KiuVoskInstall.java'), 'utf8');
+
+test('modelo de voz: un zip ya descargado (st done sin id) se instala en vez de fallar', () => {
+  assert.match(diagSrc, /r\.st === 'done' && r\.path && !r\.id/);
+  assert.match(diagSrc, /KiuDiagVoz\.extrae\(r\.path, cb\)/);
+});
+
+test('modelo de voz: se puede cargar un .zip elegido con el selector de archivos', () => {
+  assert.match(vosk, /REQ_PICK = 7105/);
+  assert.match(vosk, /ACTION_OPEN_DOCUMENT/);
+  assert.match(vosk, /b0 != 'P' \|\| b1 != 'K'/, 'comprueba que sea un zip antes de instalar');
+  assert.match(main, /KiuVoskInstall\.REQ_PICK[\s\S]*KiuVoskInstall\.importFrom\(this, data\)/);
+  assert.match(main, /public void wwPick\(\)/);
+  assert.match(diagSrc, /btn-ww-import/);
+  assert.match(ui, /btn-ww-import[\s\S]*KiuDiagVoz\.importar/);
+});
+
+test('modelo de voz: un zip corrupto se borra para no quedar atascado', () => {
+  assert.match(vosk, /"error"\.equals\(job\.state\)[\s\S]*delete\(\)/);
+});
+
+test('ajustes del sistema: «volumen» y «brillo» llegan a su pantalla, no a los ajustes generales', () => {
+  assert.match(main, /"sonido"\.equals\(str\) \|\| "volumen"\.equals\(str\)/);
+  assert.match(main, /"pantalla"\.equals\(str\) \|\| "brillo"\.equals\(str\)/);
+  assert.match(main, /com\.android\.settings\.TTS_SETTINGS/);
+});
+
+test('diagnóstico de voz: botones a los ajustes cuando falta el TTS o el reconocimiento', () => {
+  assert.match(diagSrc, /btn-tts-set/);
+  assert.match(diagSrc, /btn-rec-set/);
+  assert.match(ui, /openSettings', \['tts'\]/);
+});
+
+test('encabezado: ya no se transparenta el contenido bajo el título', () => {
+  const css = readFileSync(path.join(WWW, 'css', 'app.css'), 'utf8');
+  assert.match(css, /rgba\(7,11,22,\.95\) 82%/);
+});

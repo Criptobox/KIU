@@ -33,7 +33,7 @@ function D(r, puente) {
   /* el puente REAL tiene métodos como funciones: si el arnés los pone como
      números, la sonda de capacidades los ve ausentes y TODO el diagnóstico
      marca instalación mezclada — un falso positivo que hace inútil el test. */
-  ctx.KiuBridge = puente || { kiuDiag() {}, kiuGenSetGrammar() {}, kiuWWStart() {} };
+  ctx.KiuBridge = puente || { kiuDiag() {}, kiuGenSetGrammar() {}, kiuWWStart() {}, wwPick() {} };
   vm.createContext(ctx);
   vm.runInContext(diag, ctx, { filename: 'diag-voz.js' });
   return ctx.KiuDiagVoz;
@@ -71,7 +71,7 @@ test('instalación MEZCLADA: se detecta por capacidad, no por número', () => {
   /* El caso real: assets viejos con nativo nuevo, o al revés. El síntoma es
      "me instala otra versión" sin explicación. Se reconoce porque a este código
      le falta un método del puente, y se dice CUÁL — que es accionable. */
-  const viejo = { kiuDiag() {}, kiuWWStart() {} };   // sin setGrammar (v2.9.2)
+  const viejo = { kiuDiag() {}, kiuWWStart() {}, wwPick() {} };   // sin setGrammar (v2.9.2)
   const v = D(TODO_BIEN, viejo).diagVoz().find((f) => f.titulo === 'Versión instalada');
   assert.equal(v.ok, false);
   assert.match(v.grilla, /kiuGenSetGrammar/, 'tiene que nombrar la capacidad que falta');

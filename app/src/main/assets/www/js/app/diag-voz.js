@@ -40,6 +40,7 @@
     'kiuDiag',        // este mismo diagnóstico
     'kiuGenSetGrammar', // gramatica de muestreo, v2.9.3
     'kiuWWStart',     // palabra de activación local
+    'wwPick',         // v2.10.1: cargar el zip del modelo de voz desde el selector
   ];
 
   /* ---------- 1 · leer el estado real ---------- */
@@ -163,11 +164,23 @@
     if (KiuDiagVoz.raw && KiuDiagVoz.raw.mic === false) {
       h += '<button class="btn-ghost full" id="btn-mic-perm" style="justify-content:center;margin:10px 0 0">Dar permiso de micrófono</button>';
     }
+    if (KiuDiagVoz.raw && KiuDiagVoz.raw.ttsReady === false) {
+      h += '<button class="btn-ghost full" id="btn-tts-set" style="justify-content:center;margin:8px 0 0">Abrir ajustes de la voz del teléfono</button>';
+    }
+    if (KiuDiagVoz.raw && KiuDiagVoz.raw.recogn === false) {
+      h += '<button class="btn-ghost full" id="btn-rec-set" style="justify-content:center;margin:8px 0 0">Abrir ajustes de entrada de voz</button>';
+    }
     if (KiuDiagVoz.prog) {
       h += progHtml();
     } else if (faltaElModelo(filas) && puedeInstalar()) {
       h += '<button class="btn-ghost full" id="btn-ww-install" style="justify-content:center;margin:10px 0 0">'
         + 'Bajar el modelo de voz (39 MB)</button>';
+      if (KiuDiagVoz.puedeImportar()) {
+        h += '<button class="btn-ghost full" id="btn-ww-import" style="justify-content:center;margin:8px 0 0">'
+          + 'Cargar el modelo que ya bajé (.zip)</button>'
+          + '<div style="font:400 11.5px/1.45 system-ui,sans-serif;color:var(--mut);margin-top:5px">'
+          + 'Elegí vosk-model-small-es-0.42.zip desde Descargas. Si ya lo bajó Kiu, tocá «Bajar»: lo detecta y lo instala sin volver a descargar.</div>';
+      }
     }
     if (!malas.length) {
       h += '<div style="font:400 12px/1.5 system-ui,sans-serif;color:var(--mut);margin-top:10px">' +
@@ -228,6 +241,15 @@
       h += '<div style="display:flex;justify-content:space-between;font:500 12.5px system-ui,sans-serif;margin-bottom:5px"><span>Bajando el modelo de voz</span><span>'
         + (p.total ? pct + '% · ' + mb(p.got) + ' de ' + mb(p.total) + ' MB' : 'conectando…') + '</span></div>';
       h += '<progress max="100" value="' + pct + '" style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
+    } else if (p.fase === 'copiando') {
+      var cp = p.total > 0 ? Math.min(100, Math.round(p.got / p.total * 100)) : 0;
+      h += '<div style="display:flex;justify-content:space-between;font:500 12.5px system-ui,sans-serif;margin-bottom:5px"><span>Copiando el zip que elegiste</span><span>'
+        + (p.total > 0 ? cp + '% · ' + mb(p.got) + ' de ' + mb(p.total) + ' MB' : mb(p.got) + ' MB') + '</span></div>';
+      h += p.total > 0 ? '<progress max="100" value="' + cp + '" style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>'
+        : '<progress style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
+    } else if (p.fase === 'eligiendo') {
+      h += '<div style="font:500 12.5px system-ui,sans-serif;margin-bottom:5px">Elegí el archivo vosk-model-small-es-0.42.zip en el selector…</div>';
+      h += '<progress style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
     } else {
       h += '<div style="font:500 12.5px system-ui,sans-serif;margin-bottom:5px">Instalando el modelo (descomprimiendo)…</div>';
       h += '<progress style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
@@ -265,6 +287,15 @@
       App.toast('El modelo ya estaba instalado ✓');
       KiuDiagVoz.verReal();
       if (cb) cb(true);
+      return;
+    }
+    /* v2.10.1 · «LO DESCARGUÉ Y NO LO CARGA». Si el zip ya está en el teléfono, Java
+       contesta st:'done' con la ruta y SIN id (no hay nada que bajar). Aca eso caia en
+       «no pude empezar» y el zip quedaba ahi sin instalarse nunca. Se sigue directo
+       con la descompresión. */
+    if (r.st === 'done' && r.path && !r.id) {
+      App.toast('El zip ya estaba descargado: lo instalo…');
+      KiuDiagVoz.extrae(r.path, cb);
       return;
     }
     if (r.st === 'error' || !r.id) {
@@ -307,6 +338,55 @@
       KiuDiagVoz.pintaProg();
       KiuDiagVoz.sigueDescarga(cb);
     }, 900);
+  };
+
+  /* v2.10.1 · CARGAR EL ZIP QUE YA TENGO. Abre el selector de archivos, Java copia el
+     zip elegido y lo instala, y aca se sigue su estado (wwUnzipStatus('vimport')).
+     Hasta que el usuario elige, Java no tiene trabajo: 'none' significa «esperando». */
+  KiuDiagVoz.puedeImportar = function () {
+    try { return !!(W.KiuBridge && typeof W.KiuBridge.wwPick === 'function'); } catch (e) { return false; }
+  };
+  KiuDiagVoz.importar = function (cb) {
+    if (KiuDiagVoz.instalando) { App.toast('Ya hay una instalación en curso…'); return; }
+    rawBridge('wwPick');
+    KiuDiagVoz.instalando = { id: 'vimport', fase: 'importando' };
+    KiuDiagVoz.prog = { fase: 'eligiendo' };
+    KiuDiagVoz.pintaProg();
+    var esperando = 0;
+    var t = setInterval(function () {
+      var st = {};
+      try { st = JSON.parse(rawBridge('wwUnzipStatus', ['vimport']) || '{}'); } catch (e) { }
+      if (st.st === 'none' || st.st === undefined) {
+        /* el selector sigue abierto o el usuario volvió sin elegir: se espera un rato */
+        esperando += 600;
+        if (esperando > 180000) {
+          clearInterval(t);
+          KiuDiagVoz.instalando = null; KiuDiagVoz.prog = null; repinta();
+        }
+        return;
+      }
+      if (st.st === 'copy') {
+        KiuDiagVoz.prog = { fase: 'copiando', got: st.got || 0, total: st.total || 0 };
+        KiuDiagVoz.pintaProg();
+      } else if (st.st === 'unzip') {
+        if (!KiuDiagVoz.prog || KiuDiagVoz.prog.fase !== 'instalando') {
+          KiuDiagVoz.prog = { fase: 'instalando' };
+          KiuDiagVoz.pintaProg();
+        }
+      } else if (st.st === 'done') {
+        clearInterval(t);
+        KiuDiagVoz.instalando = null; KiuDiagVoz.prog = null;
+        KiuDiagVoz.verReal();
+        App.toast('Listo: modelo de voz cargado ✓');
+        if (cb) cb(true); else repinta();
+      } else if (st.st === 'error') {
+        clearInterval(t);
+        KiuDiagVoz.instalando = null; KiuDiagVoz.prog = null;
+        repinta();
+        App.toast('No se pudo cargar: ' + (st.err || 'sin motivo'));
+        if (cb) cb(false);
+      }
+    }, 600);
   };
 
   KiuDiagVoz.extrae = function (zipPath, cb) {

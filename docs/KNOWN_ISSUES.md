@@ -162,6 +162,17 @@
       i18n terminado conviene moverla a `i18n.js` junto con el resto de las cadenas.
 - [ ] El i18n cubre el chrome (navegación, inicio, ajustes, botones); el texto dinámico de
       `app-ui.js` y las respuestas de `brain.js` siguen en español: falta extraer esas cadenas.
+- [x] **El modelo de la palabra de activación era manual** (39 MB por `adb`, sin
+      pantalla y sin aviso) → `KiuVoskInstall` + `ZipInstall`: se baja desde el
+      diagnóstico, con SHA fijado, zip-slip cortado y comprobación de que el modelo
+      quedó donde el motor lo busca. (2026-10, v2.9.8)
+- [ ] **La capa Java casi no tiene tests.** 4.900 líneas y `app/src/test` no existe. Los tres
+      bugs de audio de la tanda 16 estaban todos ahí, y ninguno lo vio un test: no
+      porque no se probara, sino porque no había cómo. Medidas: `Backoff.java` es
+      lógica pura sin Android (testeable), `tests/java-estructura.test.mjs` balancea
+      llaves y paréntesis de todo el Java, y el CI ya corre `:app:testDebugUnitTest`
+      (hoy no-op). Falta JUnit de verdad para el ciclo de `AudioRecord`, el init de
+      TTS y el `cycle()` con su watchdog. (2026-10, v2.9.6)
 - [ ] Los tests de arranque (`tests/boot.test.mjs` + `helpers.mjs`) usan un DOM falso: cubren
       el cableado cross-módulo, no el render real (para eso hay que probar en el
       teléfono/emulador).

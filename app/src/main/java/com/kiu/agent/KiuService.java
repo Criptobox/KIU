@@ -35,6 +35,25 @@ public class KiuService extends Service {
     private long wakeAt = 0;
     private boolean started = false;
     private boolean listening = false;
+
+    /* v2.9.3 · WATCHDOG. BUG REAL encontrado auditando el arranque de voz.
+
+       El bucle se rearma SOLO desde onResults() y onError(): cycle() pone
+       listening=true y vuelve SIN reprogramar, confiando en que el motor de
+       voz llame a alguno de los dos. Ese supuesto no siempre se cumple: si
+       startListening() arranca y el recognizer se queda colgado (sin red, motor
+       Google que no responde, se queda pensando en silencio), NO llega ni
+       onResults ni onError. Entonces listening queda en true para siempre,
+       cycle() sigue volviendo por el `if (listening) return` y Kiu deja de
+       escuchar en silencio: sin error, sin log, sin aviso en pantalla.
+
+       Es el peor modo de falla posible para algo que el usuario describe como
+       "no me reconoce la voz": no hay nada que reportar porque nada falló.
+
+       El watchdog no arregla el motor, pero convierte un colgado silencioso e
+       infinito en un reintento con backoff que por lo menos se puede ver. */
+    private static final long MAX_SESSION_MS = 12000L;
+    private long listenSince = 0L;
     private final Runnable cycleR = new Runnable() { // from class: com.kiu.agent.KiuService.1
         @Override // java.lang.Runnable
         public void run() {
@@ -202,6 +221,16 @@ public class KiuService extends Service {
                 }
             }
             if (this.listening) {
+                /* watchdog: si la sesión se pasó de tiempo, el motor no avisó.
+                   Se destructura y se reintenta con backoff, en vez de quedarse
+                   mudo para siempre. */
+                if (listenSince > 0L && System.currentTimeMillis() - listenSince > MAX_SESSION_MS) {
+                    listening = false;
+                    listenSince = 0L;
+                    destroy();
+                    fails++;
+                    schedule(Math.min(fails, 5) * 400L + 300L);
+                }
                 return;
             }
             Intent intent = new Intent("android.speech.action.RECOGNIZE_SPEECH");
@@ -214,6 +243,7 @@ public class KiuService extends Service {
             try {
                 this.sr.startListening(intent);
                 this.listening = true;
+                listenSince = System.currentTimeMillis();
             } catch (Exception unused2) {
                 destroy();
                 schedule(2500L);
@@ -224,6 +254,7 @@ public class KiuService extends Service {
     /* JADX INFO: Access modifiers changed from: private */
     public void destroy() {
         this.listening = false;
+        listenSince = 0L;
         SpeechRecognizer speechRecognizer = this.sr;
         if (speechRecognizer != null) {
             try {

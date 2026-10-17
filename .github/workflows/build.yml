@@ -87,6 +87,27 @@ jobs:
             echo "::warning::Faltan los secretos KIU_KEYSTORE_BASE64 / KIU_KEYSTORE_PASSWORD. El APK release firma con la clave debug: sirve para probar, no para actualizar la app ya instalada."
           fi
 
+      - name: Tests Node (incluye el Java que se ejecuta de verdad)
+        shell: bash
+        run: |
+          # El runner de GitHub ya trae un JDK, así que tests/java.test.mjs
+          # EJECUTA Backoff en vez de solo leerlo con regex. Acá corre siempre.
+          java -version
+          node --test tests/*.test.mjs
+
+      - name: Tests de la app (JUnit, si hay)
+        shell: bash
+        run: |
+          # v2.9.5: la capa Java no tenia NI UN test — 4.900 lineas sin cobertura, y
+          # ahi viven los tres bugs de audio que se reportaban. Todavia no hay
+          # fuentes en app/src/test, asi que esto es un no-op que pasa; queda el
+          # cableado listo para cuando se agreguen, y el CI no arranca el build
+          # de un APK con tests rojos.
+          ./gradlew :app:testDebugUnitTest --no-daemon --console=plain || {
+            echo "::error::Los tests de app/src/test fallaron: no se publica el APK"
+            exit 1
+          }
+
       - name: Compilar (debug + release firmado)
         shell: bash
         run: |

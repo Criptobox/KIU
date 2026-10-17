@@ -32,6 +32,7 @@ const SCRIPTS = [
   'js/app/catalog.js',
   'js/app/models.js',
   'js/app/motor.js',
+  'js/app/diag-voz.js',
   'js/app/app-ui.js',
 ];
 

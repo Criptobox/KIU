@@ -5,6 +5,8 @@ import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
 import android.content.IntentFilter;
 import android.hardware.camera2.CameraCharacteristics;
@@ -77,6 +79,38 @@ public class MainActivity extends Activity {
     WebViewAssetLoader assetLoader;
     static final String ASSET_BASE = "https://appassets.androidplatform.net/assets/";
     private boolean ttsReady = false;
+    private String ttsErr = "";
+    private Runnable ttsRetry;   // reintento de arranque del TTS, pendiente de correr
+
+    /* v2.9.3: escape para armar JSON a mano desde Java.
+       Los nombres de paquete de los servicios de voz y el motor de TTS vienen
+       del sistema: son valores que NO controlamos nosotros y un nombre raro (con
+       comilla o barra) rompería el JSON entero y el diagnóstico volvería a ser
+       inútil justo cuando hay que usarlo. */
+    static String q(String s) {
+        if (s == null) {
+            return "\"\"";
+        }
+        StringBuilder b = new StringBuilder(s.length() + 8);
+        b.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"' || c == '\\') {
+                b.append('\\').append(c);
+            } else if (c == '\n') {
+                b.append("\\n");
+            } else if (c == '\r') {
+                b.append("\\r");
+            } else if (c == '\t') {
+                b.append("\\t");
+            } else if (c < 0x20) {
+                b.append(String.format(java.util.Locale.US, "\\u%04x", (int) c));
+            } else {
+                b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
     private float ttsRate = 1.0f;
     private boolean pendingListen = false;
     private boolean pendingWake = false;
@@ -347,7 +381,45 @@ public class MainActivity extends Activity {
         this.pendingCmd = stringExtra;
     }
 
+    /* v2.9.5 · EL TTS PODÍA NO ARRANCAR NUNCA, EN SILENCIO.
+
+       initTts() se llamaba UNA sola vez, en onCreate. ttsReady se ponía en true
+       únicamente dentro de la rama `i == 0`. Si el motor de TTS no estaba listo
+       en ese instante —muy común en arranque en frío, y también cuando el
+       servicio de voz se instala o actualiza después de la app— el init
+       fallaba, ttsReady quedaba false PARA TODA LA VIDA de la app, speak()
+       hacía return en la primera línea, y no había toast, ni error, ni
+       reintento: nadie se enteraba.
+
+       El síntoma era exactamente el reportado: "el audio no funciona".
+
+       Ahora reintenta con backoff y, si de verdad no arranca, lo DICE por el
+       puente (nexoVoiceError) para que se vea en el diagnóstico de voz. Un
+       fallo que no se anuncia no se puede arreglar: el usuario no tiene forma
+       de distinguir "Kiu está pensando" de "Kiu no tiene voz". */
+    private static final int TTS_RETRY_BASE_MS = 700;
+    private static final int TTS_RETRY_MAX_MS = 5000;
+    private static final int TTS_MAX_RETRIES = 4;
+
+    private Backoff ttsBackoff;
+
     private void initTts() {
+        this.ttsBackoff = new Backoff(TTS_RETRY_BASE_MS, TTS_RETRY_MAX_MS, TTS_MAX_RETRIES);
+        doInitTts();
+    }
+
+    /** Un intento de arranque del TTS. Reintenta solo mientras `ttsPending`. */
+    private void doInitTts() {
+        /* Reintentar sin cerrar el anterior deja un motor de voz vivo por
+           intento: cada uno tiene su binder y su proceso. Con cuatro intentos no
+           es una-catástrofe, pero el leak es gratis de evitar. */
+        if (this.tts != null) {
+            try {
+                this.tts.shutdown();
+            } catch (Throwable ignored) {
+            }
+            this.tts = null;
+        }
         this.tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() { // from class: com.kiu.agent.MainActivity.3
             @Override // android.speech.tts.TextToSpeech.OnInitListener
             public void onInit(int i) {
@@ -394,9 +466,40 @@ public class MainActivity extends Activity {
                         }
                     });
                     MainActivity.this.ttsReady = true;
+                    MainActivity.this.ttsErr = "";
+                } else {
+                    /* no arrancó: se intenta de nuevo con backoff. Al agotar los
+                       intentos se avisa, porque "no tengo voz" y "estoy pensando"
+                       se ven igual desde afuera. */
+                    MainActivity.this.ttsReady = false;
+                    MainActivity.this.ttsErr = "el motor de voz no arranco (codigo " + i + ")";
+                    MainActivity.this.retryTts();
                 }
             }
         });
+    }
+
+    /** Reintenta el arranque del TTS. Si no queda nada, lo dice una vez. */
+    private void retryTts() {
+        if (this.ttsBackoff == null) {
+            return;
+        }
+        long d = this.ttsBackoff.siguiente();
+        if (d < 0) {
+            js("nexoVoiceError('sin voz: el motor de TTS no arranco')");
+            return;
+        }
+        if (this.ttsRetry != null) {
+            this.tHandler.removeCallbacks(this.ttsRetry);
+        }
+        this.ttsRetry = new Runnable() { // from class: com.kiu.agent.MainActivity.3.2
+            @Override // java.lang.Runnable
+            public void run() {
+                MainActivity.this.ttsRetry = null;
+                doInitTts();
+            }
+        };
+        this.tHandler.postDelayed(this.ttsRetry, d);
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -1648,6 +1751,148 @@ public class MainActivity extends Activity {
                 return KiuNative.grammarOk();
             } catch (Throwable th) {
                 return false;
+            }
+        }
+
+        /* v2.9.3 · DIAGNÓSTICO DE VOZ.
+           Existence justificada: el reporte fue «el audio no funciona, no me
+           reconoce la voz y no activa por reconocimiento de voz», y con la
+           evidencia que había no se distinguían cuatro causas que se ven
+           IGUAL desde afuera:
+             1 · el APK instalado es viejo (la UI mostraba una versión escrita a
+                 mano en el JS, que puede mentir respecto del paquete real)
+             2 · no hay servicio de reconocimiento instalado
+             3 · no hay modelo local de la palabra de activación (no va en el
+                 repo: son 40 MB) → el camino local está muerto sin avisar
+             4 · falta el permiso de micrófono
+           Un diagnóstico que devuelve el estado REAL de las cuatro es la única
+           forma de no seguir adivinando. Todo lo que devuelve sale de
+           PackageManager / SpeechRecognizer / TTS / WakeWordEngine: nada se
+           deduce ni se supone. */
+        @JavascriptInterface
+        public String kiuDiag() {
+            StringBuilder b = new StringBuilder(512);
+            b.append('{');
+            /* --- 1 · la versión REAL del paquete instalado, no la del JS --- */
+            String vn = "?";
+            long vc = 0;
+            try {
+                PackageManager pm = MainActivity.this.getPackageManager();
+                vn = pm.getPackageInfo(MainActivity.this.getPackageName(), 0).versionName;
+                vc = pm.getPackageInfo(MainActivity.this.getPackageName(), 0).versionCode;
+            } catch (Throwable th) {
+                vn = "?";
+            }
+            b.append("\"version\":").append(q(vn)).append(",");
+            b.append("\"versionCode\":").append(vc).append(",");
+            /* --- 2 · micrófono --- */
+            b.append("\"mic\":")
+             .append(MainActivity.this.checkSelfPermission("android.permission.RECORD_AUDIO") == 0)
+             .append(",");
+            /* --- 3 · reconocimiento de voz: disponible + qué servicios hay --- */
+            boolean rec = false;
+            try {
+                rec = SpeechRecognizer.isRecognitionAvailable(MainActivity.this);
+            } catch (Throwable th) {
+                rec = false;
+            }
+            b.append("\"recogn\":").append(rec).append(",");
+            StringBuilder svc = new StringBuilder();
+            int nSvc = 0;
+            try {
+                PackageManager pm = MainActivity.this.getPackageManager();
+                java.util.List<ResolveInfo> ri = pm.queryIntentServices(
+                        new Intent("android.speech.RecognitionService"), 0);
+                for (ResolveInfo r : ri) {
+                    if (nSvc > 0) svc.append(',');
+                    svc.append(q(r.resolveInfo == null ? "?" : r.resolveInfo.serviceInfo.packageName));
+                    nSvc++;
+                }
+            } catch (Throwable th) {
+            }
+            b.append("\"recogSvcs\":[").append(svc).append("],");
+            /* --- 4 · TTS --- */
+            b.append("\"ttsReady\":").append(MainActivity.this.tts != null && MainActivity.this.ttsReady).append(",");
+            /* el MOTIVO, no solo el hecho: "no arrancó" sin decir por qué no
+               deja al usuario igual que antes, con la misma pregunta. */
+            b.append("\"ttsErr\":").append(q(MainActivity.this.ttsErr)).append(",");
+            String engine = "?";
+            String lang = "?";
+            try {
+                if (MainActivity.this.tts != null) {
+                    if (MainActivity.this.tts.getDefaultEngine() != null) {
+                        engine = MainActivity.this.tts.getDefaultEngine();
+                    }
+                    Locale l = MainActivity.this.tts.getLanguage();
+                    if (l != null) {
+                        lang = l.toString();
+                    }
+                }
+            } catch (Throwable th) {
+            }
+            b.append("\"ttsEngine\":").append(q(engine)).append(",");
+            b.append("\"ttsLang\":").append(q(lang)).append(",");
+            /* --- 5 · palabra de activación local: ¿está el modelo? --- */
+            boolean mdl = false;
+            String msize = "-";
+            try {
+                java.io.File f = new java.io.File(WakeWordEngine.modelDir(MainActivity.this), "final.mdl");
+                mdl = f.exists();
+                if (mdl) {
+                    msize = String.format(java.util.Locale.US, "%.0f MB", f.length() / 1048576.0);
+                }
+            } catch (Throwable th) {
+            }
+            b.append("\"voskModel\":").append(mdl).append(",");
+            b.append("\"voskSize\":").append(q(msize)).append(",");
+            try {
+                b.append("\"voskState\":").append(q(WakeWordEngine.get().statusJson(MainActivity.this))).append(",");
+            } catch (Throwable th) {
+                b.append("\"voskState\":\"{}\",");
+            }
+            /* --- 6 · servicio de la palabra de activación --- */
+            b.append("\"wwActive\":").append(KiuService.ACTIVE).append(",");
+            b.append("\"wwSuspended\":").append(KiuService.SUSPENDED).append(",");
+            b.append("\"speaking\":").append(MainActivity.SPEAKING);
+            b.append('}');
+            return b.toString();
+        }
+
+        /* v2.9.7 · instalar el modelo de la palabra de activación desde la app.
+           Son 39 MB y no van en el repo, así que hasta ahora la única forma de
+           tenerlos era adb push: sin modelo, la palabra de activación local está
+           muerta y nada lo decía.
+
+           El flujo son tres llamadas y no una porque son tres estados distintos que
+           fallan distinto: wwInstall arranca la descarga (que reusa KiuDownload, con
+           SHA y reanudación), wwUnzip la descomprime, y wwUnzipStatus reporta. La
+           comprobación de que el modelo quedó donde el motor lo busca la hace
+           KiuVoskInstall, no el JS: si esa comprobación fuera del lado del puente,
+           un cliente nuevo podría saltársela. */
+        @JavascriptInterface
+        public String wwInstall() {
+            try {
+                return KiuVoskInstall.start(MainActivity.this);
+            } catch (Throwable th) {
+                return "{\"st\":\"error\",\"err\":\"no pude iniciar la descarga\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public String wwUnzip(String path) {
+            try {
+                return KiuVoskInstall.unzip(MainActivity.this, path);
+            } catch (Throwable th) {
+                return "{\"st\":\"error\",\"err\":\"no pude descomprimir\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public String wwUnzipStatus(String id) {
+            try {
+                return KiuVoskInstall.status(id);
+            } catch (Throwable th) {
+                return "{\"st\":\"error\"}";
             }
         }
 

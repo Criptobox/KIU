@@ -222,6 +222,26 @@
       if (vph) vph.addEventListener('click', function () { self.hangUp(); });
       var bd = document.getElementById('btn-diag');
       if (bd) bd.addEventListener('click', function () { self.diag(); });
+      /* v2.9.3: leer la versión real del paquete apenas arranca, para que el
+         rótulo de arriba diga la verdad incluso antes de que se toque nada. */
+      this.verReal();
+      var bdv = document.getElementById('btn-diag-voz');
+      if (bdv) bdv.addEventListener('click', function () { self.renderDiagVoz(); });
+      /* El botón de instalar se crea en cada render, así que se engancha por
+         DELEGACIÓN en el contenedor y no por id: no hay que volver a buscarlo y no
+         se acumulan listeners si el usuario abre y cierra el diagnóstico varias
+         veces (que es lo que pasaba con cualquier forma de engancharlo directo). */
+      var dvb = document.getElementById('diag-voz-box');
+      if (dvb) {
+        dvb.addEventListener('click', function (ev) {
+          var tgt = ev.target;
+          var b = tgt && tgt.id === 'btn-ww-install' ? tgt : null;
+          if (!b) { return; }
+          b.disabled = true;
+          b.textContent = 'Bajando…';
+          KiuDiagVoz.instalar(function () { self.renderDiagVoz(); });
+        });
+      }
       this.renderStatus();
       this.renderHome();
       this.renderChat();
@@ -605,7 +625,7 @@
       var pr = document.getElementById('profile-name');
       if (pr) pr.textContent = S.name || 'Tu nombre';
       var ps = document.getElementById('profile-sub');
-      if (ps) ps.textContent = 'Kiu v2.9.3 · Agente personal';
+      if (ps) ps.textContent = 'Kiu v' + (this.ver || '?') + ' · Agente personal';
       var psub = document.getElementById('persona-sub');
       if (psub) psub.textContent = ({ normal: 'Normal', divertida: 'Divertida', tecnica: 'Técnica', breve: 'Breve' })[S.persona] + ' · ajustá cómo te habla';
       this.renderRealSubs();
@@ -1109,6 +1129,16 @@
       var sv = document.getElementById('orch-kiuvis');
       if (sv) sv.addEventListener('change', function () { S.router.kiuVis = this.value; saveS(); self.renderOrch(); });
     },
+
+    /* ---------- v2.9.3 · diagnóstico de voz ----------
+       La lógica vive en app/diag-voz.js, que es un módulo chico con una sola
+       dependencia (bridge). Estaba acá adentro y no se podía testear: cargar
+       app-ui.js en un arnés arrastra media app (store, DOM, timers) y los tests
+       pasaban sin ejercitar nada, que es la forma más fácil de tener un test
+       que no prueba. */
+    verReal: function (cb) { return KiuDiagVoz.verReal(cb); },
+    diagVoz: function () { return KiuDiagVoz.diagVoz(); },
+    renderDiagVoz: function () { return KiuDiagVoz.render(); },
 
     /* ---------- v1.7.0: diagnóstico «Revisar mi configuración» ---------- */
     diag: function () {
@@ -4257,7 +4287,7 @@
     getName: function () { return S.name; },
     exportData: function () {
       var payload = {
-        app: 'Kiu', version: '2.9.3', exported: new Date().toISOString(),
+        app: 'Kiu', version: '2.9.8', exported: new Date().toISOString(),
         settings: { name: S.name, mode: S.mode },
         memoria: KiuMem.data,
         alarmas: this.reminders(),

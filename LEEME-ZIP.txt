@@ -1,7 +1,166 @@
-KIU - Tanda 13: la gramatica llega al motor (v2.9.3)
+KIU - Tanda 18: el modelo de voz se instala desde la app (v2.9.8)
 ===============================================================================
 
+OJO, LEÉ ESTO PRIMERO
+- Este ZIP es SOLO CÓDIGO. NO es un APK: no se instala, se compila.
+- Y no se puede compilar desde este ZIP tal cual, porque NO trae las librerías
+  nativas del motor (40 MB, están en .gitignore: app/src/main/jniLibs/ y
+  vendor/llama.cpp). El build falla con:
+      KIU: no hay librerías nativas del motor
+- ESO es lo que pasaba: el build fallaba, se instalaba el APK viejo, la app
+  decía 2.7 y nadie veía el error porque se iba al scrollback de Gradle.
+
+LO QUE TIENES QUE HACER (en orden de probabilidad)
+1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
+   dependés de que tu build local funcione. ES LO MÁS SEGURO.
+2) Verificalo ANTES de instalar:
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.9.5
+   Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
+   del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
+3) Si igual compilás local: tenés que tener las .so. Se recuperan con
+      ./scripts/vendor_llama.sh && ./gradlew :app:assembleDebug
+   y MIRA que termine bien antes de instalar.
+
 NUEVO EN ESTA TANDA
+- El modelo Vosk (39 MB) se baja DESDE LA APP, en el diagnóstico de voz. Antes la
+  única forma era saber el comando de adb, y sin modelo la palabra de activacion
+  local no arranca sin decir por que.
+- Flujo en tres pasos porque son tres estados que fallan distinto: wwInstall (descarga,
+  con SHA y reanimacion), wwUnzip (descomprimir) y wwUnzipStatus (progreso).
+- OJO CON ESTO, que casi se pierde: el zip oficial trae todo dentro de
+  vosk-model-small-es-0.42/, y el motor busca am/final.mdl en la raiz. Descomprimir
+  tal cual deja el modelo un nivel mas abajo de donde lo busca: 60 MB en disco y la
+  app diciendo "falta el modelo" para siempre. El instalador quita la carpeta raiz.
+- Zip-slip cortado: un nombre con ../ en el zip escribiria fuera de la carpeta de la
+  app. Las entradas sospechosas se saltan y se cuentan.
+- El SHA del modelo queda fijado en el codigo.
+- Se prueba con el ZIP REAL de 39 MB (KIU_VOSK_ZIP), no con mocks.
+- App v2.9.8 (versionCode 46). 250 tests (247 + 3 skip sin JDK/zip).
+
+TANDA 17 (v2.9.7)
+- Backoff ya no se verifica leyéndola con regex: se COMPILA y se EJECUTA. Antes
+  los tests comprobaban que el código dijera "Math.min(maxMs, esperaMs * 2)", no que
+  hiciera lo correcto — un Backoff reescrito a mano con la misma expresión textual y
+  un if mal puesto pasaba igual.
+- tests/java/com/kiu/agent/BackoffHarness.java + tests/java.test.mjs: 11
+  aserciones de comportamiento (crece, tope, -1 para rendirse, reset, base
+  negativa, cero estado de error en la clase).
+- El arnés se prueba a sí mismo: compila un Backoff deliberadamente roto y exige
+  que falle. Sin eso, un arnés que no ejecuta nada pasaría en verde.
+- SIN JDK no pasa: se marca SKIP sin JDK (javac no encontrado). El CI de GitHub
+  ya trae JDK, así que ahí corre siempre.
+- Por esto NO usa JUnit: app/src/test con JUnit exige el SDK de Android, así que no
+  correría en ningún lado donde no lo haya.
+- App v2.9.7 (versionCode 45). 244 tests en verde con JDK (242 + 2 saltados sin él).
+
+TANDA 16 (v2.9.6)
+- BUG 1: una llamada mataba la palabra de activacion para siempre. Cuando
+  AudioRecord.read() daba error (el mic lo toma una llamada u otra app), el codigo
+  hacia continue SOBRE EL MISMO AudioRecord. Uno en estado de error no se
+  recupera: hay que liberar y crear otro. Ahora el read-loop se corta y el loop de
+  afuera lo reconstruye con backoff; si no vuelve, se rinde Y LO DICE, en vez de
+  quedarse mudo fingiendo que escucha.
+- BUG 2: el error quedaba pegajoso. err solo se limpiaba en start(), asi que un
+  fallo transitorio dejaba "microfono ocupado" puesto para toda la sesion aunque
+  despues anduviera bien. Ahora se limpia cuando el micro ABRE de verdad, despues
+  de startRecording().
+- BUG 3: la voz podia no arrancar nunca, en silencio. initTts() se llamaba una sola
+  vez en onCreate; si el motor no estaba listo en ese instante, ttsReady quedaba
+  false PARA TODA LA VIDA de la app, speak() hacia return en la primera linea, y
+  no habia ni toast ni error ni reintento. "Kiu esta pensando" y "Kiu no tiene
+  voz" se veian IGUAL. Ahora reintenta con backoff, cierra el motor anterior en
+  cada intento, y si no arranca lo dice y el motivo sale en el diagnostico.
+- Un bug ME METI YO escribiendo el arreglo del 1: colgué el reset() del backoff de
+  un estado que nadie devolvia, asi que tras 8 micro-fallos en una sesion Kiu se
+  rendia para siempre — el mismo sintoma que estaba arreglando. Lo encontro un
+  test, y hay otro que afirma que el estado sobrante no vuelva.
+- Backoff.java: logica pura, cero imports de Android. La politica de reintentos
+  de todo el audio vive ahi, y por eso se puede razonar y testear.
+- tests/java-estructura.test.mjs: escaner de una pasada que balancea llaves y
+  parentesis de todo el Java. Es lo unico de esa capa que se puede verificar sin
+  compilador.
+- El CI ya corre :app:testDebugUnitTest antes de publicar el APK. Hoy es un no-op
+  que pasa, porque app/src/test sigue vacio; queda el cableado listo.
+- App v2.9.6 (versionCode 44). 240 tests en verde.
+
+LO QUE NO PUEDO VERIFICAR ACA
+- El sandbox donde escribi esto NO tiene JDK: javac no esta instalado. Los fixes
+  de Java de esta tanda no estan compilados, ni probados en un telefono. Los
+  tests que los cubren son de ESTRUCTURA por analisis del fuente: fallan si
+  alguien revierte el arreglo, pero no sustituyen a compilar y probar.
+  Compilá y probá en el telefono antes de confiar en el audio.
+- Para realmente cubrir esa capa hace falta montar app/src/test con JUnit. El
+  cableado del CI ya esta.
+
+TANDA 15 (v2.9.5) cada build escribe assets/build-stamp.json DENTRO del APK
+  (versión, código, commit, fecha, dónde se compiló). Es lo que permite saber
+  qué APK tenés instalado sin herramientas de Android.
+- scripts/verificar-apk.sh: lo lee y te dice cuál es, y falla (exit 1) si no es
+  el que esperabas. Dos casos donde NO dice que todo bien, a propósito:
+    · sin sello + --esperar  ->  falla. Un APK sin sello es viejo o reempaquetado;
+      no poder confirmar no es lo mismo que estar bien.
+    · APK sin .so  ->  avisa. Se puede instalar, no puede generar.
+- La versión se declara UNA sola vez en build.gradle.kts. Estaba en dos lugares
+  (defaultConfig y el sello) y el que se queda viejo sería el sello, que es el
+  que dice qué estás por instalar: mentiría con autoridad.
+- Arreglado el parseo de args del script: usaba `for arg in "$@"`, que congela la
+  lista y hace que el shift no funcione — el valor de --esperar se tomaba como
+  nombre de archivo. Ahora con while+shift.
+- App v2.9.5 (versionCode 43). 227 tests en verde.
+
+CÓMO PROBAR
+- ./scripts/verificar-apk.sh <tu.apk> --esperar 2.9.5
+- Y después de instalar: Ajustes -> Diagnosticar voz. La primera fila es la
+  versión REAL del paquete instalado, leída de PackageManager.
+
+TANDA 14 (v2.9.4)
+- BUG REAL: el modelo local se buscaba en el lugar equivocado. El zip oficial
+  (vosk-model-small-es-0.42) tiene am/final.mdl; el codigo chequeaba
+  <dir>/final.mdl, en la RAIZ. Con el modelo puesto donde dice la documentacion, el
+  chequeo daba false y el error decia "falta el modelo" — mentira: estaba, en su
+  sitio, y la app no lo veía. Se aceptan los DOS layouts (el oficial con am/ y el
+  plano), y el que decide si arranca y el que informa si esta mira lo mismo.
+  Verificado contra https://alphacephei.com/vosk/models
+- BUG REAL: si el recognizer se colgaba, Kiu quedaba mudo PARA SIEMPRE. El bucle se
+  rearma solo desde onResults/onError; si ninguno llega, listening queda en true y
+  cycle() sigue volviendo por el `if (listening) return`. Sin error ni aviso. Ahora
+  hay watchdog: 12 s y destructura y reintenta con backoff.
+- La version del perfil sale de PackageManager (la del paquete REALMENTE
+  instalado), no de una constante escrita a mano en el JS. Con un APK viejo el
+  rotulo no delataba nada: la app instalada decia 2.7 mientras el repo iba 2.9.3.
+  Matiz: la app NO puede auto-detectar que su APK es viejo (el JS y el nativo
+  salen del mismo arbol, siempre coinciden). Lo que SI detecta es una instalacion
+  MEZCLADA, y por CAPACIDAD: este codigo declara que metodos del puente necesita,
+  los prueba, y si falta uno lo dice por nombre.
+- Boton "Diagnosticar voz": las cuatro causas del silencio (APK viejo, sin
+  servicio de reconocimiento, sin modelo local, sin permiso de microfono) se veian
+  IGUAL. Ahora se distinguen, y cada problema dice la GRILLA concreta.
+- verReal() y diagVoz() se movieron de app-ui.js a app/diag-voz.js: modulo chico
+  con una sola dependencia. Adentro del archivo de 4000 lineas NO se podian testear
+  (arrastraba store, DOM y timers) y los tests pasaban sin ejercitar nada.
+- App v2.9.4 (versionCode 42). 219 tests en verde.
+
+LO QUE SIGUE PENDIENTE
+- La palabra de activacion local sigue necesitando el modelo (39 MB, no van en el
+  repo). Con el bug 1 arreglado ahora se lo ve, pero instalarlo sigue siendo manual
+  por adb. Para eso tiene que estar:
+    curl -LO https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip
+    unzip -q vosk-model-small-es-0.42.zip
+    adb shell mkdir -p /sdcard/Android/data/com.kiu.agent/files/models/vosk-es-small
+    adb push vosk-model-small-es-0.42/. \
+      /sdcard/Android/data/com.kiu.agent/files/models/vosk-es-small/
+  OJO: el . tiene que ir con la carpeta adentro (am/, conf/, graph/). El
+ diagnostico te dice si quedo bien puesto.
+- Falta una pantalla en la app para bajarlo. Es la diferencia entre "funciona" y
+  "funciona si sabes el comando de adb".
+
+CÓMO PROBAR
+- Abrí Ajustes -> Diagnosticar voz. Con esto solo ya sabés que version tenes
+  INSTALADA de verdad y cual de las cuatro causas es.
+- Probalo en el telefono, no en el emulador: los servicios de voz del sistema
+  casi nunca estan en un emulador y darias un falso negativo.
+
+TANDA 13 (v2.9.3)
 - La gramatica GBNF ya no es un generador sin destino: hay setGrammar en el nativo
   y el agente se la pasa antes de pedir la decision. El motor solo puede emitir
   tokens que encajen, asi que el JSON sale valido sin depender de que el modelo sea
@@ -260,14 +419,14 @@ CÓMO PROBAR
 - Compilar:  ./gradlew :app:assembleDebug   (JDK 17 + Android SDK 34 + NDK)
   (con vendor presente, Gradle compila llama.cpp y deja los .so en
    app/src/main/jniLibs/<ABI>/)
-- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.9.3-release.apk
-- Tests:     node --test tests/*.test.mjs   (Node 18+, 206 tests)
+- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.9.8-release.apk
+- Tests:     node --test tests/*.test.mjs   (Node 18+, 250 tests; 247+3 skip sin JDK/zip)
 - Contrato del puente:  python3 scripts/bridge_audit.py
 - RAG sin congelamientos: Ajustes → Documentos, indexá un PDF grande y seguí
   usando la app mientras indexa (las animaciones no se cortan).
 - Nuevo proveedor de API: poné su URL https://…/v1 en Proveedores; la llamada
   viaja por el proxy de Java sin tocar el código.
-- Release GitHub: git tag v2.9.3 && git push --tags
+- Release GitHub: git tag v2.9.8 && git push --tags
 
 NO INCLUIDO
 - vendor/llama.cpp (~200 MB): se restaura con ./scripts/vendor_llama.sh

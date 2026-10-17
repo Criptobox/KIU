@@ -20,6 +20,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Modelo: vosk-model-small-es-0.42 (~40 MB descomprimido) colocado en
  *   <.getExternalFilesDir>/models/vosk-es-small/
+ * con la estructura del zip oficial, OJO que final.mdl va en am/final.mdl y no
+ * en la raíz (v2.9.3: el chequeo miraba la raíz y no encontraba un modelo que
+ * estaba perfectamente puesto).
  * (se puede bajar con el gestor de descargas de la app e importar con KiuImport)
  *
  * Uso desde el puente JS: kiuWWStart() / kiuWWStop() / kiuWWState()
@@ -55,10 +58,36 @@ public class WakeWordEngine {
         return inst;
     }
 
-    /** ¿Hay modelo local instalado? (final.mdl dentro de models/vosk-es-small) */
+    /* v2.9.3 · BUG REAL: el chequeo del modelo miraba el lugar equivocado.
+
+       El modelo oficial (vosk-model-small-es-0.42) tiene esta estructura:
+
+           vosk-model-small-es-0.42/
+             am/final.mdl      <-- acá está
+             conf/mfcc.conf
+             conf/model.conf
+             graph/...
+
+       El código chequeaba <dir>/final.mdl, o sea la RAÍZ. Con el modelo puesto
+       exactamente donde dice la documentación, ese archivo no existe: el chequeo
+       daba false, el arranque se negaba, y el error que llegaba decía "falta el
+       modelo" — que es una mentira: el modelo estaba, en su sitio, y la app
+       no lo veía. Encima el síntoma es exactamente el reportado: la palabra de
+       activación nunca dispara y no hay forma de saber por qué.
+
+       Se aceptan los dos layouts a propósito: el oficial (am/final.mdl) y el
+       "aplanado" (final.mdl en la raíz), que es lo que queda si alguien copió
+       el contenido de am/ a mano. La app carga siempre la RAÍZ del modelo en
+       Model(), que es lo que Vosk espera. */
+    private static File modelRoot(Context ctx) {
+        return new File(modelDir(ctx));
+    }
+
+    /** ¿Está el modelo local? Acepta el layout oficial (am/final.mdl) y el aplanado. */
     public static boolean modelPresent(Context ctx) {
         try {
-            return new File(modelDir(ctx), "final.mdl").exists();
+            File d = modelRoot(ctx);
+            return new File(d, "am/final.mdl").exists() || new File(d, "final.mdl").exists();
         } catch (Throwable th) {
             return false;
         }
@@ -85,7 +114,7 @@ public class WakeWordEngine {
                 return false;
             }
             String dir = modelDir(app);
-            if (!new File(dir, "final.mdl").exists()) {
+            if (!new File(dir, "am/final.mdl").exists() && !new File(dir, "final.mdl").exists()) {
                 err = "modelo wake word no instalado (models/" + DIR_NAME + ")";
                 return false;
             }
@@ -107,65 +136,133 @@ public class WakeWordEngine {
         }
     }
 
+    /* v2.9.5 · RECUPERACIÓN DEL MICRÓFONO.
+       BUG REAL: cuando AudioRecord.read() devuelve un error (ERROR_DEAD_OBJECT
+       cuando el mic lo toma una llamada o otra app), el código ponía el mensaje
+       y hacía `continue` SOBRE EL MISMO AudioRecord. Un AudioRecord en estado de
+       error no se recupera: hay que stop()/release() y crear otro. Seguir leyendo
+       del mismo devuelve el error para siempre.
+
+       El síntoma era el peor posible: atendías un teléfono, cortabas, y la
+       palabra de activación no volvía más — hasta que la apagabas y la prendías
+       a mano, sin ningún mensaje en el medio.
+
+       Ahora el read-loop se ROTA al primer error de mic y el loop de afuera
+       reconstruye el AudioRecord con backoff. Si no vuelve después de varios
+       intentos, se rinde y lo DICE (running=false), en vez de quedarse mudo
+       fingiendo que escucha. */
+    private static final int MIC_RETRY_BASE_MS = 500;
+    private static final int MIC_RETRY_MAX_MS = 8000;
+    private static final int MIC_MAX_RETRIES = 8;
+
+    /* Estado que devuelve el read-loop. Un int plano, no un enum: lo más simple
+       es lo que menos se rompe.
+       Son SOLO DOS, a propósito. Había un tercer estado (OK) que nadie
+       devolvía, y el `reset()` del backoff estaba colgado de él: el backoff
+       nunca se reiniciaba, así que después de 8 micro-fallos repartidos a lo
+       largo de una sesión, Kiu se rendía para siempre. El backoff se resetea
+       en el sitio donde tiene sentido: cuando el micrófono ABRE, no cuando la
+       sesión termina. */
+    private static final int LECHO_MIC_MUERTO = 1;   // hay que reconstruir el AudioRecord
+    private static final int LECHO_PARADO = 2;       // el usuario apagó la palabra de activación
+
     private void run(Context app, String dir) {
-        AudioRecord a = null;
         try {
             model = new Model(dir);
             recognizer = new Recognizer(model, (float) SAMPLE_RATE, GRAMMAR);
-
-            int minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+            int minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT);
             int bufSize = Math.max(minBuf, SAMPLE_RATE); // 1s
+            short[] buf = new short[3200];                 // 200 ms
+            running.set(true);
+            loading = false;
+
+            Backoff espera = new Backoff(MIC_RETRY_BASE_MS, MIC_RETRY_MAX_MS, MIC_MAX_RETRIES);
+
+            while (running.get()) {
+                int st = escucharUnaVez(bufSize, buf, espera);
+                if (st != LECHO_MIC_MUERTO) {
+                    break;   // LECHO_PARADO: lo apagó el usuario
+                }
+                /* LECHO_MIC_MUERTO: el read-loop ya terminó y soltó el AudioRecord.
+                   Se reconstruye con backoff; si se agotan los intentos se RINDE
+                   Y LO DICE, en vez de quedarse mudo fingiendo que escucha. */
+                long d = espera.siguiente();
+                if (d < 0) {
+                    err = "el microfono no volvio (ocupado por otra app o por el sistema)";
+                    running.set(false);
+                    break;
+                }
+                avisar("nexoWakeError('" + err.replace("'", "") + "')");
+                dormir(d);
+            }
+        } catch (Throwable th) {
+            err = "wake word: " + th;
+        } finally {
+            running.set(false);
+            loading = false;
+            mic = null;
+            cerrarRecon();
+            cerrarModelo();
+            if (MainActivity.inst != null) {
+                MainActivity.inst.js("nexoWakeState(false)");
+            }
+        }
+    }
+
+    /** Crea un AudioRecord, escucha hasta que algo pare, y devuelve el estado. */
+    private int escucharUnaVez(int bufSize, short[] buf, Backoff espera) {
+        AudioRecord a = null;
+        try {
             a = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize);
             if (a.getState() != AudioRecord.STATE_INITIALIZED) {
                 err = "microfono ocupado por otra app";
-                return;
+                return LECHO_MIC_MUERTO;
             }
             mic = a;
             a.startRecording();
+            /* el mic abrió de verdad: el error anterior (si hubo) ya no dice
+               nada. Sin esto el mensaje quedaba pegado para toda la sesión
+               aunque todo volviera a funcionar (bug 2 de esta tanda).
 
-            short[] buf = new short[3200]; // 200 ms
+               Y el backoff arranca de cero: los fallos anteriores quedaron
+               atrás. El motivo es que el presupuesto de reintentos es POR
+               MICROFONO, no por sesión: si una app toma el micro un rato y lo
+               suelta, ese contratiempo no puede gastar los reintentos de los
+               próximos treinta minutos. */
+            err = "";
+            espera.reset();
+            avisar("nexoWakeState(true)");
+
             boolean limpio = true;
-            running.set(true);
-            loading = false;
-            if (MainActivity.inst != null) {
-                MainActivity.inst.js("nexoWakeState(true)");
-            }
             while (running.get()) {
                 int n = a.read(buf, 0, buf.length);
                 if (n <= 0) {
-                    /* v2.8.1: el mic puede estar tomado (el reconocedor de comando,
-                       otra app, o una interrupción de audio). Antes esto era un
-                       busy-spin: 100 % de CPU de un hilo, para siempre. Ahora se
-                       cede el hilo y se distingue "ocupado" de "roto". */
                     if (n == AudioRecord.ERROR_INVALID_OPERATION || n == AudioRecord.ERROR_BAD_VALUE
                             || n == AudioRecord.ERROR_DEAD_OBJECT) {
-                        err = "microfono no disponible (ocupado por otra app)";
+                        /* El mic murió. NO se sigue leyendo: hay que liberar y
+                           reconstruir, y de eso se encarga el loop de arriba. */
+                        err = "microfono no disponible (lo tomo otra app o el sistema)";
+                        return LECHO_MIC_MUERTO;
                     }
-                    try {
-                        Thread.sleep(80L);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
+                    /* elsewhere: buffer a medio llenar. Antes esto era un
+                       busy-spin (100 % de CPU de un hilo, para siempre). */
+                    if (!dormir(80L)) {
+                        return LECHO_PARADO;
                     }
                     continue;
                 }
-                /* Mientras Kiu habla por TTS no escuchamos (evita auto-disparo), y
-                   tampoco mientras el reconocedor de comando tiene el micro: este
+                /* Mientras Kiu habla por TTS no escuchamos (evita auto-disparo),
+                   y tampoco mientras el reconocedor de comando tiene el micro: este
                    bucle ya lo consumió, así que no puede volver a activarse. */
                 if (MainActivity.SPEAKING || MainActivity.COMMAND_BUSY || paused.get()) {
-                    /* Al entrar en silencio se resetea el decodificador UNA vez: si no,
-                       la palabra a medio decir de antes se junta con la próxima frase
-                       y «Kiu» vuelve a dispararse solo. (org.vosk.Recognizer no tiene
-                       setPartialHypothesis; reset() sí, y es lo correcto acá.) */
+                    /* Al entrar en silencio se resetea el decodificador UNA vez: si
+                       no, la palabra a medio decir de antes se junta con la próxima
+                       frase y «Kiu» vuelve a dispararse solo. (org.vosk.Recognizer
+                       no tiene setPartialHypothesis; reset() sí, y es lo correcto.) */
                     if (!limpio) {
-                        Recognizer rr = recognizer;
-                        if (rr != null) {
-                            try {
-                                rr.reset();
-                            } catch (Throwable ignored) {
-                            }
-                        }
+                        reseteaRecon();
                         limpio = true;
                     }
                     continue;
@@ -173,7 +270,7 @@ public class WakeWordEngine {
                 limpio = false;
                 Recognizer r = recognizer;
                 if (r == null) {
-                    break;
+                    return LECHO_PARADO;
                 }
                 if (r.acceptWaveForm(buf, n)) {
                     check(r.getResult());
@@ -181,11 +278,12 @@ public class WakeWordEngine {
                     check(r.getPartialResult());
                 }
             }
+            return LECHO_PARADO;
         } catch (Throwable th) {
-            err = "wake word: " + th;
+            err = "microfono: " + th;
+            return LECHO_MIC_MUERTO;
         } finally {
-            running.set(false);
-            loading = false;
+            mic = null;
             try {
                 if (a != null) {
                     a.stop();
@@ -193,26 +291,56 @@ public class WakeWordEngine {
                 }
             } catch (Throwable unused) {
             }
-            mic = null;
+        }
+    }
+
+    private void reseteaRecon() {
+        Recognizer rr = recognizer;
+        if (rr != null) {
             try {
-                Recognizer r = recognizer;
-                if (r != null) {
-                    r.close();
-                }
-            } catch (Throwable unused) {
+                rr.reset();
+            } catch (Throwable ignored) {
             }
-            recognizer = null;
-            try {
-                Model m = model;
-                if (m != null) {
-                    m.close();
-                }
-            } catch (Throwable unused) {
+        }
+    }
+
+    private void cerrarRecon() {
+        try {
+            Recognizer r = recognizer;
+            if (r != null) {
+                r.close();
             }
-            model = null;
-            if (MainActivity.inst != null) {
-                MainActivity.inst.js("nexoWakeState(false)");
+        } catch (Throwable unused) {
+        }
+        recognizer = null;
+    }
+
+    private void cerrarModelo() {
+        try {
+            Model m = model;
+            if (m != null) {
+                m.close();
             }
+        } catch (Throwable unused) {
+        }
+        model = null;
+    }
+
+    private void avisar(String js) {
+        MainActivity m = MainActivity.inst;
+        if (m != null) {
+            m.js(js);
+        }
+    }
+
+    /** Duerme. Devuelve false si lo interrumpieron (o si hay que parar). */
+    private boolean dormir(long ms) {
+        try {
+            Thread.sleep(ms);
+            return true;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

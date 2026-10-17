@@ -2,6 +2,363 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.9.8] — El modelo de voz se instala desde la app
+
+Hasta ahora, tener la palabra de activación local era saber un comando de `adb`.
+El modelo son 39 MB, no puede ir en el repo, y **no había ninguna pantalla para
+bajarlo**: prendías el micrófono, no pasaba nada, y nada en la app decía por qué.
+La fila del diagnóstico de voz decía «sin modelo» y se quedaba ahí.
+
+### El flujo
+
+Tres llamadas, no una, porque son tres estados que fallan distinto:
+
+| | qué hace | puede fallar por |
+|---|---|---|
+| `wwInstall()` | arranca la descarga | red, espacio, SHA |
+| `wwUnzip(path)` | descomprime | el zip bajó corrupto |
+| `wwUnzipStatus(id)` | reporta progreso | — |
+
+La descarga reusa `KiuDownload`, que ya tenía reanudación, SHA-256 y verificación.
+
+### El detalle que casi se pierde
+
+El zip oficial trae todo dentro de `vosk-model-small-es-0.42/`:
+
+```
+vosk-model-small-es-0.42/am/final.mdl      <-- el modelo
+vosk-model-small-es-0.42/conf/mfcc.conf
+vosk-model-small-es-0.42/graph/Gr.fst
+```
+
+Descomprimirlo tal cual debajo de `models/vosk-es-small/` deja el modelo en
+`models/vosk-es-small/vosk-model-small-es-0.42/am/final.mdl`, y el motor busca
+`models/vosk-es-small/am/final.mdl`. **Un nivel de diferencia.** Y el síntoma es el
+peor de todos: el modelo pesa 60 MB en disco, la app dice «falta el modelo» para
+siempre, y bajar el zip de nuevo no arregla nada porque el bug no es la descarga.
+
+`ZipInstall` quita la carpeta raíz, y la aprende de la primera entrada del zip en
+vez de hardcodearla: si upstream renombra la carpeta, la instalación sigue
+funcionando. Antes de decir «listo» comprueba que `am/final.mdl` quedó donde
+corresponde — **instalar y que no sirva es peor que no instalar.**
+
+### Zip-slip
+
+Cada ruta se canonicaliza contra el destino y tiene que empezar por él. Un nombre
+con `../` escribiría fuera de la carpeta de la app, que en Android es el filesystem
+entero. No es paranoia: un zip renombrado de ahí viene. Las entradas sospechosas se
+cortan y se cuentan; no abortan, porque un modelo puede traer basura y servir igual.
+
+### Y se prueba con el zip de verdad
+
+`VoskZipHarness` **descomprime los 39 MB reales** y mira dónde quedaron. Es el test
+que un test de forma no puede hacer: el código puede estar impecable y el resultado
+ser inútil.
+
+El SHA queda fijado en el código (`09b23988…`): son 39 MB que van directo al disco de
+la app y de ahí a Vosk, y una descarga sin verificar es una puerta abierta.
+
+**Suite: 244 → 250 tests** (250 con JDK y el zip; 247 + 3 saltados sin ninguno de
+los dos).
+
+## [2.9.7] — Tests de Java que se EJECUTAN, no que se leen
+
+`Backoff` es Java puro: cero imports de Android. Eso estaba escrito en su
+documentación, pero los tests no lo aprovechaban — lo verificaban **leyendo el
+fuente con regex**:
+
+```js
+assert.match(boC, /Math\.min\(maxMs, esperaMs \* 2\)/, 'la espera dobla con techo');
+```
+
+Eso comprueba que el código **diga** esa expresión. No que **haga** lo correcto. Un
+`Backoff` reescrito a mano con la misma expresión textual y un `if` mal puesto
+pasaría el test igual: el texto está, la conducta no.
+
+### Qué cambió
+
+`tests/java/com/kiu/agent/BackoffHarness.java` + `tests/java.test.mjs` compilan la
+clase con `javac` y la **ejecutan**. Once aserciones de comportamiento en vez de seis
+de forma:
+
+- la espera no decrece entre intentos, y no pasa del tope
+- agotados los intentos devuelve **−1**, y es estable (un 0 acá produce un
+  reintento instantáneo y trabado en el hilo de audio: el peor resultado posible)
+- `reset()` devuelve exactamente el primer intento
+- una base negativa o un tope 0 se normalizan a algo **mayor que 0**
+- `Backoff` no guarda estado de error: eso es del subsistema que lo usa, y que el
+  test lo verifique evita el error opuesto — dos capas peleando por él
+
+### El arnés se prueba a sí mismo
+
+`el arnés detecta sus propios fallos` compila un `Backoff` **deliberadamente roto** —
+misma forma textual, peor comportamiento (la espera nunca decrece, se rinde antes de
+tiempo) — y exige que el arnés **falle**. Sin ese test, un arnés que no ejecutara nada
+pasaría en verde sobre una clase rota, que es el peor resultado posible.
+
+Y en el camino apareció un fallo **mío**, que es la clase de error que este tipo de
+test existe para cazar:
+
+```java
+check(b.siguiente() == primero, "... no " + b.siguiente());
+```
+
+Los argumentos de un `assert` se evalúan **siempre**, incluso cuando la aserción
+pasa. Ese `siguiente()` del mensaje consumía un intento extra y el contador llegaba
+a 2: el test fallaba por su propio texto de error. Con la forma escrita a mano
+(`long trasReset = b.siguiente()`) se lee bien y no tiene el problema.
+
+### Sin JDK no pasa: se salta, y a la vista
+
+El runner de GitHub ya trae un JDK, así que **en el CI esto corre siempre**. Local,
+si no hay JDK los dos tests se marcan `SKIP sin JDK (javac no encontrado)` — nunca
+verde en silencio. Un test que no llegó a correr no puede reportarse como
+correcto, y en este proyecto esa confusión ya costó una tanda entera.
+
+Por eso tampoco usa JUnit: `app/src/test` con JUnit exige el SDK de Android para
+correr, así que no correría en ningún lado donde no haya SDK. Con `javac` + `java`
+sobre clases puras corre en cualquier máquina con JDK.
+
+**Suite: 240 → 244 tests** (244 con JDK, 242 + 2 saltados sin él).
+
+## [2.9.6] — Los tres fallos de voz, arreglados
+
+Todos estaban en la capa Java, que hasta ahora no tenía **ni un test**: 4.900
+líneas sin cobertura, y la suite de 227 tests en verde mirándola fijamente.
+
+### 1 · Una llamada mataba la palabra de activación para siempre
+
+`WakeWordEngine.run()`: cuando `AudioRecord.read()` devolvía un error
+(`ERROR_DEAD_OBJECT` — el mic lo toma una llamada o otra app), el código ponía el
+mensaje y hacía `continue` **sobre el mismo AudioRecord**. Un AudioRecord en
+estado de error no se recupera: hay que `stop()`/`release()` y crear otro.
+Seguir leyendo del mismo devuelve el error para siempre.
+
+Atendías un teléfono, cortabas, y Kiu no escuchaba más hasta que lo apagabas y lo
+volvías a prender a mano. Sin mensaje, sin log.
+
+Ahora el read-loop **se corta** al primer error de micro y el loop de afuera
+reconstruye el `AudioRecord` con backoff. Si no vuelve, se rinde **y lo dice**
+(`running = false`) en vez de quedarse mudo fingiendo que escucha.
+
+El read-loop pasó a ser `escucharUnaVez()`, que devuelve un estado: mic muerto,
+o se paró. Con eso `run()` queda de un vistazo.
+
+### 2 · El error quedaba pegajoso
+
+`err` se limpiaba únicamente en `start()`. Un fallo transitorio del micro dejaba
+*"micrófono ocupado"* puesto para el resto de la sesión, aunque después anduviera
+perfecto. El mensaje mentía sobre el estado real.
+
+Ahora se limpia cuando el micrófono **abre de verdad** — después de
+`startRecording()`, no antes, porque limpiar antes sería mentir igual pero al revés.
+
+### 3 · La voz podía no arrancar nunca, en silencio
+
+`MainActivity.initTts()` se llamaba **una sola vez**, en `onCreate`. `ttsReady`
+se ponía en true únicamente dentro de la rama `i == 0`. Si el motor de TTS no
+estaba listo en ese instante —muy común en arranque en frío, y también cuando el
+servicio de voz se instala después de la app— el init fallaba, `ttsReady` quedaba
+`false` **para toda la vida de la app**, `speak()` hacía `return` en la primera
+línea, y no había ni toast ni error ni reintento.
+
+El síntoma era exactamente el reportado. Y lo peor: *"Kiu está pensando"* y
+*"Kiu no tiene voz"* se ven **igual** desde afuera.
+
+Ahora reintenta con backoff, cierra el motor anterior en cada intento (si no,
+filtra uno por intento), y si de verdad no arranca lo dice por `nexoVoiceError` y
+el motivo aparece en el diagnóstico de voz.
+
+### Un bug que me metí yo
+
+Escribiendo el arreglo del 1 colgué el `reset()` del backoff de un estado
+(`LECHO_OK`) que nadie devolvía. El backoff nunca se reiniciaba, así que tras 8
+micro-fallos repartidos en una sesión, Kiu se rendía para siempre — el mismo
+síntoma que el bug que estaba arreglando.
+
+Lo encontró un test. El estado sobrante no está, y hay un test que afirma que no
+esté: `LECHO_OK` no puede volver a aparecer. El backoff se resetea en el único
+sitio con sentido, **cuando el mic abre**: el presupuesto de reintentos es por
+micrófono, no por sesión. Si una app te toma el micro un rato y lo suelta, ese
+contratiempo no puede gastar los reintentos de los próximos treinta minutos.
+
+### La brecha de cobertura, al menos medida
+
+No puedo compilar Java acá (no hay JDK), así que estos tests son de **estructura
+por análisis del fuente**: fallan si alguien revierte el arreglo, pero no
+sustituyen a compilar y probar en el teléfono. Para lo segundo:
+
+- `Backoff.java`: lógica pura, **cero imports de Android**. La política de
+  reintentos de todo el audio vive ahí, y por eso se puede razonar y testear.
+- `tests/java-estructura.test.mjs`: escáner de una pasada que balancea llaves y
+  paréntesis de todo el Java. Es lo único de esa capa que se puede verificar sin
+  compilador.
+- El CI ya corre `:app:testDebugUnitTest` antes de publicar el APK. Hoy es un
+  no-op que pasa, porque `app/src/test` sigue vacío; queda el cableado listo.
+
+Un detalle del escáner que vale la pena: tiene que manejar comentarios, cadenas
+y literales **en ese orden**, en una sola pasada. Un checker ingenuo que quita
+comentarios después de las comillas se come el archivo entero cuando encuentra un
+apóstrofe en un comentario (`don't`) — que es exactamente lo que pasó con
+`MainActivity.java` durante esta tanda: reportó −1 en un archivo perfectamente
+balanceado. Un checker que miente es peor que no tener ninguno, así que el test
+comprueba que el escáner se rompa cuando debe.
+
+### Suite: 227 → 240 tests**, todos en verde.
+
+## [2.9.5] — Que no se pueda instalar un APK sin saberlo
+
+Este es el que explica el reporte que se repitió: «la versión que se instala con
+ese archivo es 2.7». Con los bugs de voz ya arreglados, la versión seguía
+ appearing como 2.7, así que **no era el código: era qué APK se estaba
+instalando.**
+
+### Lo que pasaba
+
+El ZIP que entrego es **solo código, no un APK**. Y no trae las librerías nativas
+del motor: están en `.gitignore` porque son 40 MB (`app/src/main/jniLibs/` y
+`vendor/llama.cpp`). El build local desde ese ZIP **falla** con «KIU: no hay
+librerías nativas del motor».
+
+Y acá está la trampa: si el build falla y se instala igual, queda el APK viejo. El
+error se va al scrollback de Gradle, el APK viejo anda perfecto, y la app dice 2.7
+mientras el código está en 2.9.4. **Nada avisa.** Es un bucle cómodo: builds que
+fallan, instalaciones que "funcionan", y una versión que nunca cambia.
+
+### El sello de build
+
+Cada build ahora escribe `assets/build-stamp.json` adentro del APK: versión,
+código, commit, fecha y dónde se compiló. Y hay un script que lo lee **antes de
+instalar**:
+
+```bash
+./scripts/verificar-apk.sh app/build/outputs/apk/debug/app-debug.apk --esperar 2.9.4
+```
+
+Sale con 0 si es el APK que esperabas, con 1 si no. Sin Android SDK, sin `aapt`,
+sin `apkanalyzer` — se lee con `unzip -p`, que es justamente cuando uno no tiene
+las Android tools a mano.
+
+La versión se declara **una sola vez** en `build.gradle.kts`. Estaba en dos lugares
+(`defaultConfig` y el sello), y con dos lugares donde poner un número aparece el que
+se queda viejo — y el que se queda viejo sería el sello, que es el que dice qué
+estás por instalar. Mentiría con autoridad.
+
+### Dos casos donde el script NO dice que todo bien
+
+- **Sin sello y con `--esperar` → falla.** Un APK sin sello es anterior a esta
+  tanda o fue reempaquetado; no se puede saber qué es. *No poder confirmar* no es
+  *estar bien*, y si el script saliera con 0 estaría aprobando algo de lo que no
+  sabe nada.
+- **APK sin `.so` → lo dice y lo marca.** Se puede instalar, no puede generar, y
+  eso es peor que no instalar.
+
+También se arregló el parseo de argumentos, que usaba `for arg in "$@"`: esa forma
+congela la lista de argumentos al empezar, así que el `shift` del `--esperar` no
+surtaba efecto y el valor se tomaba como nombre de archivo. El script "funcionaba"
+y pedía un archivo que no era. Con `while` + `shift`.
+
+**Suite: 219 → 227 tests**, todos en verde.
+
+### La salida, entonces
+
+**Bajá el APK del release de GitHub** y verificalo antes de instalarlo. El CI ya
+publica `Kiu-APK-release`; así no dependés de que tu build local funcione, que es
+justo donde estaba fallando.
+
+## [2.9.4] — La voz: dos bugs reales y un diagnóstico que las distingue
+
+Reporte: «la versión que se instala es 2.7, el audio no funciona, no me reconoce
+la voz ni activa por reconocimiento de voz». Salieron **dos bugs reales** y una
+decisión de diseño que estaba produciendo exactamente ese silencio.
+
+### 1 · BUG: el modelo local se buscaba en el lugar equivocado
+
+Este es el grande. El modelo oficial `vosk-model-small-es-0.42` tiene esta
+estructura:
+
+```
+vosk-model-small-es-0.42/
+  am/final.mdl        <-- acá está
+  conf/mfcc.conf
+  conf/model.conf
+  graph/Gr.fst
+  graph/HCLr.fst
+```
+
+y el código chequeaba `<dir>/final.mdl`, **en la raíz**. Con el modelo puesto
+exactamente donde dice la documentación, ese archivo no existe → el chequeo daba
+`false` → el arranque se negaba → el error que llegaba decía *«falta el modelo»*.
+
+Eso es una mentira: el modelo estaba, en su sitio, y la app no lo veía. Y el
+síntoma es justo el reportado —la palabra de activación nunca dispara— con un
+mensaje que apunta al lugar equivocado, así que la respuesta obvia («bajar el
+modelo») no arregla nada porque el modelo ya estaba.
+
+Verificado contra la [estructura oficial](https://alphacephei.com/vosk/models):
+V2 es `am/final.mdl`; vosk-api además acepta V1, el layout plano en la raíz. Se
+aceptan **los dos**, porque alguien puede haber copiado el contenido de `am/` a
+mano, y el que decide si arranca y el que informa si está tiene que mirar lo
+mismo — si uno busca `am/` y el otro la raíz, uno de los dos miente igual.
+
+### 2 · BUG: si el recognizer se colgaba, Kiu quedaba mudo para siempre
+
+`KiuService.cycle()` rearma el bucle **solo** desde `onResults()` y `onError()`.
+`cycle()` pone `listening = true` y vuelve sin reprogramar, confiando en que el
+motor de voz llame a alguno de los dos.
+
+Ese supuesto no se cumple siempre: si `startListening()` arranca y el recognizer
+se queda colgado (sin red, motor que no responde, pensando en silencio), no llega
+`onResults` ni `onError`. `listening` queda en `true` para siempre, `cycle()`
+sigue volviendo por el `if (listening) return`, y Kiu deja de escuchar **en
+silencio**: sin error, sin log, sin aviso.
+
+Es el peor modo de falla posible para algo que se reporta como «no me reconoce la
+voz», porque no hay nada que reportar. El watchdog no arregla el motor, pero
+convierte un colgado infinito en un reintento con backoff que por lo menos se ve.
+
+### 3 · La versión instalada se puede ver (y era mentira)
+
+El rótulo del perfil decía `Kiu v2.9.3` con una **constante escrita a mano en el
+JS**. Con un APK viejo no tenía por qué delatar nada — y la app instalada decía
+2.7 mientras el repo ya iba por 2.9.3, sin que ninguna señal lo delatara.
+
+Ahora la versión sale de `PackageManager`: la del **paquete realmente instalado**.
+
+Y un matiz que costó pensar: **la app no puede auto-detectar que su APK es viejo.**
+El JS y el nativo salen del mismo árbol de compilación, así que siempre coinciden
+y cualquier chequeo «instalada < esperada» pasaría siempre. Un número esperado
+hardcodeado en el JS sería la misma mentira de antes.
+
+Lo que **sí** es detectable, y es el caso real, es una instalación **mezclada**:
+assets viejos con nativo nuevo. Eso se reconoce por **capacidad**, no por número —
+este código declara qué métodos del puente necesita, los prueba, y si falta uno
+lo dice por nombre: *«falta kiuGenSetGrammar»*. Accionable, a diferencia de un
+número de versión que hay que ir a buscar.
+
+### 4 · El diagnóstico de voz
+
+Las cuatro causas que se ven **igual** desde afuera —APK viejo, sin servicio de
+reconocimiento, sin modelo local, sin permiso de micrófono— se distinguían por
+adivinanza. Ahora hay un botón **Diagnosticar voz** que lee el estado real de las
+cuatro y, cuando algo está mal, dice **la grilla concreta** en vez de un «algo
+anda mal».
+
+Un detalle de diseño: `verReal()` y `diagVoz()` se movieron de `app-ui.js`
+(4000 líneas) a `app/diag-voz.js`, un módulo con una sola dependencia. Estaban
+adentro del archivo grande y **no se podían testear**: cargar `app-ui.js` en un
+arnés arrastra store, DOM y timers, y los tests pasaban sin ejercitar nada.
+
+**Suite: 206 → 219 tests**, todos en verde.
+
+### Lo que sigue pendiente
+
+La palabra de activación local **sigue necesitando el modelo**, que son 39 MB y no
+van en el repo. Con el bug 1 arreglado, ahora sí se lo detecta y se lo ve — pero
+instalarlo sigue siendo manual por `adb`. La app no tiene todavía una pantalla para
+bajarlo. Es el próximo paso natural, y es la diferencia entre «funciona» y
+«funciona si sabés el comando de adb».
+
 ## [2.9.3] — La gramática llega al motor (y se forgets sola, a propósito)
 
 En 2.9.2 el generador GBNF existía y estaba testeado, pero no tenía a quién

@@ -16,6 +16,14 @@ plugins {
     id("com.android.application")
 }
 
+/* v2.9.4 · LA VERSIÓN SE DECLARA UNA SOLA VEZ, ACÁ ARRIBA.
+   Estaba escrita en defaultConfig y otra vez en el sello de build, y con dos
+   lugares donde poner un número aparece el que se queda viejo. Si alguno de los
+   dos se desactualiza, el sello miente sobre el APK que estás por instalar —
+   que es peor que no tener sello. Las dos cosas leen de acá. */
+val kiuVersionName = "2.9.8"
+val kiuVersionCode = 46
+
 val llamaDir = File(rootDir, "vendor/llama.cpp")
 val buildNative = llamaDir.exists()
 
@@ -35,8 +43,8 @@ android {
         applicationId = "com.kiu.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 41
-        versionName = "2.9.3"
+        versionCode = kiuVersionCode
+        versionName = kiuVersionName
 
         if (buildNative) {
             ndk {
@@ -54,6 +62,11 @@ android {
 
     sourceSets {
         getByName("main") {
+            /* v2.9.4 · SELLADO DE BUILD. Ver la nota de kiuBuildStamp más abajo:
+               el problema que motivó esto fue instalar un APK viejo sin saberlo.
+               El sellado va como asset para que se pueda leer con `unzip -p`,
+               sin aapt ni apkanalyzer ni Android SDK. */
+            assets.srcDir(layout.buildDirectory.dir("generated/kiuAssets"))
             // jniLibs estándar: app/src/main/jniLibs/<ABI> (ubicación por defecto,
             // no hace falta declararla). En modo fuente se desactiva como origen
             // para no empaquetar cada .so dos veces: el APK toma las del pipeline
@@ -123,6 +136,49 @@ android {
     lint {
         abortOnError = false
     }
+}
+
+/* v2.9.4 · SELLADO DE BUILD — "qué APK estoy instalando", respondido.
+
+   El reporte fue «la versión que se instala con ese archivo es 2.7» con el repo ya
+   en 2.9.3. La causa no era del código: el ZIP es SOLO CÓDIGO y no trae las .so
+   del motor (están en .gitignore: 40 MB). Un build local desde ese ZIP falla con
+   "no hay librerías nativas", y si el build falla y se instala igual, queda el
+   APK viejo. Sin ninguna señal: el error va al scrollback y el APK viejo anda.
+
+   El sellado existe para que esa situación sea imposible de pasar por alto:
+   cada build escribe assets/build-stamp.json con versión, código, fecha y commit,
+   y hay un script que lo lee del APK con `unzip -p`. No hace falta Android SDK
+   para verificar un APK antes de instalarlo — que es justo cuando uno lo tiene. */
+val kiuGitSha = runCatching {
+    ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootDir).start().let { p ->
+            val out = p.inputStream.bufferedReader().readText().trim()
+            p.waitFor(); if (out.matches(Regex("[0-9a-f]{7,40}"))) out else "sin-commit"
+        }
+}.getOrDefault("sin-git")
+
+val kiuBuildStamp by tasks.registering {
+    val outDir = layout.buildDirectory.dir("generated/kiuAssets")
+    val stamp = mapOf(
+        "version" to kiuVersionName,
+        "versionCode" to kiuVersionCode,
+        "git" to kiuGitSha,
+        "builtAt" to java.time.Instant.now().toString(),
+        "builtHere" to System.getenv("GITHUB_RUN_ID") ?: "local"
+    )
+    doLast {
+        val f = outDir.get().file("build-stamp.json").asFile
+        f.parentFile.mkdirs()
+        f.writeText(
+            stamp.entries.joinToString(",", "{", "}") { "\"${it.key}\":\"${it.value}\"" }
+        )
+        logger.lifecycle("KIU sellado: v$kiuVersionName (código $kiuVersionCode) commit $kiuGitSha")
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(kiuBuildStamp)
 }
 
 dependencies {

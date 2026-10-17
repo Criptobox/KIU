@@ -104,10 +104,19 @@ test('la wake word cede el micrófono mientras el comando se escucha', () => {
 });
 
 test('el bucle de Vosk no gira al 100 % de CPU cuando el micro no lee', () => {
-  const loop = sinComentarios(ww.slice(ww.indexOf('while (running.get())'), ww.indexOf('err = "wake word: "')));
+  /* El read-loop se movió a escucharUnaVez() cuando se le agregó la
+     reconstrucción del AudioRecord, así que el test tiene que mirar ahí y no
+     en un tramo de texto que ya no existe. El invariante NO cambió: cuando
+     read() devuelve <= 0 y no es un error de micro, hay que ceder el hilo. */
+  const loop = sinComentarios(cuerpo(ww, 'private int escucharUnaVez'));
+  assert.match(loop, /if \(n <= 0\)/, 'tiene que seguir tratando el n <= 0');
   assert.doesNotMatch(loop, /if \(n <= 0\) \{\s*continue;\s*\}/,
     'read() <= 0 con continue a secas es un busy-spin infinito');
-  assert.match(loop, /Thread\.sleep/, 'hay que ceder el hilo');
+  assert.match(loop, /dormir\(/, 'tiene que ceder el hilo');
+  /* y el helper al que llama tiene que dormir de verdad, no solo devolver */
+  const d = sinComentarios(cuerpo(ww, 'private boolean dormir'));
+  assert.match(d, /Thread\.sleep/, 'el helper tiene que dormir de verdad');
+  assert.match(d, /catch \(InterruptedException/, 'y InterruptedException devuelve false, no se traga');
 });
 
 test('la wake word local se elige sola si el modelo está instalado', () => {

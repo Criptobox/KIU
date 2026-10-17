@@ -2141,6 +2141,12 @@
           this._convT = setTimeout(function () {
             if (S.conv && !self.voiceBusy) self.startVoice();
           }, 800);
+        } else {
+          /* v2.10.1: sin voz y sin conversación, nadie devolvía el micrófono al
+             despertar por voz después de un comando suelto: quedaba suspendido
+             hasta reiniciar. cancelListen lo reanuda (y es inocuo si no había
+             nada escuchando). */
+          bridge('cancelListen');
         }
       }
     },

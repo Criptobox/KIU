@@ -2,6 +2,15 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [Sin publicar] — Voz: saludo, conversación continua y comandos
+
+- **Saludo:** el TTS de Android tarda 1-3 s en arrancar y el saludo sale a los 1,6 s. `speak()` descartaba la frase si `ttsReady` era false y el JS lo daba por hablado. Ahora la frase queda en cola y se dice al estar listo el TTS (si es de hace más de 20 s se descarta).
+- **Conversación continua:** (1) si el TTS no arrancaba nunca no había `onDone` y el micro no se reabría; ahora, si se rinde, se avisa fin igual. (2) El reconocedor del comando no tenía watchdog: si se colgaba, `COMMAND_BUSY` quedaba en true y `openConvMic()` volvía siempre por su primera línea. Ahora hay un watchdog de 20 s. (3) Sin permiso de micrófono el bucle reintentaba 14 s sin decir nada; ahora lo pide una vez.
+- **Despertar por voz:** tras un comando suelto (sin voz y sin conversación) el servicio quedaba suspendido; ahora `botSay` lo reanuda. La palabra de activación acepta más variantes (kio, qiu, chiu, kiwi, «ki u»).
+- **Comandos:** nueva capa `cleanVoice()` que quita cortesías («ok», «por favor», «¿podés…?») y unifica formas de pedir (ponme, despiértame, quiero una alarma). «Alarma para las 7» ya no cae en «¿A qué hora?». Nuevos: «pon la linterna», «cuál es la batería», «sube/baja el volumen/brillo» (abre el ajuste y lo dice con honestidad).
+- **Mejoras:** respuestas lentas del modelo local ya no cierran la ventana de conversación (`listen()` refresca el latido); la voz viene activada en instalaciones nuevas; «pon música» abre YT Music.
+- Tests: `tests/voz-comandos.test.mjs`. 263 pasan. **El Java no se pudo compilar acá (sin Android SDK): lo verifica el CI.**
+
 ## [2.10.0] — El error siguiente: un miembro que no existe
 
 `r.resolveInfo.serviceInfo` no compila. **`ResolveInfo` ES el tipo**: su `serviceInfo`

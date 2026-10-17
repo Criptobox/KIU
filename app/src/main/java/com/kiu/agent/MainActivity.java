@@ -82,6 +82,21 @@ public class MainActivity extends Activity {
     private String ttsErr = "";
     private Runnable ttsRetry;   // reintento de arranque del TTS, pendiente de correr
 
+    /* v2.10.1 · EL SALUDO SE PERDIA EN SILENCIO.
+       El saludo sale a los 1,6 s de abrir la app, y el TTS de Android tarda
+       1-3 s en arrancar en frio. speak() hacia `return` si ttsReady era false,
+       pero el JS creia que habia hablado (un metodo void devuelve undefined y
+       bridge() lo toma como exito): el saludo se perdia, se marcaba como ya
+       dado (20 min de espera) y, como nunca llegaba onDone, tampoco se abria el
+       micro: la conversacion continua moria en el primer turno.
+       Ahora la frase se guarda y se dice apenas el TTS esta listo. */
+    private volatile String pendingSpeak = null;
+    private volatile long pendingSpeakAt = 0L;
+    private volatile boolean ttsGaveUp = false;
+    private boolean micAskedOnce = false;
+    private Runnable micWatch = null;
+    private static final long MIC_WATCHDOG_MS = 20000L;
+
     /* v2.9.3: escape para armar JSON a mano desde Java.
        Los nombres de paquete de los servicios de voz y el motor de TTS vienen
        del sistema: son valores que NO controlamos nosotros y un nombre raro (con
@@ -466,7 +481,9 @@ public class MainActivity extends Activity {
                         }
                     });
                     MainActivity.this.ttsReady = true;
+                    MainActivity.this.ttsGaveUp = false;
                     MainActivity.this.ttsErr = "";
+                    MainActivity.this.flushPendingSpeak();
                 } else {
                     /* no arrancó: se intenta de nuevo con backoff. Al agotar los
                        intentos se avisa, porque "no tengo voz" y "estoy pensando"
@@ -479,6 +496,51 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Dice `str` ya. Solo se llama con el TTS listo. */
+    private void speakNow(final String str) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                tHandler.removeCallbacks(convOpen);
+                stopSpeech();
+            }
+        });
+        this.tts.setSpeechRate(this.ttsRate);
+        this.tts.setPitch(this.ttsPitch);
+        Bundle bundle = new Bundle();
+        bundle.putString("networkTts", "true");
+        this.tts.speak(str, 0, bundle, "kiu_utt");
+    }
+
+    /** TTS todavia no listo: guarda la frase (solo la ultima) para decirla al arrancar.
+        Si el TTS ya se rindio, avisa fin igual para que la conversacion no se corte. */
+    private void queueSpeak(String str) {
+        if (this.ttsGaveUp) {
+            js("nexoTtsDone()");
+            this.lastConvBeat = SystemClock.elapsedRealtime();
+            if (this.handsFree && this.resumed) {
+                this.tHandler.removeCallbacks(this.convOpen);
+                this.tHandler.postDelayed(this.convOpen, 700L);
+            }
+            return;
+        }
+        this.pendingSpeak = str;
+        this.pendingSpeakAt = SystemClock.elapsedRealtime();
+    }
+
+    /** Dice lo que quedo en cola, salvo que ya este viejo (mas de 20 s). */
+    private void flushPendingSpeak() {
+        String p = this.pendingSpeak;
+        this.pendingSpeak = null;
+        if (p == null) {
+            return;
+        }
+        if (SystemClock.elapsedRealtime() - this.pendingSpeakAt > 20000L) {
+            return;
+        }
+        speakNow(p);
+    }
+
     /** Reintenta el arranque del TTS. Si no queda nada, lo dice una vez. */
     private void retryTts() {
         if (this.ttsBackoff == null) {
@@ -486,6 +548,8 @@ public class MainActivity extends Activity {
         }
         long d = this.ttsBackoff.siguiente();
         if (d < 0) {
+            this.ttsGaveUp = true;
+            this.pendingSpeak = null;
             js("nexoVoiceError('sin voz: el motor de TTS no arranco')");
             return;
         }
@@ -558,8 +622,54 @@ public class MainActivity extends Activity {
             return;
         }
         if (this.handsFree && this.resumed && !SPEAKING) {
+            /* v2.10.1: sin permiso de micro, startSpeech() fallaba con
+               ERROR_INSUFFICIENT_PERMISSIONS y el bucle de conversacion reintentaba
+               14 s sin decir nada. Se pide una vez; al aceptar, escucha. */
+            if (checkSelfPermission("android.permission.RECORD_AUDIO") != 0) {
+                if (!this.micAskedOnce) {
+                    this.micAskedOnce = true;
+                    this.pendingListen = true;
+                    requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, REQ_MIC);
+                }
+                return;
+            }
             startSpeech();
         }
+    }
+
+    /* v2.10.1 · PERRO GUARDIAN DEL MICROFONO. Si el reconocedor se cuelga sin
+       llamar a onResults ni a onError (pasa tras destroy()+create() seguidos),
+       COMMAND_BUSY quedaba en true para siempre y openConvMic() volvia siempre por
+       su primera linea: la conversacion continua se apagaba sin ningun mensaje.
+       KiuService ya tenia su watchdog; el reconocedor del comando no. */
+    private void armMicWatch(final SpeechRecognizer owner) {
+        if (this.micWatch != null) {
+            this.tHandler.removeCallbacks(this.micWatch);
+        }
+        this.micWatch = new Runnable() {
+            @Override
+            public void run() {
+                micWatch = null;
+                if (recognizer != owner) {
+                    return;
+                }
+                stopSpeech();
+                boolean again = convArmed && handsFree && resumed && convWindowOpen(lastConvBeat);
+                js("nexoListenEnd()");
+                if (again) {
+                    tHandler.removeCallbacks(convOpen);
+                    tHandler.postDelayed(convOpen, 800L);
+                    return;
+                }
+                convArmed = false;
+                KiuService.resumeSoon();
+                if (pendingListen) {
+                    pendingListen = false;
+                    js("nexoVoiceError('error')");
+                }
+            }
+        };
+        this.tHandler.postDelayed(this.micWatch, MIC_WATCHDOG_MS);
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -1159,21 +1269,14 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void speak(String str) {
-            if (!MainActivity.this.ttsReady || TextUtils.isEmpty(str)) {
+            if (TextUtils.isEmpty(str)) {
                 return;
             }
-            MainActivity.this.runOnUiThread(new Runnable() { // from class: com.kiu.agent.MainActivity.Bridge.1
-                @Override // java.lang.Runnable
-                public void run() {
-                    MainActivity.this.tHandler.removeCallbacks(MainActivity.this.convOpen);
-                    MainActivity.this.stopSpeech();
-                }
-            });
-            MainActivity.this.tts.setSpeechRate(MainActivity.this.ttsRate);
-            MainActivity.this.tts.setPitch(MainActivity.this.ttsPitch);
-            Bundle bundle = new Bundle();
-            bundle.putString("networkTts", "true");
-            MainActivity.this.tts.speak(str, 0, bundle, "kiu_utt");
+            if (!MainActivity.this.ttsReady) {
+                MainActivity.this.queueSpeak(str);
+                return;
+            }
+            MainActivity.this.speakNow(str);
         }
 
         @JavascriptInterface
@@ -1309,6 +1412,11 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void listen() {
+            /* v2.10.1: un pedido explicito de escuchar es un latido fresco. Con un
+               modelo local lento la respuesta tarda mas de 14 s y la ventana de
+               rearme ya estaba cerrada: tras el primer silencio la conversacion
+               se cortaba. Los reintentos usan convOpen, no listen(): no hay bucle. */
+            MainActivity.this.lastConvBeat = SystemClock.elapsedRealtime();
             KiuService.suspend();
             MainActivity.this.pendingListen = true;
             if (MainActivity.this.checkSelfPermission("android.permission.RECORD_AUDIO") != 0) {
@@ -2316,6 +2424,7 @@ public class MainActivity extends Activity {
         intent.putExtra("android.speech.extra.PROMPT", "Hablale a Kiu...");
         try {
             this.recognizer.startListening(intent);
+            armMicWatch(createSpeechRecognizer);
         } catch (Exception unused) {
             this.convArmed = false;
             stopSpeech();
@@ -2326,6 +2435,10 @@ public class MainActivity extends Activity {
 
     /* JADX INFO: Access modifiers changed from: private */
     public void stopSpeech() {
+        if (this.micWatch != null) {
+            this.tHandler.removeCallbacks(this.micWatch);
+            this.micWatch = null;
+        }
         SpeechRecognizer speechRecognizer = this.recognizer;
         if (speechRecognizer != null) {
             try {

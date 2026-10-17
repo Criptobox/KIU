@@ -9,6 +9,34 @@ window.KiuBrain = (function () {
       .replace(/[?!¡¿.,;:"']/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  /* v2.10.1 · LO QUE DICTA EL RECONOCEDOR NO ES LO QUE SE TECLEA.
+     Por voz la gente dice «ok kiu, ¿podés ponerme una alarma a las 7, por favor?»
+     y casi todos los comandos de abajo estan anclados con ^ a la forma seca
+     («pon alarma a las 7»). Cualquier cortesia delante o detras los hacia fallar,
+     y la app contestaba con la respuesta generica. Esta capa limpia solo lo que
+     rodea al pedido y unifica las formas de pedir mas comunes. */
+  function cleanVoice(t) {
+    var prev, n = 0;
+    do {
+      prev = t;
+      t = t.replace(/^(?:ok|okay|dale|bueno|listo|a ver|entonces|por favor|porfa|kiu)\s+/, '');
+      t = t.replace(/^(?:me\s+)?(?:puedes|podes|podrias|puede|podria|quieres|queres)\s+/, '');
+      t = t.replace(/^(?:quiero|necesito|quisiera)\s+que\s+(?:me\s+)?/, '');
+      n++;
+    } while (t !== prev && n < 5);
+    t = t.replace(/\s+(?:por favor|porfa|gracias)$/, '').trim();
+    /* ponme / ponele / ponle -> pon */
+    t = t.replace(/^pon(?:me|le|les|nos|e|er)\b/, 'pon');
+    t = t.replace(/^(?:ponerme|ponernos)\b/, 'pon');
+    /* alarma: «despiértame a las 7», «quiero una alarma…», «crea una alarma…» */
+    t = t.replace(/^(?:despiertame|despertame|levantame)\s+(?:a\s+las?|para\s+las?|las?)\s+/, 'pon alarma a las ');
+    t = t.replace(/^(?:crea|crear|activa|activar|agrega|agregar|haz|hace|haceme|hazme|programame|quiero|necesito)\s+(?:una\s+|un\s+)?(alarma|despertador)\b/, 'pon $1');
+    /* «alarma para las 7» -> «alarma a las 7»: el handler se come el «para» y
+       parseWhen no entiende «las 7» a secas. */
+    t = t.replace(/^(pon (?:una |un )?(?:alarma|despertador))\s+(?:para\s+)?(las?\s)/, '$1 a $2');
+    return t;
+  }
+
   function safeMath(expr) {
     var e = expr.replace(/,/g, '.')
       .replace(/[x×*]/g, '*').replace(/[÷\/]/g, '/')
@@ -291,6 +319,7 @@ window.KiuBrain = (function () {
     // --- Despertar: si empieza con "Kiu", lo saco (para el micro normal) ---
     t = t.replace(/^(?:oye|hey|che|dale|hola|buenas|eh)\s+kiu\s+/, '');
     t = t.replace(/^kiu\s+/, '').trim();
+    t = cleanVoice(t);
     if (/^kiu$/.test(t) || t === '') {
       if (/^kiu$/.test(norm(raw))) {
         return { handled: true, text: 'Acá estoy. Decime lo que necesites: "enciende la linterna", "pon un temporizador de 5 minutos", "llama a mamá"... lo que sea.' };
@@ -300,7 +329,7 @@ window.KiuBrain = (function () {
     // ============ COMANDOS DE DISPOSITIVO (voz real) ============
 
     // Linterna con el flash real del teléfono
-    if (/(enciende|prende|prender|encender|activa|activar|dame|con)\s+(?:la\s+|el\s+)?(linterna|flash|torch)/.test(t)
+    if (/(enciende|prende|prender|encender|activa|activar|dame|con|pon|pone)\s+(?:la\s+|el\s+)?(linterna|flash|torch)/.test(t)
         || /^(linterna|flash)\s*(on|encendida|prendida)$/.test(t)) {
       var okT = B('torch', [true]);
       /* v2.8.0: sin flash propio, B() ya encendió la capa 'tool' con
@@ -314,6 +343,23 @@ window.KiuBrain = (function () {
       B('torch', [false]);
       if (window.KiuTools) KiuTools.closeLinterna();
       return { handled: true, text: 'Listo, apagué la linterna.' };
+    }
+
+    // Volumen / brillo: Android no deja moverlos desde una app sin permisos
+    // especiales, asi que se abre el ajuste correcto en vez de fingir que se hizo.
+    m = t.match(/^(?:sube|subele|subile|subi|subir|baja|bajale|bajar|aumenta|aumentar|reduce|reducir|pon|pone|poner|maximo|minimo)\s+(?:mas\s+|menos\s+)?(?:el\s+|la\s+)?(volumen|brillo|sonido)\b/);
+    if (m) {
+      var vKey = m[1] === 'brillo' ? 'brillo' : 'volumen';
+      var okV = B('openSettings', [vKey]);
+      return { handled: true, text: okV
+        ? 'No puedo mover el ' + vKey + ' yo sola desde acá, pero te abrí los ajustes de ' + SETTINGS[vKey] + ' para que lo regules.'
+        : 'No pude abrir los ajustes de ' + SETTINGS[vKey] + '.' };
+    }
+
+    // «pon música» / «reproduce música»: abre el reproductor en vez de caer al router
+    if (/^(?:pon|pone|poner|reproduce|reproducir|escuchar|quiero escuchar)\s+(?:algo de\s+|un poco de\s+)?musica$/.test(t)) {
+      var okM = B('openApp', ['musica']);
+      return { handled: true, text: okM ? 'Te abrí YT Music. Elegí qué querés escuchar.' : 'No encontré YT Music en este teléfono.' };
     }
 
     // Abrir apps y ajustes
@@ -755,7 +801,7 @@ window.KiuBrain = (function () {
     }
 
     // --- Batería (datos reales del teléfono) ---
-    if (/(cuanta|cuanto)\s+bateria|bateria\s+(queda|hay|tiene|me)|nivel de bateria|como (anda|va|esta) la bateria|me queda de bateria/.test(t)) {
+    if (/(cuanta|cuanto)\s+bateria|bateria\s+(queda|hay|tiene|me)|nivel de bateria|como (anda|va|esta) la bateria|me queda de bateria|cual es (?:la )?bateria|(?:la )?bateria actual|^(?:la )?bateria$|cuanta carga/.test(t)) {
       var dB = window.KiuApp ? KiuApp.sysCache : null;
       if (dB && dB.bat) {
         var bTxt = 'Me queda ' + dB.bat + '% de batería';

@@ -28,7 +28,7 @@ public class KiuService extends Service {
     public static volatile boolean AWAKE;
     private static KiuService SELF;
     public static volatile boolean SUSPENDED;
-    private static final Pattern WAKE = Pattern.compile("\\b(?:kiu|ky[uú]|q[ií]u|qui[uú]|kiubo|kyuvi)\\b");
+    private static final Pattern WAKE = Pattern.compile("\\b(?:kiu|ky[uúo]|k[ií][oóu]|q[ií][uo]|qui[uúo]|ci[uú]|chi[uú]|kiw[iy]|k iu|ki u|kiubo|kyuvi)\\b");
     private SpeechRecognizer sr;
     private final Handler h = new Handler(Looper.getMainLooper());
     private int fails = 0;

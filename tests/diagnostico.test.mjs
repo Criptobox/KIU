@@ -29,7 +29,7 @@ const svc = fs.readFileSync(path.join(here, '..', 'app', 'src', 'main', 'java', 
 function D(r, puente) {
   const ctx = {};
   ctx.window = ctx;
-  ctx.bridge = () => JSON.stringify(r);
+  ctx.rawBridge = () => JSON.stringify(r);
   /* el puente REAL tiene métodos como funciones: si el arnés los pone como
      números, la sonda de capacidades los ve ausentes y TODO el diagnóstico
      marca instalación mezclada — un falso positivo que hace inútil el test. */
@@ -82,7 +82,7 @@ test('instalación MEZCLADA: se detecta por capacidad, no por número', () => {
 test('sin puente readable, muestra ? en vez de una versión inventada', () => {
   const ctx = {};
   ctx.window = ctx;
-  ctx.bridge = () => { throw new Error('sin puente'); };
+  ctx.rawBridge = () => { throw new Error('sin puente'); };
   ctx.KiuBridge = {};
   vm.createContext(ctx);
   vm.runInContext(diag, ctx, { filename: 'diag-voz.js' });
@@ -130,7 +130,7 @@ test('la versión de la UI sale del paquete, no de una constante escrita a mano'
   const codAppui = appui.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const codDiag = diag.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(codAppui, /Kiu v2\.9\.\d/, 'el rótulo no puede llevar la versión escrita a mano');
-  assert.match(appui, /'Kiu v' \+ \(this\.ver \|\| '\?'\)/);
+  assert.match(appui, /'Kiu v' \+ verTxt/, 'el rótulo usa la versión leída del paquete');
   assert.match(appui, /verReal: function \(cb\) \{ return KiuDiagVoz\.verReal\(cb\); \}/, 'y tiene que delegar al módulo que sí lee el paquete');
   assert.doesNotMatch(codDiag, /'Kiu v2\.9\.\d/, 'ni el módulo nuevo puede hardcodearla');
 });
@@ -200,7 +200,7 @@ test('el modelo Vosk se busca en am/final.mdl, que es donde lo deja el zip ofici
 test('instalar el modelo existe y no promete nada en el navegador', () => {
   const ctx = {};
   ctx.window = ctx;
-  ctx.bridge = () => JSON.stringify({ version: '2.9.7', versionCode: 45, voskModel: false });
+  ctx.rawBridge = () => JSON.stringify({ version: '2.9.7', versionCode: 45, voskModel: false });
   ctx.console = console;
   ctx.setTimeout = () => 0; ctx.clearInterval = () => {}; ctx.setInterval = () => 0;
   vm.createContext(ctx);
@@ -216,7 +216,7 @@ test('el botón de instalar sale solo cuando FALTA el modelo', () => {
   const D = (r) => {
     const ctx = {};
     ctx.window = ctx;
-    ctx.bridge = () => JSON.stringify(r);
+    ctx.rawBridge = () => JSON.stringify(r);
     ctx.KiuBridge = { wwInstall() {}, dlStatus() { return '{}'; }, wwUnzip() { return '{}'; }, wwUnzipStatus() { return '{}'; } };
     ctx.setTimeout = () => 0; ctx.setInterval = () => 0; ctx.clearInterval = () => {};
     vm.createContext(ctx);

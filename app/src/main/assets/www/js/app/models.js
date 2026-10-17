@@ -94,6 +94,13 @@
         for (var t = 0; t < ids.length; t++) {
           var j = ids[t];
           var st = jparse(rawBridge('dlStatus', [j]) || '{}', {});
+          /* v2.10.1 · LA BARRA APARECIA Y DESAPARECIA. Java informa «downloading» y
+             «cancelled»; este bucle solo conocia «run» y «cancel». Con la descarga en
+             marcha el estado no coincidia con nada, caia al final del bucle y el trabajo
+             se borraba de la lista: la tarjeta volvia a «Descargar» mientras Java seguia
+             bajando. Se normalizan los nombres al entrar. */
+          if (st.st === 'downloading') st.st = 'run';
+          else if (st.st === 'cancelled') st.st = 'cancel';
           var job = self.jobs[j];
           if (!job) continue;
           /* v1.9.1: "done" con menos bytes que el total = truncado → tratarlo como error */
@@ -104,7 +111,13 @@
             job.st = st.st;
             job.got = st.got || 0;
             job.total = st.total || 0;
-            App.renderModels();
+            /* Redibujar la lista entera cada 0,9 s reemplazaba los botones Pausar y
+               Cancelar entre el toque y el soltar, y el toque se perdia. Solo se
+               reconstruye cuando cambia el estado; el resto actualiza en sitio. */
+            if (job._shown !== job.st || !App.paintDl(j, job)) {
+              job._shown = job.st;
+              App.renderModels();
+            }
             continue;
           }
           job.st = st.st || 'err';

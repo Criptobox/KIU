@@ -192,3 +192,37 @@ test('no hay IDs duplicados en index.html', () => {
   const dup = ids.filter((x, i) => ids.indexOf(x) !== i);
   assert.deepEqual(dup, []);
 });
+
+/* ---- v2.10.1: descargas y diagnóstico de voz (capturas del usuario) ---- */
+const models = readFileSync(path.join(WWW, 'js', 'app', 'models.js'), 'utf8');
+const diagSrc = readFileSync(path.join(WWW, 'js', 'app', 'diag-voz.js'), 'utf8');
+const dlJava = readFileSync(path.join(javaDir, 'KiuDlTask.java'), 'utf8');
+
+test('descargas: los estados de Java («downloading», «cancelled») se normalizan en JS', () => {
+  assert.match(dlJava, /state = "downloading"/);
+  assert.match(dlJava, /state = "cancelled"/);
+  assert.match(models, /st\.st === 'downloading'\) st\.st = 'run'/);
+  assert.match(models, /st\.st === 'cancelled'\) st\.st = 'cancel'/);
+});
+
+test('descargas: el progreso se pinta en sitio, sin rehacer los botones', () => {
+  assert.match(models, /App\.paintDl\(j, job\)/);
+  assert.match(ui, /paintDl: function \(id, job\)/);
+});
+
+test('diagnóstico: la versión se lee con el puente CRUDO (bridge() devuelve booleanos)', () => {
+  assert.match(diagSrc, /JSON\.parse\(rawBridge\('kiuDiag'\)/);
+  assert.doesNotMatch(diagSrc, /W\.bridge\(/);
+  assert.doesNotMatch(diagSrc, /W\.verReal/, 'W es window: no tiene verReal (crash de la captura)');
+});
+
+test('voz: la descarga del modelo muestra barra de progreso y detecta fallos de Java', () => {
+  assert.match(diagSrc, /<progress max="100"/);
+  assert.match(diagSrc, /st\.st === 'err'/);
+  assert.match(diagSrc, /st\.st === 'none'/);
+});
+
+test('versión: ninguna cadena fija «2.7» en la interfaz', () => {
+  assert.doesNotMatch(html, /Kiu v?2\.7\.0/);
+  assert.match(html, /id="about-ver"/);
+});

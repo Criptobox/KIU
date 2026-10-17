@@ -2,7 +2,7 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
-## [Sin publicar] — Voz: saludo, conversación continua y comandos
+## [2.10.1] — Voz, modelos y descargas
 
 - **Saludo:** el TTS de Android tarda 1-3 s en arrancar y el saludo sale a los 1,6 s. `speak()` descartaba la frase si `ttsReady` era false y el JS lo daba por hablado. Ahora la frase queda en cola y se dice al estar listo el TTS (si es de hace más de 20 s se descarta).
 - **Conversación continua:** (1) si el TTS no arrancaba nunca no había `onDone` y el micro no se reabría; ahora, si se rinde, se avisa fin igual. (2) El reconocedor del comando no tenía watchdog: si se colgaba, `COMMAND_BUSY` quedaba en true y `openConvMic()` volvía siempre por su primera línea. Ahora hay un watchdog de 20 s. (3) Sin permiso de micrófono el bucle reintentaba 14 s sin decir nada; ahora lo pide una vez.
@@ -10,6 +10,9 @@ Formato basado en Keep a Changelog. Fechas en 2026.
 - **Comandos:** nueva capa `cleanVoice()` que quita cortesías («ok», «por favor», «¿podés…?») y unifica formas de pedir (ponme, despiértame, quiero una alarma). «Alarma para las 7» ya no cae en «¿A qué hora?». Nuevos: «pon la linterna», «cuál es la batería», «sube/baja el volumen/brillo» (abre el ajuste y lo dice con honestidad).
 - **Mejoras:** respuestas lentas del modelo local ya no cierran la ventana de conversación (`listen()` refresca el latido); la voz viene activada en instalaciones nuevas; «pon música» abre YT Music.
 - **Modelos reorganizado:** arriba «Cómo responde Kiu» (modo Híbrido/Local/API + orquestador); abajo tres pestañas por origen: Teléfono (RAM, instalados, descargas), Nube (proveedores) y Mi red (servidor). La pantalla «Proveedores» desaparece: `go('api')` abre la pestaña Nube. Creatividad y largo de respuesta pasan a Ajustes → Respuestas; «Revisar mi configuración» y «Diagnosticar voz» a Ajustes → Diagnóstico. Todos los IDs se conservan.
+- **Descargas de modelos:** la barra aparecía y desaparecía porque Java informa «downloading»/«cancelled» y el JS solo conocía «run»/«cancel»: al empezar a bajar, el trabajo se borraba de la lista. Se normalizan los estados y el progreso se pinta en sitio (antes se rehacía la lista cada 0,9 s y los botones Pausar/Cancelar perdían el toque).
+- **Modelo de voz (Vosk):** barra de progreso real (descarga) e indeterminada (instalación); los errores de Java («err», «none») ya no dejan el botón en «Bajando…» para siempre; `puedeInstalar` ya no arranca la descarga al consultarlo. Botón «Dar permiso de micrófono» en el diagnóstico.
+- **Crash `W.verReal is not a function`** al terminar de instalar el modelo de voz. **Versión «v?» / «código 0»:** `verReal` usaba `bridge()` (devuelve booleano) en vez de `rawBridge()`; y «Kiu 2.7.0» estaba escrito a mano en `index.html`. Ahora sale del paquete instalado. Versión 2.10.1 (código 49).
 - Tests: `tests/voz-comandos.test.mjs`. 263 pasan. **El Java no se pudo compilar acá (sin Android SDK): lo verifica el CI.**
 
 ## [2.10.0] — El error siguiente: un miembro que no existe

@@ -60,7 +60,7 @@
     }
     var d = null;
     try {
-      d = JSON.parse(W.bridge('kiuDiag') || '{}');
+      d = JSON.parse(rawBridge('kiuDiag') || '{}');
     } catch (e) {
       d = null;
     }
@@ -158,7 +158,14 @@
     }
     /* el botón aparece SOLO cuando falta el modelo y se puede instalar desde acá:
        si ya está, un botón de «instalar» es ruido. */
-    if (faltaElModelo(filas) && puedeInstalar()) {
+    /* v2.10.1: sin permiso de micrófono no hay nada más que arreglar hasta darlo; un
+       botón es más corto que «Android · Ajustes · Apps · Kiu · Permisos…». */
+    if (KiuDiagVoz.raw && KiuDiagVoz.raw.mic === false) {
+      h += '<button class="btn-ghost full" id="btn-mic-perm" style="justify-content:center;margin:10px 0 0">Dar permiso de micrófono</button>';
+    }
+    if (KiuDiagVoz.prog) {
+      h += progHtml();
+    } else if (faltaElModelo(filas) && puedeInstalar()) {
       h += '<button class="btn-ghost full" id="btn-ww-install" style="justify-content:center;margin:10px 0 0">'
         + 'Bajar el modelo de voz (39 MB)</button>';
     }
@@ -200,8 +207,50 @@
   KiuDiagVoz.instalando = null;     // id del job de descarga o de extracción
 
   KiuDiagVoz.puedeInstalar = function () {
-    try { return !!rawBridge('wwInstall'); } catch (e) { return false; }
+    /* v2.10.1: antes llamaba a wwInstall, que ARRANCA la descarga: preguntar «¿se
+       puede?» bajaba 39 MB. Ahora solo mira si el método existe. */
+    try { return !!(W.KiuBridge && typeof W.KiuBridge.wwInstall === 'function'); } catch (e) { return false; }
   };
+
+  /* v2.10.1 · BARRA DE PROGRESO DE LA DESCARGA DE VOZ. Antes solo se leia «Bajando…»
+     en un boton deshabilitado y un aviso al empezar: 39 MB sin ninguna señal de vida.
+     prog = { fase: 'descargando' | 'instalando', got, total }. En «instalando» no hay
+     porcentaje real (Java reporta archivos, no un total), asi que la barra es
+     indeterminada: es mas honesto que inventar un numero. */
+  KiuDiagVoz.prog = null;
+  function mb(n) { return (Math.round((n || 0) / 104857.6) / 10).toLocaleString('es-AR', { maximumFractionDigits: 1 }); }
+  function progHtml() {
+    var p = KiuDiagVoz.prog;
+    if (!p) return '';
+    var h = '<div id="ww-prog" style="margin:10px 0 0">';
+    if (p.fase === 'descargando') {
+      var pct = p.total ? Math.min(100, Math.round(p.got / p.total * 100)) : 0;
+      h += '<div style="display:flex;justify-content:space-between;font:500 12.5px system-ui,sans-serif;margin-bottom:5px"><span>Bajando el modelo de voz</span><span>'
+        + (p.total ? pct + '% · ' + mb(p.got) + ' de ' + mb(p.total) + ' MB' : 'conectando…') + '</span></div>';
+      h += '<progress max="100" value="' + pct + '" style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
+    } else {
+      h += '<div style="font:500 12.5px system-ui,sans-serif;margin-bottom:5px">Instalando el modelo (descomprimiendo)…</div>';
+      h += '<progress style="width:100%;height:10px;accent-color:var(--teal,#2DD4BF)"></progress>';
+    }
+    h += '<div style="font:400 11.5px system-ui,sans-serif;color:var(--mut);margin-top:5px">No cierres la app: si se corta, sigue donde quedó.</div></div>';
+    return h;
+  }
+  /* pinta en sitio: reemplaza el boton la primera vez y despues solo actualiza */
+  KiuDiagVoz.pintaProg = function () {
+    var doc = W.document;
+    if (!doc) return;
+    var cur = doc.getElementById('ww-prog');
+    if (!KiuDiagVoz.prog) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return; }
+    var holder = doc.createElement('div');
+    holder.innerHTML = progHtml();
+    var nuevo = holder.firstChild;
+    if (cur && cur.parentNode) { cur.parentNode.replaceChild(nuevo, cur); return; }
+    var btn = doc.getElementById('btn-ww-install');
+    if (btn && btn.parentNode) btn.parentNode.replaceChild(nuevo, btn);
+  };
+  function repinta() {
+    try { if (W.App && W.App.renderDiagVoz) W.App.renderDiagVoz(); } catch (e) { }
+  }
 
   KiuDiagVoz.instalar = function (cb) {
     if (KiuDiagVoz.instalando) { App.toast('Ya está bajando el modelo…'); return; }
@@ -214,12 +263,13 @@
     }
     if (r.st === 'done' && r.present) {
       App.toast('El modelo ya estaba instalado ✓');
-      W.verReal();
+      KiuDiagVoz.verReal();
       if (cb) cb(true);
       return;
     }
-    if (r.st === 'error') {
+    if (r.st === 'error' || !r.id) {
       App.toast('No pude empezar la descarga: ' + (r.err || 'sin motivo'));
+      repinta();
       return;
     }
     if (!r.id) {
@@ -227,6 +277,8 @@
       return;
     }
     KiuDiagVoz.instalando = { id: r.id, fase: 'descargando' };
+    KiuDiagVoz.prog = { fase: 'descargando', got: 0, total: 0 };
+    KiuDiagVoz.pintaProg();
     App.toast('Bajando el modelo de voz (39 MB)…');
     KiuDiagVoz.sigueDescarga(cb);
   };
@@ -241,11 +293,18 @@
         KiuDiagVoz.extrae(path, cb);
         return;
       }
-      if (st.st === 'error' || st.st === 'cancelled') {
+      /* v2.10.1: Java dice 'err' y 'cancelled' (y 'none' si perdio el trabajo); aca
+         solo se miraba 'error', asi que un fallo dejaba el boton en «Bajando…» para
+         siempre. */
+      if (st.st === 'error' || st.st === 'err' || st.st === 'cancelled' || st.st === 'cancel' || st.st === 'none') {
         KiuDiagVoz.instalando = null;
-        App.toast('Falló la descarga: ' + (st.err || 'sin motivo'));
+        KiuDiagVoz.prog = null;
+        App.toast('Falló la descarga: ' + (st.err || (st.st === 'none' ? 'se perdió el trabajo, probá de nuevo' : 'sin motivo')));
+        repinta();
         return;
       }
+      KiuDiagVoz.prog = { fase: 'descargando', got: st.got || 0, total: st.total || 0 };
+      KiuDiagVoz.pintaProg();
       KiuDiagVoz.sigueDescarga(cb);
     }, 900);
   };
@@ -255,10 +314,14 @@
     try { r = JSON.parse(rawBridge('wwUnzip', [zipPath]) || '{}'); } catch (e) { }
     if (r.st === 'error' || !r.id) {
       KiuDiagVoz.instalando = null;
+      KiuDiagVoz.prog = null;
+      repinta();
       App.toast('No pude descomprimir: ' + (r.err || 'el zip no llegó bien'));
       return;
     }
     KiuDiagVoz.instalando = { id: r.id, fase: 'descomprimiendo' };
+    KiuDiagVoz.prog = { fase: 'instalando' };
+    KiuDiagVoz.pintaProg();
     App.toast('Instalando el modelo…');
     var t = setInterval(function () {
       var st = {};
@@ -266,12 +329,15 @@
       if (st.st === 'done') {
         clearInterval(t);
         KiuDiagVoz.instalando = null;
-        W.verReal();
+        KiuDiagVoz.prog = null;
+        KiuDiagVoz.verReal();
         App.toast('Listo: Kiu ya te escucha sin internet ✓');
         if (cb) cb(true);
-      } else if (st.st === 'error') {
+      } else if (st.st === 'error' || st.st === 'none') {
         clearInterval(t);
         KiuDiagVoz.instalando = null;
+        KiuDiagVoz.prog = null;
+        repinta();
         App.toast('Falló la instalación: ' + (st.err || 'sin motivo'));
         if (cb) cb(false);
       }

@@ -236,6 +236,11 @@
       if (dvb) {
         dvb.addEventListener('click', function (ev) {
           var tgt = ev.target;
+          if (tgt && tgt.id === 'btn-mic-perm') {
+            bridge('listen');   /* pide el permiso; al concederlo empieza a escuchar */
+            setTimeout(function () { KiuDiagVoz.verReal(); self.renderDiagVoz(); }, 4000);
+            return;
+          }
           var b = tgt && tgt.id === 'btn-ww-install' ? tgt : null;
           if (!b) { return; }
           b.disabled = true;
@@ -656,7 +661,12 @@
       var pr = document.getElementById('profile-name');
       if (pr) pr.textContent = S.name || 'Tu nombre';
       var ps = document.getElementById('profile-sub');
-      if (ps) ps.textContent = 'Kiu v' + (this.ver || '?') + ' · Agente personal';
+      /* v2.10.1: this.ver nunca se asignaba (siempre «?»). La versión viene del
+         paquete instalado, leída por el puente. */
+      var verTxt = (window.KiuDiagVoz && KiuDiagVoz.ver) || this.ver || '?';
+      if (ps) ps.textContent = 'Kiu v' + verTxt + ' · Agente personal';
+      var av = document.getElementById('about-ver');
+      if (av) av.textContent = 'Kiu ' + verTxt;
       var psub = document.getElementById('persona-sub');
       if (psub) psub.textContent = ({ normal: 'Normal', divertida: 'Divertida', tecnica: 'Técnica', breve: 'Breve' })[S.persona] + ' · ajustá cómo te habla';
       this.renderRealSubs();
@@ -934,6 +944,32 @@
         foot.textContent = 'Se guardan en el almacenamiento privado de Kiu · ' + (free ? Mod.gb(free) + ' libres en el disco' : 'espacio real del teléfono en la app');
       }
       this.renderOrch();
+    },
+    /* v2.10.1: progreso en sitio — toca solo el anillo y los textos, nunca los botones */
+    paintDl: function (id, job) {
+      var btn = document.querySelector('#mdl-list [data-stop="' + id + '"]');
+      var row = btn && btn.closest('.k2-model');
+      if (!row) return false;
+      var pct = job.total ? Math.min(100, Math.round(job.got / job.total * 100)) : 0;
+      var now = Date.now();
+      if (job._lt && now > job._lt && job.got >= (job._lg || 0)) {
+        var sp = (job.got - (job._lg || 0)) / ((now - job._lt) / 1000);
+        if (sp > 10240) job.spd = sp;
+      }
+      job._lg = job.got; job._lt = now;
+      var spd = job.spd ? ((job.spd / 1048576) >= 10 ? Math.round(job.spd / 1048576) + ' MB/s' : (job.spd / 1048576).toFixed(1).replace('.', ',') + ' MB/s') : '';
+      var ring = row.querySelector('.k2-ringwrap');
+      var name = row.querySelector('.k2-name');
+      var sub = row.querySelector('.k2-sub');
+      if (!ring || !name || !sub) return false;
+      var C = 119.4;
+      var arc = ring.querySelectorAll('circle')[1];
+      if (arc) arc.setAttribute('stroke-dashoffset', (C - (C * pct / 100)).toFixed(1));
+      var b = ring.querySelector('b');
+      if (b) b.textContent = pct + '%';
+      name.textContent = name.textContent.replace(/^\d+%/, pct + '%');
+      sub.innerHTML = Mod.gb(job.got) + (job.total ? ' de ' + Mod.gb(job.total) : '') + (spd ? ' · <span class="spd">' + spd + '</span>' : '');
+      return true;
     },
     bindModels: function () {
       var self = this;

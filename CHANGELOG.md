@@ -2,6 +2,65 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.9.9] — El build se cayó en el CI por dos líneas
+
+Sin cambios de comportamiento: el arreglo es que el build compile. El CI lo dijo
+claro y así tiene que ser — un fallo de configuración no lo encuentra nadie hasta
+que alguien sube el cambio.
+
+### Error 1 · `java.time.Instant` no resolvía
+
+```
+app/build.gradle.kts:167:27: Unresolved reference: time
+```
+
+El gotcha más caro de Kotlin DSL. **Dentro de un `.gradle.kts`, el identificador
+`java` no es el paquete `java.*`: es la extensión de Gradle** — la misma que
+configura `compileOptions`. Así que `java.time.Instant` se leía como «buscá `time`
+dentro de la extensión java», y `java.time` no existe.
+
+No compila en ninguna versión de Kotlin y no lo va a compilar nunca acá: no es un
+problema de versión, es de resolución de nombres. El arreglo es un `import
+java.time.Instant` explícito al principio del archivo, que le gana a la extensión.
+
+### Error 2 · el mapa del sello no casaba de tipos
+
+```
+app/build.gradle.kts:168:9: Type mismatch: inferred type is Serializable
+but Pair<TypeVariable(K), TypeVariable(V)> was expected
+```
+
+`mapOf(...)` con valores de tipos distintos —`kiuVersionCode` es `Int`,
+`getenv()` devuelve `String?`— hace que Kotlin infiera el tipo común **más arriba**:
+`Serializable`. Y un `Pair<K, Serializable>` no es lo que el `joinToString` de abajo
+espera.
+
+El arreglo es declarar el tipo: `val stamp: Map<String, String>` y convertir el
+código con `.toString()`. Declare el tipo y el problema desaparece, porque el
+compositor deja de tener que adivinar.
+
+### Los dos por lo mismo
+
+Los dos son el mismo error de fondo: **escribir código que solo compila en un
+contexto, sin saber cuál es.** El `java` de Kotlin DSL y el `mapOf` sin tipo son las
+dos caras de no declarar las suposiciones.
+
+### Qué hice para que no vuelva a pasar
+
+- `tests/sellado.test.mjs` mira el archivo real y falla si vuelve el `java.time.` en
+  línea o si el `mapOf` queda sin tipo declarado.
+- `tests/kotlin/SelloBuildCheck.kt` compila y ejecuta con `kotlinc` el bloque del
+  sello, y verifica el JSON que produce.
+
+Y una aclaración que va al revés de lo que se esperaría: **el harness de Kotlin NO
+reproduce esos dos errores, y dice que no lo hace.** En un `.kt` normal
+`java.time.Instant` compila sin problema, y el `mapOf` sin tipo también — los dos
+fallos solo existen dentro de un `.gradle.kts`. Lo verifiqué compilando las dos
+versiones rotas a propósito, y no fallan. Un guard que parece cubrir un bug sin
+cubrirlo es peor que no tenerlo: da confianza falsa sobre lo único que no se está
+comprobando. Así que el guard de los dos gotchas es estructural, y el harness
+cubre lo que sí puede: el comportamiento del sello.
+
 ## [2.9.8] — El modelo de voz se instala desde la app
 
 Hasta ahora, tener la palabra de activación local era saber un comando de `adb`.

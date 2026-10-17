@@ -1,4 +1,10 @@
 import java.io.File
+// v2.9.8: import explícito, y no por prolijidad. Dentro de un .gradle.kts, `java`
+// resuelve a la EXTENSIÓN de Gradle (la que configura compileOptions), no al
+// paquete java.*. Por eso `java.time.Instant` daba "Unresolved reference: time".
+// El import explícito le gana a la extensión. Es el gotcha más caro de Kotlin DSL
+// y rompió el build entero por una línea.
+import java.time.Instant
 
 // Módulo app de KIU — Java puro + WebView + motor llama.cpp
 //
@@ -21,8 +27,8 @@ plugins {
    lugares donde poner un número aparece el que se queda viejo. Si alguno de los
    dos se desactualiza, el sello miente sobre el APK que estás por instalar —
    que es peor que no tener sello. Las dos cosas leen de acá. */
-val kiuVersionName = "2.9.8"
-val kiuVersionCode = 46
+val kiuVersionName = "2.9.9"
+val kiuVersionCode = 47
 
 val llamaDir = File(rootDir, "vendor/llama.cpp")
 val buildNative = llamaDir.exists()
@@ -160,12 +166,17 @@ val kiuGitSha = runCatching {
 
 val kiuBuildStamp by tasks.registering {
     val outDir = layout.buildDirectory.dir("generated/kiuAssets")
-    val stamp = mapOf(
+    /* Map<String, String> explícito. Con `mapOf(...)` a secas y valores de tipos
+       distintos (kiuVersionCode es Int, getenv() devuelve String?), Kotlin infiere
+       el tipo común más arriba —Serializable— y el Pair deja de casar con lo que
+       espera el joinToString de abajo. Declarar el tipo es la mitad del arreglo;
+       la otra es que el build lo dijera, que es exactamente para lo que sirve un CI. */
+    val stamp: Map<String, String> = mapOf(
         "version" to kiuVersionName,
-        "versionCode" to kiuVersionCode,
+        "versionCode" to kiuVersionCode.toString(),
         "git" to kiuGitSha,
-        "builtAt" to java.time.Instant.now().toString(),
-        "builtHere" to System.getenv("GITHUB_RUN_ID") ?: "local"
+        "builtAt" to Instant.now().toString(),
+        "builtHere" to (System.getenv("GITHUB_RUN_ID") ?: "local")
     )
     doLast {
         val f = outDir.get().file("build-stamp.json").asFile

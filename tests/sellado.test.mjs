@@ -110,3 +110,44 @@ test('argumentalitos inválidos fallan con código de error, no con 0', () => {
   assert.equal(correr(['/no/existe.apk']).code, 2, 'archivo inexistente');
   assert.equal(correr([]).code, 2, 'sin argumentos');
 });
+
+/* ---- los dos gotchas de Kotlin DSL que rompieron el CI (v2.9.8) ----
+   Esto se verificó con kotlinc: en un `.kt` normal `java.time.Instant` compila
+   bien y el `mapOf` sin tipo también. Los dos errores solo pasan en un
+   `.gradle.kts`, donde `java` es la extensión de Gradle. Por eso el guard es
+   estructural sobre el archivo real, y no un harness que dé la impresión de
+   reproducir el fallo sin reproducirlo. */
+
+test('el sello de build compila en Kotlin DSL', () => {
+  const g = fs.readFileSync(path.join(here, '..', 'app', 'build.gradle.kts'), 'utf8');
+  /* 1 · `java` dentro de un .gradle.kts es la EXTENSIÓN de Gradle, no el paquete.
+     Sin el import explícito, java.time.Instant no resuelve y el build entero
+     muere en la línea 167. */
+  assert.match(g, /^import java\.time\.Instant$/m,
+    'falta el import explícito de Instant: sin él, java.time no resuelve');
+  /* el código sin comentarios Y sin imports: el import tiene que seguir ahí, pero
+     no es «uso en línea» de java.time — es justamente lo que lo arregla. */
+  const codigo = g
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^import .*$/gm, '');
+  assert.doesNotMatch(codigo, /[^.\w]java\.time\./,
+    'no hay que usar java.time. en línea: se escribe Instant a secas, con el import');
+  /* 2 · mapOf con valores de tipos distintos (Int, String, String?) hace que Kotlin
+     infiera el común más arriba y el Pair deje de casar con lo que espera el
+     joinToString. El tipo tiene que estar declarado. */
+  assert.match(codigo, /val stamp: Map<String, String> = mapOf\(/,
+    'el mapa del sello tiene que declarar Map<String, String> explícito');
+  assert.match(codigo, /kiuVersionCode\.toString\(\)/,
+    'y el versionCode tiene que convertirse a texto: un Int en el mapa rompe la inferencia');
+});
+
+test('el harness de Kotlin dice de frente qué verifica y qué no', () => {
+  /* Un test que aparenta cubrir un bug que en realidad no cubre es peor que
+     ninguno: da confianza falsa sobre lo único que no se está comprobando. */
+  const k = fs.readFileSync(path.join(here, 'kotlin', 'SelloBuildCheck.kt'), 'utf8');
+  assert.match(k, /LIMITACIÓN/, 'tiene que declarar la limitación');
+  assert.match(k, /NO reproduce los dos errores/);
+  assert.match(k, /extension|extensión/,
+    'y decir por qué no puede reproducirlos: el bug es del .gradle.kts');
+});

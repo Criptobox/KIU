@@ -1,4 +1,4 @@
-KIU - Tanda 18: el modelo de voz se instala desde la app (v2.9.8)
+KIU - Tanda 19: el build se caia en el CI por dos lineas (v2.9.9)
 ===============================================================================
 
 OJO, LEÉ ESTO PRIMERO
@@ -22,6 +22,26 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
    y MIRA que termine bien antes de instalar.
 
 NUEVO EN ESTA TANDA
+- ARREGLO DE BUILD, sin cambios de comportamiento. El CI no arrancaba:
+    app/build.gradle.kts:167 Unresolved reference: time
+    app/build.gradle.kts:168 Type mismatch: inferred Serializable but Pair<K,V> expected
+- El primero es EL gotcha de Kotlin DSL: dentro de un .gradle.kts, `java` es la
+  extension de Gradle, no el paquete java.*. Por eso java.time.Instant no resuelve
+  nunca. Arreglo: import java.time.Instant explicito al principio.
+- El segundo: mapOf con valores de tipos distintos (Int, String, String?) hace que
+  Kotlin infiera el comun mas arriba (Serializable) y el Pair deja de casar. Arreglo:
+  declarar Map<String, String> y convertir el codigo con toString().
+- Los dos son el mismo error de fondo: escribir codigo que solo compila en un
+  contexto sin saber cual es.
+- Guardas: sellado.test.mjs mira el archivo real y falla si vuelve el java.time. en
+  linea o el mapOf sin tipo. Y un harness en Kotlin compila y ejecuta el bloque del
+  sello con kotlinc para verificar el JSON que produce.
+- IMPORTANTE: el harness de Kotlin NO reproduce los dos errores, y lo dice. En un
+  .kt normal los dos compilan bien — los fallos son exclusivos de .gradle.kts. Un
+  guard que aparenta cubrir un bug sin cubrirlo da confianza falsa.
+- App v2.9.9 (versionCode 47). 252 tests en verde.
+
+TANDA 18 (v2.9.8)
 - El modelo Vosk (39 MB) se baja DESDE LA APP, en el diagnóstico de voz. Antes la
   única forma era saber el comando de adb, y sin modelo la palabra de activacion
   local no arranca sin decir por que.
@@ -419,14 +439,14 @@ CÓMO PROBAR
 - Compilar:  ./gradlew :app:assembleDebug   (JDK 17 + Android SDK 34 + NDK)
   (con vendor presente, Gradle compila llama.cpp y deja los .so en
    app/src/main/jniLibs/<ABI>/)
-- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.9.8-release.apk
-- Tests:     node --test tests/*.test.mjs   (Node 18+, 250 tests; 247+3 skip sin JDK/zip)
+- Release:   KIU_PASS=tu-clave ./scripts/build.sh   → dist/Kiu-2.9.9-release.apk
+- Tests:     node --test tests/*.test.mjs   (Node 18+, 252 tests; 249+3 skip sin JDK/zip)
 - Contrato del puente:  python3 scripts/bridge_audit.py
 - RAG sin congelamientos: Ajustes → Documentos, indexá un PDF grande y seguí
   usando la app mientras indexa (las animaciones no se cortan).
 - Nuevo proveedor de API: poné su URL https://…/v1 en Proveedores; la llamada
   viaja por el proxy de Java sin tocar el código.
-- Release GitHub: git tag v2.9.8 && git push --tags
+- Release GitHub: git tag v2.9.9 && git push --tags
 
 NO INCLUIDO
 - vendor/llama.cpp (~200 MB): se restaura con ./scripts/vendor_llama.sh

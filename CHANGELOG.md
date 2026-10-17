@@ -9,6 +9,7 @@ Formato basado en Keep a Changelog. Fechas en 2026.
 - **Despertar por voz:** tras un comando suelto (sin voz y sin conversación) el servicio quedaba suspendido; ahora `botSay` lo reanuda. La palabra de activación acepta más variantes (kio, qiu, chiu, kiwi, «ki u»).
 - **Comandos:** nueva capa `cleanVoice()` que quita cortesías («ok», «por favor», «¿podés…?») y unifica formas de pedir (ponme, despiértame, quiero una alarma). «Alarma para las 7» ya no cae en «¿A qué hora?». Nuevos: «pon la linterna», «cuál es la batería», «sube/baja el volumen/brillo» (abre el ajuste y lo dice con honestidad).
 - **Mejoras:** respuestas lentas del modelo local ya no cierran la ventana de conversación (`listen()` refresca el latido); la voz viene activada en instalaciones nuevas; «pon música» abre YT Music.
+- **Modelos reorganizado:** arriba «Cómo responde Kiu» (modo Híbrido/Local/API + orquestador); abajo tres pestañas por origen: Teléfono (RAM, instalados, descargas), Nube (proveedores) y Mi red (servidor). La pantalla «Proveedores» desaparece: `go('api')` abre la pestaña Nube. Creatividad y largo de respuesta pasan a Ajustes → Respuestas; «Revisar mi configuración» y «Diagnosticar voz» a Ajustes → Diagnóstico. Todos los IDs se conservan.
 - Tests: `tests/voz-comandos.test.mjs`. 263 pasan. **El Java no se pudo compilar acá (sin Android SDK): lo verifica el CI.**
 
 ## [2.10.0] — El error siguiente: un miembro que no existe

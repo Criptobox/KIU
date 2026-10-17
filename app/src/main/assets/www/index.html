@@ -225,56 +225,6 @@
   </section>
 
   <!-- ============ PANTALLA PROVEEDORES (API) ============ -->
-  <section id="screen-api" class="screen">
-    <header class="topbar">
-      <button class="icon-btn back-btn" data-go="settings" aria-label="Volver"><span class="ic" data-ic="chevl"></span></button>
-      <div class="brand-txt center">
-        <h1>Proveedores</h1>
-        <p>Local / Remoto / Híbrido</p>
-      </div>
-      <span class="topbar-spacer"></span>
-    </header>
-    <div class="content">
-      <div class="seg" id="mode-seg">
-        <button class="seg-btn" data-mode="hybrid">Híbrido</button>
-        <button class="seg-btn" data-mode="local">Local</button>
-        <button class="seg-btn" data-mode="api">API</button>
-      </div>
-      <p class="set-hint" id="mode-hint"></p>
-
-      <button class="btn-ghost full" id="btn-diag" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="shield"></span> Revisar mi configuración</button>
-      <button class="btn-ghost full" id="btn-diag-voz" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="mic"></span> Diagnosticar voz</button>
-      <div id="diag-voz-box"></div>
-
-      <div class="set-card gen-card">
-        <div class="set-row col">
-          <div><strong>Creatividad</strong><span id="gen-temp-lbl">Equilibrada (0,7)</span></div>
-          <input type="range" id="gen-temp" min="0" max="1.2" step="0.05" value="0.7">
-        </div>
-        <div class="set-row col">
-          <div><strong>Largo de las respuestas</strong><span>Los tres valores valen para todos tus proveedores</span></div>
-          <div class="seg" id="gen-len">
-            <button class="seg-btn" data-tok="350">Cortas</button>
-            <button class="seg-btn active" data-tok="700">Medias</button>
-            <button class="seg-btn" data-tok="1200">Largas</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="filter-bar">
-        <div class="filter-scroll" id="prov-filters">
-          <button class="chip active" data-f="todos">Todos</button>
-          <button class="chip" data-f="listos">Listos</button>
-          <button class="chip" data-f="gratis">Gratis</button>
-        </div>
-      </div>
-
-      <div id="prov-list"></div>
-
-      <p class="set-hint small centered">Si un proveedor falla, Kiu lo deja en pausa un rato y sigue con el próximo activo. Las claves van cifradas con el Keystore de Android y jamás salen del teléfono.</p>
-    </div>
-  </section>
-
   <!-- ============ PANTALLA BIBLIOTECA ============ -->
   <section id="screen-biblio" class="screen">
     <header class="topbar">
@@ -315,28 +265,19 @@
       <button class="icon-btn back-btn" data-go="settings" aria-label="Volver"><span class="ic" data-ic="chevl"></span></button>
       <div class="brand-txt center">
         <h1>Modelos</h1>
-        <p>Descargá IA y corréla en tu teléfono</p>
+        <p>Teléfono, nube y tu red</p>
       </div>
       <span class="topbar-spacer"></span>
     </header>
     <div class="content">
-      <!-- v2.0: héroe «Tu teléfono» — compatibilidad clara desde el arranque -->
-      <div class="k2-hero" id="dev-card">
-        <div class="k2-hero-top">
-          <span class="k2-tile tl-teal"><span class="ic" data-ic="cpu"></span></span>
-          <div class="k2-hero-tt">
-            <strong>Tu teléfono</strong>
-            <span id="dev-sub">Mirando el teléfono…</span>
-          </div>
-          <i class="k2-badge b-t" id="dev-badge">…</i>
-        </div>
-        <div class="k2-ramrow">
-          <div class="k2-mbar"><i id="dev-ram-fill" style="width:0%;background:var(--teal)"></i></div>
-          <span class="k2-ramlbl" id="dev-ram-lbl"></span>
-        </div>
-        <p class="k2-hero-hint" id="dev-hint"></p>
+      <!-- v2.10.1: arriba, CÓMO responde Kiu (modo + orquestador); abajo, DE DÓNDE salen los modelos (3 pestañas) -->
+      <div class="k2-sec"><h3>Cómo responde Kiu</h3></div>
+      <div class="seg" id="mode-seg">
+        <button class="seg-btn" data-mode="hybrid">Híbrido</button>
+        <button class="seg-btn" data-mode="local">Local</button>
+        <button class="seg-btn" data-mode="api">API</button>
       </div>
-
+      <p class="set-hint" id="mode-hint"></p>
       <!-- v2.0: orquestador compacto (mapa de roles) + ajuste fino plegable -->
       <div class="k2-sec">
         <h3>Orquestador · <span id="orch-mode-lbl">Auto decide</span></h3>
@@ -392,7 +333,30 @@
         </div>
       </div>
 
-      <!-- v2.0: Mis modelos — tarjetas grandes con estado real del motor -->
+      <div class="mtabs" id="mtabs" role="tablist">
+        <button class="mtab on" role="tab" data-mt="tel">Teléfono <i id="mt-count-tel"></i></button>
+        <button class="mtab" role="tab" data-mt="nube">Nube <i id="mt-count-nube"></i></button>
+        <button class="mtab" role="tab" data-mt="red">Mi red</button>
+      </div>
+
+      <div class="mpane on" id="mpane-tel">
+        <!-- v2.0: héroe «Tu teléfono» — compatibilidad clara desde el arranque -->
+      <div class="k2-hero" id="dev-card">
+        <div class="k2-hero-top">
+          <span class="k2-tile tl-teal"><span class="ic" data-ic="cpu"></span></span>
+          <div class="k2-hero-tt">
+            <strong>Tu teléfono</strong>
+            <span id="dev-sub">Mirando el teléfono…</span>
+          </div>
+          <i class="k2-badge b-t" id="dev-badge">…</i>
+        </div>
+        <div class="k2-ramrow">
+          <div class="k2-mbar"><i id="dev-ram-fill" style="width:0%;background:var(--teal)"></i></div>
+          <span class="k2-ramlbl" id="dev-ram-lbl"></span>
+        </div>
+        <p class="k2-hero-hint" id="dev-hint"></p>
+      </div>
+        <!-- v2.0: Mis modelos — tarjetas grandes con estado real del motor -->
       <div class="k2-sec">
         <h3>Mis modelos</h3>
         <span class="k2-count" id="mdl-count">0 en disco</span>
@@ -417,21 +381,27 @@
       <div id="mdl-list" class="k2-list"></div>
       <p class="set-hint small" id="mdl-foot"></p>
       <p class="set-hint small centered">Los «EN EL TELÉFONO» corren con el motor interno de Kiu (llama.cpp), sin internet y sin mandar nada afuera. Los «SERVIDOR» (visión y multimodal) son para tu PC u Ollama. También podés asignar un modelo local a «Fotos (visión)» en el Orquestador: contesta el texto de tu mensaje.</p>
+      </div>
 
-      <!-- v2.1: el apartado de API vuelve a estar acá, a un toque -->
-      <div class="k2-sec"><h3>APIs de internet</h3><span class="k2-count" id="api-count">OPCIONAL</span></div>
-      <button class="set-card row-card" data-go="api">
-        <span class="row-tile ti-violet ic" data-ic="cloud"></span>
-        <div class="row-txt">
-          <strong>Proveedores de IA</strong>
-          <span id="api-sub">Tocá para conectar Gemini, Groq, OpenAI y más</span>
+      <div class="mpane" id="mpane-nube">
+        <div class="k2-sec"><h3>Proveedores de IA</h3><span class="k2-count" id="api-count">OPCIONAL</span></div>
+        <p class="set-hint small" id="api-sub" style="margin:0 2px 8px">Tocá para conectar Gemini, Groq, OpenAI y más</p>
+        <div class="filter-bar">
+        <div class="filter-scroll" id="prov-filters">
+          <button class="chip active" data-f="todos">Todos</button>
+          <button class="chip" data-f="listos">Listos</button>
+          <button class="chip" data-f="gratis">Gratis</button>
         </div>
-        <span class="row-ic ic" data-ic="chevr"></span>
-      </button>
+      </div>
 
-      <!-- v1.8.0: servidor en red (antes estaba duplicado en Proveedores) -->
-      <div class="k2-sec"><h3>Servidor en tu red</h3><span class="k2-count">OPCIONAL</span></div>
-      <button class="set-card row-card" id="row-local">
+      <div id="prov-list"></div>
+
+      <p class="set-hint small centered">Si un proveedor falla, Kiu lo deja en pausa un rato y sigue con el próximo activo. Las claves van cifradas con el Keystore de Android y jamás salen del teléfono.</p>
+      </div>
+
+      <div class="mpane" id="mpane-red">
+        <div class="k2-sec"><h3>Servidor en tu red</h3><span class="k2-count">OPCIONAL</span></div>
+        <button class="set-card row-card hidden" id="row-local">
         <span class="row-tile ti-teal ic" data-ic="brain"></span>
         <div class="row-txt">
           <strong>Ollama / LM Studio / llama-server</strong>
@@ -439,7 +409,7 @@
         </div>
         <span class="row-ic ic" data-ic="chevd"></span>
       </button>
-      <div id="local-block" class="hidden">
+        <div id="local-block">
         <div class="set-card">
           <div class="set-row">
             <div><strong>Estado del servidor</strong><span id="local-sub2">Servidor en tu red o teléfono · privado</span></div>
@@ -492,9 +462,11 @@
           </div>
         </div>
       </div>
+      </div>
     </div>
   </section>
 
+  
   <!-- ============ PANTALLA MEMORIA ============ -->
   <section id="screen-memory" class="screen">
     <header class="topbar">
@@ -680,6 +652,27 @@
         </div>
         <span class="row-ic ic" data-ic="chevr"></span>
       </button>
+
+      <div class="section-row"><h3>Respuestas</h3></div>
+      <div class="set-card gen-card">
+        <div class="set-row col">
+          <div><strong>Creatividad</strong><span id="gen-temp-lbl">Equilibrada (0,7)</span></div>
+          <input type="range" id="gen-temp" min="0" max="1.2" step="0.05" value="0.7">
+        </div>
+        <div class="set-row col">
+          <div><strong>Largo de las respuestas</strong><span>Los tres valores valen para todos tus proveedores</span></div>
+          <div class="seg" id="gen-len">
+            <button class="seg-btn" data-tok="350">Cortas</button>
+            <button class="seg-btn active" data-tok="700">Medias</button>
+            <button class="seg-btn" data-tok="1200">Largas</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-row"><h3>Diagnóstico</h3></div>
+      <button class="btn-ghost full" id="btn-diag" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="shield"></span> Revisar mi configuración</button>
+      <button class="btn-ghost full" id="btn-diag-voz" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="mic"></span> Diagnosticar voz</button>
+      <div id="diag-voz-box"></div>
 
       <div class="section-row" id="alarm-section"><h3>Alarmas</h3></div>
       <div class="set-card" id="alarm-card">

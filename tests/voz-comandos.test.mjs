@@ -147,3 +147,48 @@ test('java: listen() refresca el latido de conversación', () => {
   assert.ok(m);
   assert.match(m[1], /lastConvBeat = SystemClock\.elapsedRealtime\(\)/);
 });
+
+/* ---- v2.10.1: Modelos con pestañas (Teléfono / Nube / Mi red) ---- */
+const html = readFileSync(path.join(WWW, 'index.html'), 'utf8');
+const ui = readFileSync(path.join(WWW, 'js', 'app', 'app-ui.js'), 'utf8');
+
+function seccion(id) {
+  const i = html.indexOf(`<section id="${id}"`);
+  return html.slice(i, html.indexOf('</section>', i));
+}
+
+test('modelos: tres pestañas y cada pieza en su panel', () => {
+  const m = seccion('screen-models');
+  for (const t of ['tel', 'nube', 'red']) {
+    assert.match(m, new RegExp(`data-mt="${t}"`));
+    assert.match(m, new RegExp(`id="mpane-${t}"`));
+  }
+  const pane = (t) => { const i = m.indexOf(`id="mpane-${t}"`); return m.slice(i); };
+  assert.ok(pane('tel').indexOf('id="mdl-list"') < pane('tel').indexOf('id="mpane-nube"'), 'descargas en Teléfono');
+  assert.ok(pane('nube').indexOf('id="prov-list"') < pane('nube').indexOf('id="mpane-red"'), 'proveedores en Nube');
+  assert.ok(pane('red').indexOf('id="local-block"') > 0, 'servidor en Mi red');
+});
+
+test('modelos: el modo y el orquestador quedan arriba de las pestañas', () => {
+  const m = seccion('screen-models');
+  assert.ok(m.indexOf('id="mode-seg"') < m.indexOf('id="mtabs"'));
+  assert.ok(m.indexOf('id="orch-rows"') < m.indexOf('id="mtabs"'));
+});
+
+test('proveedores ya no es pantalla: go("api") cae en la pestaña Nube', () => {
+  assert.equal(html.includes('id="screen-api"'), false);
+  assert.match(ui, /if \(name === 'api'\) \{ name = 'models'; this\._mtab = 'nube'; \}/);
+});
+
+test('ajustes: Respuestas y Diagnóstico viven en Ajustes, no en Modelos', () => {
+  const s = seccion('screen-settings');
+  for (const id of ['gen-temp', 'gen-len', 'btn-diag', 'btn-diag-voz', 'diag-voz-box']) {
+    assert.ok(s.includes(`id="${id}"`), `${id} debe estar en Ajustes`);
+  }
+});
+
+test('no hay IDs duplicados en index.html', () => {
+  const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((x) => x[1]);
+  const dup = ids.filter((x, i) => ids.indexOf(x) !== i);
+  assert.deepEqual(dup, []);
+});

@@ -319,7 +319,7 @@
       lastKeys[pid] = null;
       keyOK = true;
       saveS();
-      if (App && App.current === 'api') App.renderProviders();
+      if (App && (App.current === 'models' || App.current === 'api')) App.renderProviders();
       return;
     }
     if (!Sec.ok) { st.last4 = val.slice(-4); saveS(); return; }
@@ -330,7 +330,7 @@
       st.key = '';
       keyOK = true;
       saveS();
-      if (App && App.current === 'api') App.renderProviders();
+      if (App && (App.current === 'models' || App.current === 'api')) App.renderProviders();
     }).catch(function () { keyOK = false; });
   }
   function loadKeys() {

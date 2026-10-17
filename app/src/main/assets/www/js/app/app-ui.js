@@ -206,6 +206,7 @@
       }, 700);
 
       this.bindNav();
+      this.bindModelTabs();
       this.bindHome();
       this.bindChat();
       this.bindMemory();
@@ -382,8 +383,11 @@
     /* ---------- Navegación ---------- */
     go: function (name) {
       /* v2.1: el botón «Volver» de Proveedores regresa a la pantalla desde la que entró */
-      if (name === 'api' && this.current && this.current !== 'api') {
-        var bk = document.querySelector('#screen-api .back-btn');
+      /* v2.10.1: «Proveedores» ya no es una pantalla aparte: es la pestaña Nube de
+         Modelos. Todo lo que apuntaba a 'api' sigue funcionando y cae ahí. */
+      if (name === 'api') { name = 'models'; this._mtab = 'nube'; }
+      if (name === 'models' && this.current && this.current !== 'models') {
+        var bk = document.querySelector('#screen-models .back-btn');
         if (bk) bk.setAttribute('data-go', this.current);
       }
       this.current = name;
@@ -399,9 +403,36 @@
       if (name === 'memory') { this.syncReminders(); this.refreshMem(); }
       if (name === 'home') { this.renderSys(); this.renderUsage(); Sys.refresh(); }
       if (name === 'biblio') this.renderBiblio();
-      if (name === 'api') this.renderProviders();
       if (name === 'settings') this.renderLocal();
-      if (name === 'models') { Mod.sync(function () { App.renderModels(); App.renderOrch(); }); }
+      if (name === 'models') {
+        this.modelsTab(this._mtab || 'tel');
+        Mod.sync(function () { App.renderModels(); App.renderOrch(); });
+      }
+    },
+    /* v2.10.1: pestañas de Modelos — Teléfono / Nube / Mi red */
+    _mtab: 'tel',
+    modelsTab: function (t) {
+      if (t !== 'tel' && t !== 'nube' && t !== 'red') t = 'tel';
+      this._mtab = t;
+      var tabs = document.querySelectorAll('#mtabs .mtab');
+      for (var i = 0; i < tabs.length; i++) {
+        var on = tabs[i].getAttribute('data-mt') === t;
+        tabs[i].classList.toggle('on', on);
+        tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+      var panes = document.querySelectorAll('.mpane');
+      for (var j = 0; j < panes.length; j++) panes[j].classList.toggle('on', panes[j].id === 'mpane-' + t);
+      if (t === 'nube') this.renderProviders();
+      if (t === 'red' && document.getElementById('loc-status')) this.renderLocal();
+    },
+    bindModelTabs: function () {
+      var self = this;
+      var bar = document.getElementById('mtabs');
+      if (!bar) return;
+      bar.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-mt]');
+        if (b) self.modelsTab(b.getAttribute('data-mt'));
+      });
     },
     bindNav: function () {
       var self = this;
@@ -646,6 +677,8 @@
         }
       }
       if (cnt) cnt.textContent = act.length ? act.length + ' ACTIVAS' : 'OPCIONAL';
+      var cn = document.getElementById('mt-count-nube');
+      if (cn) cn.textContent = act.length ? '· ' + act.length : '';
     },
     activeProvs: function () {
       var out = [];
@@ -730,6 +763,8 @@
         mrows.sort(function (a, b) { return (S.kiu.name === b.f ? 1 : 0) - (S.kiu.name === a.f ? 1 : 0); });
         var cnt = document.getElementById('mdl-count');
         if (cnt) cnt.textContent = mrows.length + (mrows.length === 1 ? ' en disco' : ' en disco');
+        var ct = document.getElementById('mt-count-tel');
+        if (ct) ct.textContent = mrows.length ? '· ' + mrows.length : '';
         var quantOf = function (fn) {
           var q = /(?:i?q)(\d)_(k_m|k_s|0)$/i.exec(fn.replace(/\.gguf$/i, ''));
           if (!q) { var q2 = /(?:i?)(q\d[_a-z0-9]*)/i.exec(fn); return q2 ? q2[1].toUpperCase() : ''; }

@@ -1167,3 +1167,11 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
 #mdl-filters .chip.active { background:var(--teal); border-color:var(--teal); color:#05231F; }
 .k2-badge.b-d { color:var(--dim); background:rgba(141,166,255,.08); border:1px solid var(--line); }
 .k2-tile.tl-dim { background:rgba(141,166,255,.08); color:var(--dim2); }
+
+/* v2.10.1: pestañas de Modelos (Teléfono / Nube / Mi red) */
+.mtabs { display:flex; gap:4px; margin:16px 0 12px; padding:4px; border-radius:14px; background:rgba(141,166,255,.06); border:1px solid var(--line); position:sticky; top:0; z-index:5; backdrop-filter:blur(8px); }
+.mtab { flex:1; border:0; background:transparent; color:var(--dim); font-size:13px; font-weight:700; padding:10px 6px; border-radius:10px; cursor:pointer; min-height:40px; }
+.mtab i { font-style:normal; font-weight:600; opacity:.8; }
+.mtab.on { background:var(--teal); color:#05231F; }
+.mpane { display:none; }
+.mpane.on { display:block; }

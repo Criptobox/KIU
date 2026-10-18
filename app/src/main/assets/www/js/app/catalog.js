@@ -70,7 +70,55 @@
     return b || String(f).replace(/\.gguf$/i, '');
   }
 
+
+  /* v2.11.0 · RECOMENDADOR SEGÚN EL TELÉFONO. Puro: recibe lo que informa sysInfo() y devuelve
+     qué conviene bajar. Mismo criterio que «Entra ✓» en Modelos (RAM del modelo <= RAM total - 1).
+     Texto: corre en el motor interno de Kiu. Visión: el motor interno solo lee texto, así que
+     las fotos van por Ollama en el teléfono (Termux), un servidor en la PC o la nube. */
+  function recomendar(dev, opts) {
+    dev = dev || {}; opts = opts || {};
+    var G = 1073741824;
+    var ram = dev.ramTotal ? dev.ramTotal / G : (dev.ramApprox || 0);
+    var disk = dev.diskFree ? dev.diskFree / G : 0;
+    var cores = dev.cores || 0;
+    var done = opts.done || {};
+    var out = { unknown: !ram, ram: ram, disk: disk, cores: cores, model: dev.model || '', tier: '',
+      text: [], extras: [], vision: { phone: null, pc: [] }, notes: [] };
+    if (!ram) return out;
+    out.tier = ram < 4 ? 'baja' : ram < 8 ? 'media' : 'alta';
+    var cap = ram - 1;
+    if (cores && cores <= 4) {
+      cap = Math.min(cap, 3.5);
+      out.notes.push('Tu teléfono tiene pocos núcleos (' + cores + '): te recomiendo modelos chicos para que respondan ágil.');
+    }
+    var diskOk = function (c) { return !disk || c.gb * 1.15 <= disk; };
+    var local = MODCAT.filter(function (c) { return c.eng === 'kiu' && !c.vis && !c.moe; });
+    var gen = local.filter(function (c) { return !/coder|deepseek/i.test(c.n); });
+    var fit = gen.filter(function (c) { return c.r <= cap; });
+    var list = fit.filter(diskOk).sort(function (a, b) { return b.r - a.r; });
+    if (fit.length && !list.length) out.notes.push('Te queda poco espacio libre (' + disk.toFixed(1).replace('.', ',') + ' GB): liberá espacio para bajar un modelo.');
+    var q = list[0] || null;
+    var b = null, f = null, i;
+    for (i = 0; i < list.length; i++) { if (list[i] !== q && list[i].r <= Math.max(2.4, cap * 0.6)) { b = list[i]; break; } }
+    for (i = 0; i < list.length; i++) { if (list[i] !== q && list[i] !== b && list[i].gb <= 1.0) { f = list[i]; break; } }
+    var add = function (k, c, why) { if (c) out.text.push({ k: k, c: c, why: why, done: !!done[c.f] }); };
+    add('quality', q, 'la mejor calidad que entra cómoda en tu RAM');
+    add('balanced', b, 'equilibrio entre calidad y velocidad');
+    add('fast', f, 'responde casi al instante');
+    local.forEach(function (c) {
+      if (/coder|cód/i.test(c.n) && c.r <= cap && diskOk(c)) out.extras.push({ k: 'code', c: c, why: 'especializado en programar', done: !!done[c.f] });
+      if (/deepseek/i.test(c.n) && c.r <= cap && diskOk(c)) out.extras.push({ k: 'reason', c: c, why: 'razona paso a paso', done: !!done[c.f] });
+    });
+    var vis = (opts.vis || []).filter(function (c) { return c.g === 'Visión'; }).sort(function (a, b2) { return a.r - b2.r; });
+    var vp = vis.filter(function (c) { return c.r <= cap - 0.5; });
+    out.vision.phone = vp.length ? vp[vp.length - 1] : null;
+    out.vision.pc = vis;
+    if (!out.vision.phone) out.notes.push('Con ' + Math.round(ram) + ' GB de RAM las fotos conviene analizarlas con un servidor en tu PC o un proveedor en la nube.');
+    return out;
+  }
+
   /* exports del módulo (cross-módulo vía window) */
+  window.KiuReco = { plan: recomendar };
   window.MODCAT = MODCAT;
   window.guessFam = guessFam;
   window.VIS_RX = VIS_RX;

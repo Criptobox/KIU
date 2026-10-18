@@ -221,6 +221,8 @@
       var vph = document.getElementById('vp-hang');
       if (vph) vph.addEventListener('click', function () { self.hangUp(); });
       /* v2.11.0: «Escribir» corta la escucha y deja el cursor en el chat */
+      var drc = document.getElementById('dev-reco');
+      if (drc) drc.addEventListener('click', function () { self.recomendar(); });
       var vpw = document.getElementById('vp-write');
       if (vpw) vpw.addEventListener('click', function () {
         self.stopVoice();
@@ -3758,6 +3760,56 @@
       { g: 'Visión', n: 'Qwen2.5-VL 7B Q4 (+mmproj)', s: '5,5 GB', r: 7.6, u: 'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-GGUF' },
       { g: 'Visión', n: 'MiniCPM-V 2.6 Q4', s: '5,4 GB', r: 7.4, u: 'https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf' }
     ],
+    /* v2.11.0 · «Recomendarme modelos para mi teléfono»: lee RAM, núcleos y espacio libre
+       (sysInfo) y propone qué bajar, en texto (motor interno) y en visión (fotos). */
+    recomendar: function () {
+      var self = this;
+      try { Sys.refresh(); } catch (e) { }
+      var plan = window.KiuReco ? KiuReco.plan(Sys.d, { done: (S.dl && S.dl.done) || {}, vis: this.CATALOG }) : { unknown: true };
+      if (plan.unknown) {
+        this.modal('Recomendados para tu teléfono', '<p class="set-hint">No pude leer la memoria de este dispositivo. Esto funciona dentro de la app del teléfono.</p>');
+        return;
+      }
+      var g1 = function (n) { return (Math.round(n * 10) / 10).toString().replace('.', ','); };
+      var LBL = { quality: 'Mejor calidad', balanced: 'Equilibrado', fast: 'Más rápido', code: 'Para código', reason: 'Razona' };
+      var tier = { baja: 'Un teléfono de gama básica: te van mejor los modelos chicos.', media: 'Gama media: modelos de 1 a 4 mil millones de parámetros van bien.', alta: 'Mucha RAM: podés usar modelos grandes.' }[plan.tier];
+      var row = function (r) {
+        var c = r.c;
+        var act = r.done ? '<i class="fit-badge fit-ok">Ya lo tenés ✓</i>' : '<button class="chip-btn" data-reco-dl="' + esc(c.f) + '">Descargar</button>';
+        return '<div class="list-row"><span class="list-ic">' + icon('brain', 18) + '</span><div class="list-txt"><strong>' + LBL[r.k] + ' · ' + esc(prettyName(c.f)) + '</strong>' +
+          '<span>' + (c.gb < 1 ? Math.round(c.gb * 1024) + ' MB' : g1(c.gb) + ' GB') + ' · RAM ~' + g1(c.r) + ' GB · ' + r.why + '</span></div>' + act + '</div>';
+      };
+      var html = '<div class="list-row"><span class="list-ic">' + icon('cpu', 18) + '</span><div class="list-txt"><strong>' + esc(plan.model || 'Tu teléfono') + '</strong>' +
+        '<span>' + g1(plan.ram) + ' GB RAM · ' + (plan.cores || '?') + ' núcleos' + (plan.disk ? ' · ' + g1(plan.disk) + ' GB libres' : '') + '</span></div></div>' +
+        '<p class="set-hint" style="margin:8px 0">' + tier + '</p>';
+      html += '<p class="set-hint small" style="margin:10px 0 4px"><b>Texto</b> · corre dentro de Kiu, sin internet</p><div class="list">';
+      html += plan.text.length ? plan.text.map(row).join('') : '<p class="set-hint small">Ningún modelo de la lista entra con la RAM y el espacio libres de ahora.</p>';
+      html += '</div>';
+      if (plan.extras.length) html += '<p class="set-hint small" style="margin:10px 0 4px"><b>Extras</b></p><div class="list">' + plan.extras.map(row).join('') + '</div>';
+      html += '<p class="set-hint small" style="margin:12px 0 4px"><b>Visión</b> · entender fotos</p>' +
+        '<p class="set-hint small" style="margin:0 0 6px">El motor interno de Kiu todavía lee solo texto. Para fotos se usa un modelo de visión en un servidor (Ollama en Termux, LM Studio en tu PC) o un proveedor en la nube.</p><div class="list">';
+      var vrow = function (c, tag) {
+        return '<div class="list-row" data-hf="' + esc(c.u) + '"><span class="list-ic">' + icon('eye', 18) + '</span><div class="list-txt"><strong>' + esc(c.n) + '</strong><span>' + c.s + ' · RAM ~' + g1(c.r) + ' GB · ' + tag + '</span></div><i class="fit-badge fit-ok">Abrir</i></div>';
+      };
+      if (plan.vision.phone) html += vrow(plan.vision.phone, 'el mejor para correr en este teléfono con Ollama');
+      plan.vision.pc.forEach(function (c) { if (c !== plan.vision.phone) html += vrow(c, 'para tu PC o servidor'); });
+      html += '</div>';
+      if (plan.notes.length) html += plan.notes.map(function (n) { return '<p class="set-hint small" style="margin:8px 0 0">' + esc(n) + '</p>'; }).join('');
+      html += '<button class="btn-primary full" id="reco-how" style="margin-top:12px">¿Cómo uso la visión con Kiu?</button>';
+      var body = this.modal('Recomendados para tu teléfono', html);
+      if (!body) return;
+      body.addEventListener('click', function (ev) {
+        var dl = ev.target.closest('[data-reco-dl]');
+        if (dl) {
+          var f = dl.getAttribute('data-reco-dl');
+          for (var i = 0; i < MODCAT.length; i++) if (MODCAT[i].f === f) { self.closeModal(); Mod.start(MODCAT[i]); return; }
+          return;
+        }
+        var row = ev.target.closest('[data-hf]');
+        if (row) { if (!self.openUrl(row.getAttribute('data-hf'))) self.copyText(row.getAttribute('data-hf')); return; }
+        if (ev.target.closest('#reco-how')) self.locHelp();
+      });
+    },
     locCatalog: function () {
       var self = this;
       var d = (Sys && Sys.d) || {};

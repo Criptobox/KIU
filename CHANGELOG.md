@@ -4,6 +4,7 @@ Formato basado en Keep a Changelog. Fechas en 2026.
 
 ## [2.11.0] — Pantalla de llamada con Kiu
 
+- **Recomendador según tu teléfono:** botón «Recomendarme modelos para mi teléfono» en Modelos → Teléfono. Lee RAM, núcleos y espacio libre y propone qué bajar: texto (mejor calidad, equilibrado, más rápido, más extras de código y razonamiento) con botón Descargar, y modelos de visión para correr con Ollama en el teléfono o en tu PC. Usa el mismo criterio que «Entra ✓» (RAM del modelo ≤ RAM total − 1); con 4 núcleos o menos limita a modelos chicos. El motor interno todavía lee solo texto: la visión sigue yendo por servidor o nube.
 - **Llamada:** la pantalla «Te escucho…» ahora muestra a Kiu en el centro, con tres modos que siguen al estado real: escucha (verde azulado), piensa (violeta) y habla (naranja). Tarjeta con lo que vas diciendo en vivo, lo que entendió y lo que responde. En modo conversación la pantalla sigue abierta mientras Kiu piensa y habla, y se cierra sola tras 7 s sin actividad. Botones redondos: Escribir (corta la escucha y abre el chat) y Colgar. No hay botón de silenciar: no existe esa función todavía.
 
 ## [2.10.1] — Voz, modelos y descargas

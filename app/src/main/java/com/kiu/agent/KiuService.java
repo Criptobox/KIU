@@ -257,6 +257,7 @@ public class KiuService extends Service {
             intent.putExtra("android.speech.extra.LANGUAGE", LANGS[langIdx]);
             intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", LANGS[langIdx]);
             intent.putExtra("android.speech.extra.PARTIAL_RESULTS", true);
+            intent.putExtra("android.speech.extra.PREFER_OFFLINE", true); /* v2.11.4 */
             intent.putExtra("calling_package", getPackageName());
             intent.putExtra("android.speech.extra.MAX_RESULTS", 3);
             try {

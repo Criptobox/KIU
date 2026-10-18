@@ -2,6 +2,12 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.4] — Voz: Kiu hablaba con voces que necesitan Internet de Google
+
+- **No hablaba:** `pickBestVoice` daba +10 puntos a las voces «network» de Google. Con VPN, sin datos o con Google bloqueado esas voces fallan y el fallo se descartaba en silencio. Ahora se prefiere una voz instalada en el teléfono (y se saltan las «notInstalled»); la de red solo se usa si no hay ninguna local.
+- **Fallo al hablar con aviso:** si el TTS falla, se reintenta una vez con una voz local y, si tampoco, se muestra el motivo en vez de callar. Se quitó el extra `networkTts`, que no existe en Android.
+- **No escuchaba:** el reconocimiento (comandos y palabra de activación) pide ahora `PREFER_OFFLINE`: usa el paquete de español sin conexión si está, y recién si no, el de Internet.
+
 ## [2.11.3] — Actualizar sin salir de la app + español de voz
 
 - **Actualización dentro de la app:** «Bajar el APK» ya no abre el navegador. La descarga usa la misma tarjeta que los modelos GGUF (anillo con %, tamaño, velocidad, Cancelar) y reanuda si se corta. Al terminar aparece **Instalar**, que entrega el APK al instalador de Android. Nuevo: `KiuUpdate`, `KiuApkProvider` (solo lectura, solo la carpeta `updates`), permiso `REQUEST_INSTALL_PACKAGES`, y los métodos `updStart` / `updInstall` en el puente. Solo se baja desde los Releases de este repo.

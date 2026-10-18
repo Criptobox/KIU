@@ -430,6 +430,9 @@ public class MainActivity extends Activity {
     private static final int TTS_MAX_RETRIES = 4;
 
     private Backoff ttsBackoff;
+    /* v2.11.4: lo último que se dijo y si ya se reintentó con una voz local */
+    private volatile String lastSpoken = "";
+    private volatile boolean ttsRetried = false;
 
     private void initTts() {
         this.ttsBackoff = new Backoff(TTS_RETRY_BASE_MS, TTS_RETRY_MAX_MS, TTS_MAX_RETRIES);
@@ -465,6 +468,7 @@ public class MainActivity extends Activity {
                     MainActivity.this.tts.setOnUtteranceProgressListener(new UtteranceProgressListener() { // from class: com.kiu.agent.MainActivity.3.1
                         @Override // android.speech.tts.UtteranceProgressListener
                         public void onStart(String str) {
+                            MainActivity.this.ttsRetried = false;
                             MainActivity.SPEAKING = true;
                             MainActivity.this.js("nexoTtsStart()");
                         }
@@ -484,6 +488,24 @@ public class MainActivity extends Activity {
                         @Override // android.speech.tts.UtteranceProgressListener
                         public void onError(String str) {
                             MainActivity.SPEAKING = false;
+                            /* v2.11.4 · antes un fallo al hablar era silencioso. Primero se reintenta UNA vez
+                               con una voz instalada en el teléfono; si tampoco, se avisa con el motivo. */
+                            final String again = MainActivity.this.lastSpoken;
+                            if (!MainActivity.this.ttsRetried && again != null && again.length() > 0) {
+                                MainActivity.this.ttsRetried = true;
+                                MainActivity.this.runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            MainActivity.this.pickVoice(false);
+                                            MainActivity.this.speakNow(again);
+                                        } catch (Throwable ignored) {
+                                        }
+                                    }
+                                });
+                                return;
+                            }
+                            MainActivity.this.js("nexoVoiceError('sin voz: el motor de voz no pudo hablar. Probá sin VPN o instalá la voz en español sin conexión')");
                             MainActivity.this.js("nexoTtsDone()");
                             KiuService.resumeSoon();
                             MainActivity.this.lastConvBeat = SystemClock.elapsedRealtime();
@@ -520,9 +542,12 @@ public class MainActivity extends Activity {
         });
         this.tts.setSpeechRate(this.ttsRate);
         this.tts.setPitch(this.ttsPitch);
+        this.lastSpoken = str;
         Bundle bundle = new Bundle();
-        bundle.putString("networkTts", "true");
-        this.tts.speak(str, 0, bundle, "kiu_utt");
+        if (this.tts.speak(str, 0, bundle, "kiu_utt") == -1) {
+            /* speak() devolvió ERROR de inmediato: mismo trato que un fallo al hablar */
+            js("nexoVoiceError('sin voz: el motor de voz rechazó el texto')");
+        }
     }
 
     /** TTS todavia no listo: guarda la frase (solo la ultima) para decirla al arrancar.
@@ -581,6 +606,15 @@ public class MainActivity extends Activity {
 
     /* JADX INFO: Access modifiers changed from: private */
     public void pickBestVoice() {
+        /* v2.11.4 · Kiu daba +10 a las voces «network» de Google, que necesitan Internet de Google. Con
+           una VPN o sin datos esas voces fallan y Kiu se quedaba MUDO sin avisar. Ahora se prefiere
+           una voz instalada en el teléfono; la de red solo si no hay ninguna local. */
+        if (!pickVoice(false)) {
+            pickVoice(true);
+        }
+    }
+
+    private boolean pickVoice(boolean allowNet) {
         try {
             Set<Voice> voices = this.tts.getVoices();
             if (voices != null && !voices.isEmpty()) {
@@ -589,6 +623,17 @@ public class MainActivity extends Activity {
                 for (Voice voice2 : voices) {
                     Locale locale = voice2.getLocale();
                     if (locale != null && locale.getLanguage().startsWith("es")) {
+                        boolean needNet = false;
+                        boolean notInst = false;
+                        try {
+                            needNet = voice2.isNetworkConnectionRequired();
+                            Set<String> ft = voice2.getFeatures();
+                            notInst = ft != null && ft.contains("notInstalled");
+                        } catch (Throwable ignored) {
+                        }
+                        if (notInst || (needNet && !allowNet)) {
+                            continue;
+                        }
                         String lowerCase = voice2.getName().toLowerCase(Locale.US);
                         int i2 = lowerCase.contains("network") ? 10 : 0;
                         if (lowerCase.contains("neural") || lowerCase.contains("journey") || lowerCase.contains("studio") || lowerCase.contains("wave")) {
@@ -619,10 +664,12 @@ public class MainActivity extends Activity {
                 }
                 if (voice != null) {
                     this.tts.setVoice(voice);
+                    return true;
                 }
             }
         } catch (Exception unused) {
         }
+        return false;
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -2585,6 +2632,7 @@ public class MainActivity extends Activity {
         intent.putExtra("android.speech.extra.LANGUAGE", SPEECH_LANGS[this.speechLangIdx]);
         intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", SPEECH_LANGS[this.speechLangIdx]);
         intent.putExtra("android.speech.extra.PARTIAL_RESULTS", true);
+        intent.putExtra("android.speech.extra.PREFER_OFFLINE", true); /* v2.11.4: con VPN o sin datos, usa el paquete sin conexión si está */
         intent.putExtra("android.speech.extra.MAX_RESULTS", 2);
         intent.putExtra("calling_package", getPackageName());
         intent.putExtra("android.speech.extra.PROMPT", "Hablale a Kiu...");

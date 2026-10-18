@@ -37,7 +37,7 @@ public class KiuService extends Service {
     private boolean listening = false;
     /* v2.11.2: idioma con respaldo. Con es-AR fijo, un teléfono sin ese paquete daba error 12/13
        en bucle y Kiu no escuchaba nunca. */
-    private static final String[] LANGS = {"es-AR", "es-419", "es-ES", "es"};
+    private static final String[] LANGS = {"es-US", "es-419", "es-AR", "es-MX", "es-ES", "es"};
     private int langIdx = 0;
 
     /* v2.9.3 · WATCHDOG. BUG REAL encontrado auditando el arranque de voz.

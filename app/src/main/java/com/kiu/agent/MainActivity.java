@@ -78,7 +78,9 @@ public class MainActivity extends Activity {
     private long lastRmsMs = 0L;
     /* v2.11.1: idiomas a probar si el servicio de voz rechaza el anterior, y si hay que
        volver al reconocedor por defecto cuando el elegido no se deja usar. */
-    private static final String[] SPEECH_LANGS = {"es-AR", "es-419", "es-ES", "es"};
+    /* v2.11.5: es-US primero. El paquete sin conexión más común (y el único que traía el teléfono de
+       quien reportó el fallo) es «Español (EE.UU.)»; pedir es-AR/es-ES sin Internet daba error 12/13. */
+    private static final String[] SPEECH_LANGS = {"es-US", "es-419", "es-AR", "es-MX", "es-ES", "es"};
     private int speechLangIdx = 0;
     private boolean recForceDefault = false;
     /* v2.3.0 (sección 2 · seguridad): sirve la UI por https://appassets.androidplatform.net
@@ -455,8 +457,8 @@ public class MainActivity extends Activity {
             @Override // android.speech.tts.TextToSpeech.OnInitListener
             public void onInit(int i) {
                 if (i == 0) {
-                    Locale[] localeArr = {new Locale("es", "AR"), new Locale("es", "MX"), new Locale("es", "ES"), new Locale("es")};
-                    for (int i2 = 0; i2 < 4; i2++) {
+                    Locale[] localeArr = {new Locale("es", "US"), new Locale("es", "AR"), new Locale("es", "MX"), new Locale("es", "ES"), new Locale("es")};
+                    for (int i2 = 0; i2 < 5; i2++) {
                         int language = MainActivity.this.tts.setLanguage(localeArr[i2]);
                         if (language != -1 && language != -2) {
                             break;

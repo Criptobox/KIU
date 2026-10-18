@@ -78,8 +78,8 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.11\.4"/);
-  assert.match(gradle, /val kiuVersionCode = 54/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.5"/);
+  assert.match(gradle, /val kiuVersionCode = 55/);
 });
 
 /* ---- v2.11.1: el modelo estaba instalado y el diagnóstico decía SIN MODELO ---- */
@@ -94,7 +94,7 @@ test('el reconocedor: prefiere el de Google, prueba otros idiomas y dice el moti
   assert.match(java, /ComponentName pickRecognizer\(\)/);
   assert.match(java, /googlequicksearchbox/);
   assert.match(java, /createSpeechRecognizer\(this, recPick\)/);
-  assert.match(java, /SPEECH_LANGS = \{"es-AR", "es-419", "es-ES", "es"\}/);
+  assert.match(java, /SPEECH_LANGS = \{"es-US", "es-419", "es-AR", "es-MX", "es-ES", "es"\}/);
   assert.match(java, /if \(MainActivity\.this\.retrySpeech\(i\)\)/);
   assert.match(java, /nexoVoiceError\('err_" \+ i \+ "'\)/);
   assert.match(java, /^import android\.content\.ComponentName;/m);

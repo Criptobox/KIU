@@ -2,6 +2,10 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.5] — Voz: se pide primero el español que el teléfono sí tiene
+
+- El teléfono de quien reportó el fallo solo tenía el paquete sin conexión **Español (EE.UU.)**. Kiu pedía es-AR, es-419, es-ES…, y sin Internet el reconocedor respondía error 12/13. Ahora el orden es `es-US`, `es-419`, `es-AR`, `es-MX`, `es-ES`, `es`, tanto en el comando de voz como en la palabra de activación, y el TTS también prueba `es-US`.
+
 ## [2.11.4] — Voz: Kiu hablaba con voces que necesitan Internet de Google
 
 - **No hablaba:** `pickBestVoice` daba +10 puntos a las voces «network» de Google. Con VPN, sin datos o con Google bloqueado esas voces fallan y el fallo se descartaba en silencio. Ahora se prefiere una voz instalada en el teléfono (y se saltan las «notInstalled»); la de red solo se usa si no hay ninguna local.

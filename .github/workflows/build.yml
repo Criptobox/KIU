@@ -191,12 +191,24 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-  # ---- 3) Release: al pushear un tag v* se publican los APK ----
+  # ---- 3) Release: se publica en cada push a main y en cada tag v* ----
+  # Antes solo corría con tags v*, así que al subir a main nunca había Release y
+  # el buscador de la app respondía "todavía no hay versiones publicadas" (404).
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     needs: [tests, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer versión de app/build.gradle.kts
+        id: ver
+        shell: bash
+        run: |
+          v=$(grep -m1 'val kiuVersionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "Versión: $v"
+
       - name: Bajar APK debug
         uses: actions/download-artifact@v4
         with:
@@ -212,6 +224,11 @@ jobs:
       - name: Publicar Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Kiu ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
+          prerelease: false
+          draft: false
           files: |
             dist/*.apk

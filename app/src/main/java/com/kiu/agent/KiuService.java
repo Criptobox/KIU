@@ -211,7 +211,7 @@ public class KiuService extends Service {
             }
             if (this.sr == null) {
                 try {
-                    SpeechRecognizer createSpeechRecognizer = MainActivity.newRecognizer(this);
+                    SpeechRecognizer createSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
                     this.sr = createSpeechRecognizer;
                     createSpeechRecognizer.setRecognitionListener(this.lis);
                 } catch (Exception unused) {

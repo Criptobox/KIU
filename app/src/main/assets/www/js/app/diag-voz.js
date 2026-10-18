@@ -164,13 +164,6 @@
     if (KiuDiagVoz.raw && KiuDiagVoz.raw.mic === false) {
       h += '<button class="btn-ghost full" id="btn-mic-perm" style="justify-content:center;margin:10px 0 0">Dar permiso de micrófono</button>';
     }
-    if (KiuDiagVoz.raw && KiuDiagVoz.raw.lastRecErr) {
-      h += '<div style="font:400 12px/1.45 system-ui,sans-serif;color:var(--mut);margin-top:10px">Último error del reconocimiento: '
-        + String(KiuDiagVoz.raw.lastRecErr).replace(/</g, '&lt;') + ' · idioma ' + String(KiuDiagVoz.raw.recLang || '') + '</div>';
-    }
-    if (KiuDiagVoz.raw && KiuDiagVoz.raw.ttsReady === true) {
-      h += '<button class="btn-ghost full" id="btn-tts-test" style="justify-content:center;margin:8px 0 0">Probar la voz de Kiu</button>';
-    }
     if (KiuDiagVoz.raw && KiuDiagVoz.raw.ttsReady === false) {
       h += '<button class="btn-ghost full" id="btn-tts-set" style="justify-content:center;margin:8px 0 0">Abrir ajustes de la voz del teléfono</button>';
     }

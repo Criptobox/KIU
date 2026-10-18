@@ -212,8 +212,8 @@ const hosts = [...html.matchAll(/<(\w+)([^>]*data-avatar(?:-mini)?[^>]*)>/g)].ma
 }));
 
 test('el HTML declara los huecos del bot', () => {
-  assert.equal(hosts.length, 5);
-  assert.deepEqual(hosts.map((h) => h.id), ['brand-avatar', 'hero-avatar', 'chat-avatar', 'profile-avatar', 'about-avatar']);
+  assert.equal(hosts.length, 6);
+  assert.deepEqual(hosts.map((h) => h.id), ['brand-avatar', 'hero-avatar', 'chat-avatar', 'profile-avatar', 'about-avatar', 'vp-avatar']);
 });
 
 test('TODO hueco del bot tiene caja propia en el CSS', () => {

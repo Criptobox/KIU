@@ -43,8 +43,7 @@ if [ -n "${KIU_PASS:-}" ]; then
       -dname "CN=Kiu, O=Kiu, C=AR"
     echo "Se creó $KS  -> GUARDALA: sin ella no podrás actualizar la app instalada."
   fi
-  # Gradle resuelve la ruta desde app/, no desde la raíz: se pasa absoluta.
-  export KIU_KS="$(cd "$(dirname "$KS")" && pwd)/$(basename "$KS")"
+  export KIU_KS="$KS"
   export KIU_ALIAS="${KIU_ALIAS:-kiu}"
   ./gradlew :app:assembleRelease --no-daemon
   OUT=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)

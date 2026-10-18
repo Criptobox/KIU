@@ -27,8 +27,8 @@ plugins {
    lugares donde poner un número aparece el que se queda viejo. Si alguno de los
    dos se desactualiza, el sello miente sobre el APK que estás por instalar —
    que es peor que no tener sello. Las dos cosas leen de acá. */
-val kiuVersionName = "2.10.3"
-val kiuVersionCode = 51
+val kiuVersionName = "2.10.1"
+val kiuVersionCode = 49
 
 val llamaDir = File(rootDir, "vendor/llama.cpp")
 val buildNative = llamaDir.exists()
@@ -107,9 +107,12 @@ android {
         // Sin KIU_PASS, assembleRelease firma con la clave debug (solo para probar).
         val ksPath = System.getenv("KIU_KS") ?: "keystore/kiu-release.jks"
         val ksPass = System.getenv("KIU_PASS")
-        if (ksPass != null && File(ksPath).exists()) {
+        // Siempre relativo a la raíz del repo: antes el exists() miraba la raíz y
+        // file() miraba app/, y por eso decía "Keystore file ... not found".
+        val ksFile = rootProject.file(ksPath)
+        if (ksPass != null && ksFile.exists()) {
             create("kiu") {
-                storeFile = file(ksPath)
+                storeFile = ksFile
                 storePassword = ksPass
                 keyAlias = System.getenv("KIU_ALIAS") ?: "kiu"
                 keyPassword = ksPass

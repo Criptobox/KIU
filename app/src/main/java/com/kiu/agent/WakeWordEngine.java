@@ -34,17 +34,7 @@ public class WakeWordEngine {
     private static final String DIR_NAME = "vosk-es-small";
     private static final long COOLDOWN_MS = 4000;
     private static final int SAMPLE_RATE = 16000;
-    /* v2.10.2 · «KIU» NO ES UNA PALABRA DEL ESPAÑOL. El modelo solo puede reconocer
-       palabras de su vocabulario (graph/words.txt); una palabra fuera de él se ignora al
-       armar la gramática. Con «kiu» fuera, el motor arrancaba, decía «activo» y nunca
-       podía oír su palabra. Ahora se prueban varias grafías, se dejan solo las que el
-       modelo conoce, se agrega [unk] para que el resto del habla no se fuerce hacia ellas,
-       y si ninguna existe se avisa y se cae al reconocedor del sistema. */
-    private static final String[] PRINCIPALES = {"kiu", "quiu", "kiwi", "kyu", "ciu", "chiu", "kio"};
-    private static final String[] AUXILIARES = {"iu", "ki"};
-    /** true cuando el motor local no puede servir: StartWake usa el reconocedor del sistema. */
-    public static volatile boolean localUnusable = false;
-    private volatile java.util.Set<String> palabrasHit = new java.util.HashSet<String>();
+    private static final String GRAMMAR = "[\"kiu\",\"hey kiu\",\"iu\",\"ki\"]";
 
     private static volatile WakeWordEngine inst;
 
@@ -177,14 +167,9 @@ public class WakeWordEngine {
     private static final int LECHO_PARADO = 2;       // el usuario apagó la palabra de activación
 
     private void run(Context app, String dir) {
-        boolean fallo = false;
         try {
-            String grammar = armarGramatica(dir);
-            if (grammar == null) {
-                throw new IllegalStateException("el modelo no conoce ninguna grafía de «Kiu»");
-            }
             model = new Model(dir);
-            recognizer = new Recognizer(model, (float) SAMPLE_RATE, grammar);
+            recognizer = new Recognizer(model, (float) SAMPLE_RATE, GRAMMAR);
             int minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT);
             int bufSize = Math.max(minBuf, SAMPLE_RATE); // 1s
@@ -213,7 +198,6 @@ public class WakeWordEngine {
             }
         } catch (Throwable th) {
             err = "wake word: " + th;
-            fallo = true;
         } finally {
             running.set(false);
             loading = false;
@@ -222,66 +206,8 @@ public class WakeWordEngine {
             cerrarModelo();
             if (MainActivity.inst != null) {
                 MainActivity.inst.js("nexoWakeState(false)");
-                /* Un fallo del MOTOR (modelo, librería nativa, gramática) no es lo mismo que
-                   un micrófono ocupado: el segundo se reintenta, el primero se repetiría
-                   igual. Se marca el camino local como inservible y se arranca el del
-                   sistema, para que «Kiu» funcione aunque sea con internet. */
-                if (fallo) {
-                    localUnusable = true;
-                    MainActivity.inst.js("nexoWakeError('motor local no disponible, uso el del sistema: "
-                            + err.replace("'", "").replace("\n", " ") + "')");
-                    MainActivity.inst.startWakeNow();
-                }
             }
         }
-    }
-
-    /** Arma la gramática solo con grafías que existen en el vocabulario del modelo. */
-    private String armarGramatica(String dir) {
-        java.util.Set<String> vocab = new java.util.HashSet<String>();
-        java.io.File w = new java.io.File(dir, "graph/words.txt");
-        if (w.exists()) {
-            java.io.BufferedReader br = null;
-            try {
-                br = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(w), "UTF-8"));
-                String line;
-                while ((line = br.readLine()) != null) {
-                    int sp = line.indexOf(' ');
-                    vocab.add((sp > 0 ? line.substring(0, sp) : line).trim().toLowerCase());
-                }
-            } catch (Throwable ignored) {
-            } finally {
-                try {
-                    if (br != null) {
-                        br.close();
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        }
-        java.util.List<String> ok = new java.util.ArrayList<String>();
-        for (String c : PRINCIPALES) {
-            if (vocab.isEmpty() || vocab.contains(c)) {
-                ok.add(c);
-            }
-        }
-        if (ok.isEmpty()) {
-            for (String c : AUXILIARES) {
-                if (vocab.isEmpty() || vocab.contains(c)) {
-                    ok.add(c);
-                }
-            }
-        }
-        if (ok.isEmpty()) {
-            return null;
-        }
-        StringBuilder g = new StringBuilder("[");
-        for (String c : ok) {
-            g.append('"').append(c).append("\",");
-        }
-        g.append("\"[unk]\"]");
-        palabrasHit = new java.util.HashSet<String>(ok);
-        return g.toString();
     }
 
     /** Crea un AudioRecord, escucha hasta que algo pare, y devuelve el estado. */
@@ -425,16 +351,7 @@ public class WakeWordEngine {
             }
             JSONObject o = new JSONObject(json);
             String text = o.optString("partial", o.optString("text", ""));
-            boolean hit = false;
-            if (text.length() > 0) {
-                for (String tk : text.toLowerCase().split("\\s+")) {
-                    if (palabrasHit.contains(tk)) {
-                        hit = true;
-                        break;
-                    }
-                }
-            }
-            if (hit) {
+            if (text.length() > 0 && text.toLowerCase().contains("kiu")) {
                 long now = System.currentTimeMillis();
                 if (now - lastHit > COOLDOWN_MS) {
                     lastHit = now;

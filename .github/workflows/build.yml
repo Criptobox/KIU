@@ -79,9 +79,9 @@ jobs:
           KS: ${{ secrets.KIU_KEYSTORE_BASE64 }}
           PW: ${{ secrets.KIU_KEYSTORE_PASSWORD }}
         run: |
-          mkdir -p app/keystore
+          mkdir -p keystore
           if [ -n "$KS" ] && [ -n "$PW" ]; then
-            echo "$KS" | base64 -d > app/keystore/kiu-release.jks
+            echo "$KS" | base64 -d > keystore/kiu-release.jks
             echo "KIU_PASS=$PW" >> "$GITHUB_ENV"
           else
             echo "::warning::Faltan los secretos KIU_KEYSTORE_BASE64 / KIU_KEYSTORE_PASSWORD. El APK release firma con la clave debug: sirve para probar, no para actualizar la app ya instalada."

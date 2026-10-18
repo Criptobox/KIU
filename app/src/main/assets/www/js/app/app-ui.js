@@ -124,26 +124,9 @@
       document.addEventListener('click', function (e) { if (e.target && e.target.id === 'typing-cancel') App.cancelApi(); });
       /* Callbacks de voz: manejadores estables (Java los dispara en cualquier momento) */
       window.nexoOnVoice = function (text) { App.handleVoice(text); };
-      /* v2.10.3: antes solo 2 códigos se mostraban y todo lo demás se tiraba con
-         voiceError(null). Un reconocedor roto, sin internet o sin el idioma fallaba mudo. */
       window.nexoVoiceError = function (err) {
-        var m = {
-          unavailable: 'El micrófono no está disponible ahora',
-          no_permission: 'Falta permiso de micrófono: Ajustes → Diagnosticar voz',
-          net: 'Sin internet: el reconocimiento de voz del sistema la necesita',
-          audio: 'Error de audio: otra app puede estar usando el micrófono',
-          server: 'El servicio de voz del teléfono falló. Probá de nuevo',
-          client: 'El servicio de voz del teléfono no respondió. Probá de nuevo',
-          timeout: 'No te escuché nada. Tocá el micrófono y hablá enseguida',
-          no_match: 'No te entendí. Repetilo un poco más claro',
-          busy: 'El reconocedor de voz está ocupado. Esperá un segundo',
-          too_many: 'Demasiados intentos seguidos. Esperá un momento',
-          lang: 'Ese servicio de voz no tiene español. Revisá Diagnosticar voz',
-          error: 'No pude escucharte. Probá de nuevo'
-        };
-        var s = String(err || '');
-        if (m[s]) App.voiceError(m[s]);
-        else if (s.length > 12) App.voiceError(s.charAt(0).toUpperCase() + s.slice(1));
+        if (err === 'unavailable') App.voiceError('El micrófono no está disponible ahora');
+        else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
         else App.voiceError(null);
       };
       /* v2.8.1: nexoListenStart marcaba la UI pero no App.voiceBusy, así que el JS
@@ -153,8 +136,7 @@
       window.nexoListenStart = function () { App.voiceBusy = true; App.showListening(true); };
       window.nexoListenEnd = function () { App.voiceBusy = false; App.showListening(false); };
       window.nexoVoicePartial = function (text) {
-        var el = document.getElementById('vp-text');
-        if (el && text) el.textContent = text;
+        App.partialVoice(text);
       };
       /* v2.8.0: el TTS avisa cuándo empieza y cuándo termina de verdad. Antes se
          calculaba la duración por el largo del texto (Math.min(45000, 3500 + len*70))
@@ -238,6 +220,13 @@
       if (hc) hc.addEventListener('click', function () { self.hangUp(); });
       var vph = document.getElementById('vp-hang');
       if (vph) vph.addEventListener('click', function () { self.hangUp(); });
+      /* v2.11.0: «Escribir» corta la escucha y deja el cursor en el chat */
+      var vpw = document.getElementById('vp-write');
+      if (vpw) vpw.addEventListener('click', function () {
+        self.stopVoice();
+        self.go('chat');
+        var ci = document.getElementById('chat-input'); if (ci) ci.focus();
+      });
       var bd = document.getElementById('btn-diag');
       if (bd) bd.addEventListener('click', function () { self.diag(); });
       /* v2.9.3: leer la versión real del paquete apenas arranca, para que el
@@ -253,10 +242,6 @@
       if (dvb) {
         dvb.addEventListener('click', function (ev) {
           var tgt = ev.target;
-          if (tgt && tgt.id === 'btn-tts-test') {
-            bridge('speak', ['Hola, soy Kiu. Si me escuchás, la voz funciona.']);
-            return;
-          }
           if (tgt && tgt.id === 'btn-tts-set') { bridge('openSettings', ['tts']); return; }
           if (tgt && tgt.id === 'btn-rec-set') { bridge('openSettings', ['voiceinput']); return; }
           if (tgt && tgt.id === 'btn-mic-perm') {
@@ -357,10 +342,7 @@
     greet: function () {
       if (!S.greetOn) return;
       var last = store('nexo_greet') || 0;
-      /* v2.10.2: 20 min de espera = si cerrabas y abrías la app para probar, nunca
-         saludaba y parecía roto. 90 s alcanzan para no repetirlo en el «Reiniciar
-         interfaz» ni en un cierre accidental. */
-      if (Date.now() - last < 90 * 1000) return;
+      if (Date.now() - last < 20 * 60000) return;
       store('nexo_greet', Date.now());
       var h = new Date().getHours();
       var hi = h >= 6 && h < 13 ? 'Buenos días' : h >= 13 && h < 20 ? 'Buenas tardes' : 'Buenas noches';
@@ -391,7 +373,7 @@
         var a = document.getElementById('chat-conv-toggle'); if (a) a.classList.remove('on');
         var b = document.getElementById('tg-conv'); if (b) b.classList.remove('on');
       }
-      this.showListening(false);
+      this.showListening(false, true);
       stClear('voz');
       this.toast('Listo, corté la llamada');
     },
@@ -4440,40 +4422,85 @@
       this.voiceBusy = false;
       this._voiceDriven = false;
       bridge('cancelListen');
-      this.showListening(false);
+      this.showListening(false, true);
     },
     handleVoice: function (text) {
       this.voiceBusy = false;
-      this.showListening(false);
       text = (text || '').trim();
+      if (text) this.vpSay(text, 'ENTENDÍ');
+      this.showListening(false);
       if (!text) return;
       this.go('chat');
       this.sendMsg(text);
     },
     voiceError: function (msg) {
       this.voiceBusy = false;
-      this.showListening(false);
+      this.showListening(false, true);
       if (msg) {
         stErr('Error', 2000);
         this.toast(msg);
       }
     },
-    showListening: function (on) {
+    /* v2.11.0 · pantalla de llamada: Kiu en el centro. Tres modos que siguen al estado
+       real (KiuState): listen = escucha, think = piensa, speak = habla. En modo
+       conversación la pantalla NO se cierra al terminar de escuchar: sigue abierta mientras
+       Kiu piensa y habla, y se cierra sola si pasan 7 s sin actividad (red de seguridad). */
+    vpMode: function (m) {
+      var pulse = document.getElementById('voice-pulse'); if (!pulse) return;
+      var T = {
+        listen: ['Te escucho…', 'Hablá ahora · Kiu corta solo al terminar'],
+        think: ['Pensando…', 'Un segundo, lo estoy resolviendo'],
+        speak: ['Hablando…', 'Tocá Colgar para cortarlo']
+      }[m] || ['Te escucho…', ''];
+      pulse.setAttribute('data-st', m);
+      var t = document.getElementById('vp-text'); if (t) t.textContent = T[0];
+      var h = document.getElementById('vp-hint'); if (h) h.textContent = T[1];
+    },
+    vpSay: function (text, label) {
+      var card = document.getElementById('vp-card');
+      var say = document.getElementById('vp-say'), lbl = document.getElementById('vp-lbl');
+      if (!card || !say || !text) return;
+      say.textContent = String(text).slice(0, 160);
+      if (lbl) lbl.textContent = label || '';
+      card.classList.remove('empty');
+    },
+    vpWatch: function () {
+      var self = this;
+      if (this._vpT) return;
+      this._vpIdle = Date.now();
+      this._vpT = setInterval(function () {
+        var pulse = document.getElementById('voice-pulse');
+        if (!pulse || pulse.classList.contains('hidden')) { clearInterval(self._vpT); self._vpT = null; return; }
+        var k = KS(), st = (k && k.get) ? k.get() : '';
+        var m = pulse.getAttribute('data-st');
+        var next = st === 'Escuchando' ? 'listen' : (st === 'Generando' || st === 'Pensando') ? 'think' : st === 'Hablando' ? 'speak' : '';
+        if (next) { self._vpIdle = Date.now(); if (next !== m) self.vpMode(next); }
+        else if (m === 'listen') { self._vpIdle = Date.now(); }
+        else if (Date.now() - self._vpIdle > 7000) { self.showListening(false, true); }
+      }, 400);
+    },
+    showListening: function (on, force) {
       var pulse = document.getElementById('voice-pulse');
       if (!pulse) return;
       if (on) {
-        var t = document.getElementById('vp-text');
-        if (t) t.textContent = 'Te escucho...';
+        this.vpMode('listen');
+        var card = document.getElementById('vp-card'); if (card) card.classList.add('empty');
         pulse.classList.remove('hidden');
         stSet('voz', 'Escuchando');
+        this.vpWatch();
       } else {
-        pulse.classList.add('hidden');
         var kk = KS(); if (kk && kk.layer('voz') === 'Escuchando') kk.clear('voz');
+        if (!force && S.conv && !pulse.classList.contains('hidden')) {
+          this.vpMode('think');
+          this._vpIdle = Date.now();
+          this.vpWatch();
+        } else {
+          pulse.classList.add('hidden');
+        }
       }
     },
     partialVoice: function (text) {
-      var el = document.getElementById('vp-text');
-      if (el && text) el.textContent = text;
+      if (text) this.vpSay(text, 'TE VOY ENTENDIENDO');
     },
     setConv: function (on) {
       S.conv = !!on; saveS();
@@ -4500,6 +4527,7 @@
          del texto. En Android llega nexoTtsStart/nexoTtsDone; en el navegador de
          escritorio el onend hace lo mismo. El temporizador queda solo como red de
          seguridad para cuando el TTS no reporta nada. */
+      this.vpSay(clean, 'KIU');
       clearTimeout(this._avT);
       var self2 = this;
       this._avT = setTimeout(function () {

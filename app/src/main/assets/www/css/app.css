@@ -820,26 +820,47 @@ select { appearance:none; }
   padding:13px 26px; border-radius:999px;
 }
 .voice-pulse {
+  --vp1:#8fe0d3; --vp2:#2a9d8f; --vpg:rgba(45,212,191,.30);
   position:fixed; inset:0; z-index:150;
-  background:rgba(4,7,15,.85);
+  background:rgba(4,7,15,.94);
   -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+  display:flex; flex-direction:column; align-items:center; gap:0;
+  padding:calc(40px + env(safe-area-inset-top,0px)) 24px calc(32px + env(safe-area-inset-bottom,0px));
+  box-sizing:border-box; color:#f1f4fb;
 }
-.vp-bars { display:flex; gap:6px; align-items:center; height:54px; }
+.voice-pulse[data-st="think"] { --vp1:#c4b0ff; --vp2:#6d4fe0; --vpg:rgba(139,108,255,.32); }
+.voice-pulse[data-st="speak"] { --vp1:#ffb08a; --vp2:#f0603f; --vpg:rgba(255,140,100,.30); }
+.vp-pill { display:flex; align-items:center; gap:8px; font-size:13px; color:#aab3c7; background:#101727; border-radius:20px; padding:7px 14px; }
+.vp-dot { width:8px; height:8px; border-radius:50%; background:var(--vp2); }
+.vp-stage { position:relative; margin-top:30px; width:250px; height:250px; display:flex; align-items:center; justify-content:center; }
+.vp-glow { position:absolute; inset:-40px; background:radial-gradient(circle,var(--vpg) 0%,rgba(6,10,20,0) 68%); transition:background .4s; }
+#vp-avatar { --kav-s:200px; }
+.vp-bars { display:flex; gap:6px; align-items:center; height:40px; margin-top:16px; }
 .vp-bars i {
-  width:6px; height:34px; border-radius:999px;
-  background:var(--grad); animation:vpb 1s ease-in-out infinite;
+  width:8px; height:30px; border-radius:4px;
+  background:var(--vp2); animation:vpb 1.1s ease-in-out infinite; transition:background .4s;
 }
-.vp-bars i:nth-child(1) { animation-delay:0s; height:22px; }
-.vp-bars i:nth-child(2) { animation-delay:.1s; height:40px; }
-.vp-bars i:nth-child(3) { animation-delay:.2s; height:50px; }
-.vp-bars i:nth-child(4) { animation-delay:.3s; height:34px; }
-.vp-bars i:nth-child(5) { animation-delay:.4s; height:46px; }
-.vp-bars i:nth-child(6) { animation-delay:.5s; height:28px; }
-.vp-bars i:nth-child(7) { animation-delay:.6s; height:38px; }
-@keyframes vpb { 50% { transform:scaleY(.45); opacity:.6; } }
-#vp-text { font-size:16px; font-weight:700; max-width:80%; text-align:center; }
-.vp-hint { font-size:11.5px; color:var(--dim); }
+.vp-bars i:nth-child(1) { animation-delay:0s; height:16px; }
+.vp-bars i:nth-child(2) { animation-delay:.1s; height:28px; }
+.vp-bars i:nth-child(3) { animation-delay:.2s; height:38px; }
+.vp-bars i:nth-child(4) { animation-delay:.3s; height:30px; }
+.vp-bars i:nth-child(5) { animation-delay:.4s; height:36px; }
+.vp-bars i:nth-child(6) { animation-delay:.5s; height:22px; }
+.vp-bars i:nth-child(7) { animation-delay:.6s; height:14px; }
+.voice-pulse[data-st="think"] .vp-bars i { animation:none; height:8px; }
+@keyframes vpb { 50% { transform:scaleY(.35); } }
+@media (prefers-reduced-motion:reduce) { .vp-bars i { animation:none; } }
+#vp-text { margin:18px 0 0; font-size:28px; font-weight:700; max-width:90%; text-align:center; }
+.vp-hint { margin-top:6px; font-size:13.5px; color:#9aa4b8; text-align:center; }
+.vp-card { margin-top:16px; width:100%; box-sizing:border-box; background:#0d1424; border:1px solid #1b2540; border-radius:18px; padding:14px 16px; max-height:130px; overflow:hidden; }
+.vp-card.empty { visibility:hidden; }
+.vp-lbl { font-size:11px; letter-spacing:.08em; color:var(--vp1); font-weight:700; }
+.vp-say { margin-top:6px; font-size:16px; line-height:1.4; }
+.vp-spacer { flex:1; }
+.vp-ctl { display:flex; align-items:flex-end; justify-content:center; gap:40px; }
+.vp-c { text-align:center; font-size:12px; color:#9aa4b8; }
+.vp-btn { width:60px; height:60px; border-radius:50%; border:0; background:#141c30; color:#f1f4fb; display:flex; align-items:center; justify-content:center; margin:0 auto 6px; }
+.vp-btn.vp-red { width:76px; height:76px; background:var(--danger,#FF5D5D); color:#fff; }
 
 /* ============================================================
    HERRAMIENTAS (modales)
@@ -1047,7 +1068,6 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
 .hang-chip { position:absolute; left:50%; transform:translateX(-50%); bottom:108px; z-index:70; background:var(--danger,#FF5D5D); color:#fff; border:0; border-radius:999px; padding:11px 24px; font-weight:800; font-size:14px; box-shadow:0 8px 26px rgba(255,93,93,.45); display:flex; gap:8px; align-items:center; }
 .hang-chip.hidden { display:none; }
 .hang-chip .ic { width:16px; height:16px; }
-.vp-hang { display:block; width:100%; margin-top:18px; padding:13px; border:0; border-radius:14px; background:var(--danger,#FF5D5D); color:#fff; font:bold 15px sans-serif; }
 .diag-item { padding:10px 0; border-bottom:1px solid rgba(140,160,255,.08); }
 .diag-row { display:flex; gap:10px; align-items:flex-start; }
 .diag-ic { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:13px; flex:0 0 22px; }

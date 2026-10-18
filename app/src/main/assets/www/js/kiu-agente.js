@@ -1,0 +1,634 @@
+/*!
+ * kiu-agente.js — v2.9.1: herramientas que el MODELO elige, no los regex.
+ *
+ * El problema que resuelve
+ * -----------------------
+ * Hoy Kiu no es un agente: es un enrutador de patrones. `brain.js` tiene ~200
+ * regex que deciden "esto es una alarma" o "esto es un contacto", `react.js` parte
+ * el pedido con un regex de conectores y rutea a KiuBrain o al RAG. El modelo solo
+ * aparece para redactar la respuesta final. Eso funciona con 200 intenciones
+ * escritas a mano y se rompe en la 201.
+ *
+ * Lo que hay acá
+ * --------------
+ * Un REGISTRO de herramientas con la forma que un LLM puede entender:
+ *
+ *   { name, desc, args: { <nombre>: {type, required, desc, enum} }, run(args) }
+ *
+ * y un bucle chico que le pide al modelo UNA decisión, la valida con rigor, la
+ * ejecuta y le devuelve la observación. El modelo elige; este archivo decide qué
+ * se puede ejecutar.
+ *
+ * Por qué "el modelo elige" NO alcanza solo
+ * -----------------------------------------
+ * Un modelo chico (1B–3B) inventa nombres de herramienta, deja argumentos sueltos
+ * y mete JSON dentro de un ```json. Por eso el bucle NO confía:
+ *   · nombre desconocido → se rechaza y se le dice al modelo qué nombres SÍ existen
+ *   · argumento obligatorio que falta → se rechaza con el motivo
+ *   · tipo que no cierra → se rechaza
+ *   · argumento que no está en el esquema → se rechaza (señal de que se está
+ *     inventando el mundo; antes era un bug silencioso)
+ *   · tope de pasos → si no converge, se corta y se contesta lo que se pudo hacer
+ *
+ * UNA sola fuente de verdad
+ * -------------------------
+ * `args` (el esquema en JS) genera DOS cosas: el texto del prompt y la gramática
+ * GBNF de `grammar()`. No pueden quedar desalineadas porque salen del mismo
+ * objeto. La gramática es lo que se le pasa al sampler del motor para forzar JSON
+ * válido (llama_sampler_init_grammar); hasta que el nativo la soporte, el bucle
+ * funciona igual con parse + reintento, que es de todas formas la ruta que hace
+ * falta tener porque un modelo chico va a fallar el JSON de vez en cuando.
+ *
+ * Degradación
+ * -----------
+ * Si no hay modelo cargado, el bucle no se usa: el flujo normal (KiuBrain →
+ * ReAct → proveedor → local) sigue igual. Esto no reemplaza a brain.js, lo
+ *COMPLEMENTA: brain.js resuelve lo conocido al instante y sin gastar tokens, y el
+ * modelo entra cuando hay algo que no está en los regex.
+ *
+ * node --check js/kiu-agente.js
+ */
+window.KiuAgente = (function () {
+  'use strict';
+
+  var MAX_STEPS = 3;      /* decisiones por turno: más y se vuelve un bucle */
+  var MAX_ARG_LEN = 200;  /* un argumento de 200 chars es prompt injection, no un dato */
+
+  /* ================= helpers ================= */
+  function s(v, max) {
+    if (v === null || v === undefined) return '';
+    var t = String(v);
+    return max ? t.slice(0, max) : t;
+  }
+  function num(v) {
+    var n = parseFloat(String(v).replace(',', '.'));
+    return isFinite(n) ? n : null;
+  }
+  function log() { try { console.log.apply(console, ['[kiu-agente]'].concat([].slice.call(arguments))); } catch (e) { } }
+
+  /* ================= REGISTRO =================
+     Cada herramienta envuelve algo que YA existe (brain, RAG, el puente) en vez
+     de reimplementarlo. Si una herramienta necesita lógica nueva, esa lógica va
+     en su run(), no en un segundo lugar. */
+  var TOOLS = {};
+
+  function def(name, desc, args, run, opts) {
+    TOOLS[name] = {
+      name: name,
+      desc: desc,
+      args: args || {},
+      run: run,
+      risk: (opts && opts.risk) || 'read',
+      enabled: !opts || opts.enabled !== false
+    };
+    return TOOLS[name];
+  }
+
+  /* --- 1. alarma ------------------------------------------------------- */
+  def('set_alarm',
+    'Programar una alarma o recordatorio.',
+    {
+      when: { type: 'string', required: true, desc: '"a las 7", "en 20 minutos", "mañana 9:30". Si no se entiende, usá "en 10 minutos".' },
+      label: { type: 'string', required: false, desc: 'Qué recordar. Corto.' }
+    },
+    function (a) {
+      var app = window.KiuApp, brain = window.KiuBrain;
+      if (!app || !app.addReminder) return { ok: false, err: 'no puedo programar alarmas ahora' };
+      var w = null;
+      if (brain && brain.parseWhen) { try { w = brain.parseWhen(a.when); } catch (e) { w = null; } }
+      if (!w || !w.when) return { ok: false, err: 'no entendí el horario "' + s(a.when, 40) + '"' };
+      var titulo = s(a.label, 60) || 'Recordatorio';
+      var ok = app.addReminder(titulo, w.when);
+      return { ok: !!ok, text: ok ? ('Listo: ' + titulo + ' ' + w.whenTxt + '.') : 'No pude programar la alarma.' };
+    });
+
+  /* --- 2. agenda ------------------------------------------------------ */
+  def('read_calendar',
+    'Leer la agenda: "¿qué tengo mañana?", "¿tengo algo el viernes?", "¿tengo dentista?".',
+    {
+      day: { type: 'string', required: false, desc: '"hoy" | "mañana" | "pasado mañana" | un día de la semana. Vacío = próximos días.' },
+      what: { type: 'string', required: false, desc: 'Texto a buscar en el evento. Vacío = todos.' }
+    },
+    function (a) {
+      var app = window.KiuApp;
+      if (!app || !app.calendarQuery) return { ok: false, err: 'no puedo leer la agenda ahora' };
+      var txt = (a.day || 'proximos dias').toLowerCase();
+      var from = Date.now(), to = from + 14 * 86400000, etiqueta = 'los próximos días';
+      if (/hoy/.test(txt)) { to = new Date(new Date().setHours(24, 0, 0, 0)).getTime(); etiqueta = 'hoy'; }
+      else if (/pasado/.test(txt)) { var d2 = new Date(); d2.setDate(d2.getDate() + 2); d2.setHours(0, 0, 0, 0); from = d2.getTime(); d2.setDate(d2.getDate() + 1); to = d2.getTime(); etiqueta = 'pasado mañana'; }
+      else if (/manana/.test(txt)) { var d1 = new Date(); d1.setDate(d1.getDate() + 1); d1.setHours(0, 0, 0, 0); from = d1.getTime(); d1.setDate(d1.getDate() + 1); to = d1.getTime(); etiqueta = 'mañana'; }
+      else {
+        var dias = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+        for (var i = 0; i < dias.length; i++) {
+          if (txt.indexOf(dias[i]) > -1) {
+            var d0 = new Date(); var hoy = d0.getDay();
+            var salto = (hoy === i) ? 7 : ((hoy < i) ? (i - hoy) : (7 - hoy + i));
+            var dd = new Date(); dd.setDate(dd.getDate() + salto); dd.setHours(0, 0, 0, 0);
+            from = dd.getTime(); dd.setDate(dd.getDate() + 1); to = dd.getTime();
+            etiqueta = 'el ' + dias[i];
+            break;
+          }
+        }
+      }
+      var r = app.calendarQuery(s(a.what, 40), from, to);
+      if (r === 'NEED_PERM') return { ok: false, err: 'necesito permiso de calendario para leer la agenda' };
+      if (r === null) return { ok: false, err: 'no pude leer la agenda' };
+      if (!r.length) return { ok: true, text: 'El usuario no tiene nada agendado ' + etiqueta + '.' };
+      var lineas = r.slice(0, 6).map(function (e) {
+        var d = new Date(e.b);
+        var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+        return hh + ' ' + (e.t || '(sin título)') + (e.w ? ' en ' + e.w : '');
+      });
+      return { ok: true, text: 'Eventos ' + etiqueta + ':\n' + lineas.join('\n') };
+    });
+
+  /* --- 3. contactos --------------------------------------------------- */
+  def('find_contact',
+    'Buscar un contacto por nombre y ver su número.',
+    { name: { type: 'string', required: true, desc: 'Nombre del contacto.' } },
+    function (a) {
+      var app = window.KiuApp;
+      if (!app || !app.contactSearch) return { ok: false, err: 'no puedo buscar contactos' };
+      var r = app.contactSearch(s(a.name, 40));
+      if (r === 'NEED_PERM') return { ok: false, err: 'necesito permiso de contactos' };
+      if (!r || !r.length) return { ok: true, text: 'No encontré a "' + s(a.name, 40) + '" entre los contactos.' };
+      return { ok: true, text: 'Coincidencias: ' + r.slice(0, 3).map(function (c) { return c.name + ' (' + c.num + ')'; }).join(', ') };
+    });
+
+  /* --- 4. llamar (efecto real) ---------------------------------------- */
+  def('call_contact',
+    'Marcar a alguien. Abre el marcador; NO llama solo.',
+    { who: { type: 'string', required: true, desc: 'Nombre o número.' } },
+    function (a) {
+      var app = window.KiuApp, brain = window.KiuBrain;
+      var quien = s(a.who, 40);
+      if (!quien) return { ok: false, err: 'no sé a quién llamar' };
+      if (/^\+?[\d\s\-()]{6,}$/.test(quien)) {
+        var n = quien.replace(/\D/g, '');
+        var okD = app && app.bridgeCall ? app.bridgeCall('dial', [n]) : false;
+        return { ok: !!okD, text: 'Te abrí el marcador con ' + quien + '. Tocá llamar para confirmar.' };
+      }
+      /* que lo resuelva brain.js: ya sabe de contactos a número, con sus mensajes */
+      var r = brain && brain.reply ? brain.reply('llama a ' + quien) : null;
+      if (r && r.handled) return { ok: true, text: r.text };
+      return { ok: false, err: 'no encontré a "' + quien + '" para llamar' };
+    }, { risk: 'write' });
+
+  /* --- 5. documentos (RAG) -------------------------------------------- */
+  def('search_docs',
+    'Buscar en los documentos que el usuario tiene indexados.',
+    { query: { type: 'string', required: true, desc: 'Palabras clave.' } },
+    function (a) {
+      var R = window.RAG;
+      if (!R || !R.on) return { ok: false, err: 'no hay documentos indexados' };
+      var hits = (typeof R.hits === 'function' ? R.hits(s(a.query, MAX_ARG_LEN), 3) : null) || [];
+      if (!hits.length) return { ok: true, text: 'No encontré nada en los documentos con esa consulta.' };
+      var out = hits.map(function (h) {
+        var t = String(h.txt || h.text || '').replace(/\s+/g, ' ').trim();
+        if (t.length > 160) t = t.slice(0, 160) + '…';
+        return '«' + (h.name || h.doc || 'documento') + '»: ' + t;
+      });
+      return { ok: true, text: 'Encontré esto:\n' + out.join('\n') };
+    });
+
+  /* --- 6. acción del dispositivo -------------------------------------- */
+  /* Una sola herramienta con `what` acotado a una lista, en vez de 14
+     herramientas distintas: el modelo elige entre valores que ya son válidos, y la
+     gramática GBNF puede enumerarlos. Menos superficie que inventar. */
+  var DEVICE_WHAT = ['linterna', 'bateria', 'espacio', 'abrir_app', 'maps', 'web', 'youtube', 'timer'];
+  def('device_action',
+    'Acciones del teléfono. Para llamar: call_contact. Para mandar mensajes: no hay herramienta.',
+    {
+      what: { type: 'string', required: true, enum: DEVICE_WHAT, desc: 'Uno de: ' + DEVICE_WHAT.join(' | ') },
+      target: { type: 'string', required: false, desc: 'App, minutos o texto. Vacío si no hace falta.' }
+    },
+    function (a) {
+      var app = window.KiuApp, brain = window.KiuBrain;
+      var what = s(a.what, 30).toLowerCase().trim();
+      var target = s(a.target, 60);
+      if (DEVICE_WHAT.indexOf(what) === -1) return { ok: false, err: '"' + what + '" no es una acción que sepa hacer' };
+      if (what === 'linterna') {
+        var r0 = brain && brain.reply ? brain.reply(target ? target : 'enciende la linterna') : null;
+        if (r0 && r0.handled) return { ok: true, text: r0.text };
+        return { ok: false, err: 'no pude tocar la linterna' };
+      }
+      if (what === 'abrir_app') {
+        if (!target) return { ok: false, err: 'decime qué app querés abrir' };
+        var r1 = brain && brain.reply ? brain.reply('abre ' + target) : null;
+        if (r1 && r1.handled) return { ok: true, text: r1.text };
+        return { ok: false, err: 'no encontré la app "' + target + '"' };
+      }
+      if (what === 'timer') {
+        var mins = num(target);
+        if (mins === null) {
+          var mt = String(target).match(/(\d+)/);
+          mins = mt ? parseInt(mt[1], 10) : null;
+        }
+        if (mins === null) return { ok: false, err: 'no entendí cuántos minutos' };
+        var okT = app && app.startTimerNative ? app.startTimerNative(mins, 'Temporizador de ' + mins + " minutos") : false;
+        return { ok: !!okT, text: okT ? ('Temporizador de ' + mins + ' minutos arrancado.') : 'No pude arrancar el temporizador.' };
+      }
+      /* el resto son lecturas: que las conteste brain.js, que ya las sabe */
+      var r2 = brain && brain.reply ? brain.reply(target ? what + ' ' + target : what) : null;
+      if (r2 && r2.handled) return { ok: true, text: r2.text };
+      return { ok: false, err: 'no pude cumplir "' + what + '"' };
+    }, { risk: 'write' });
+
+  /* ================= esquema → prompt ================= */
+  function toolNames() { return Object.keys(TOOLS); }
+  function getTool(n) { return Object.prototype.hasOwnProperty.call(TOOLS, n) ? TOOLS[n] : null; }
+
+  /* El texto que ve el modelo.
+   *
+   * v2.9.2 — esto se mide, no se estima. Cada decisión de herramienta paga un
+   * PREFILL de este texto en la CPU del teléfono, y el proyecto ya sabe que
+   * ahí está el cuello de botella (ver el comentario de PROMPT LIVIANO en
+   * app-ui.js: el prompt grande "tardaba minutos en el prefill"). Con las
+   * descripciones largas que había, el manifiesto eran 435 tokens: el 80 % de
+   * los 544 que costaba una decisión, para producir 120 de salida.
+   *
+   * Por eso el formato es una línea por herramienta, en forma de llamada, y las
+   * descripciones son disparadores cortos ("poné una alarma") en vez de prosa.
+   * Un modelo chico no gana nada con que le expliques cuándo usar la herramienta;
+   * gana con que sepa distinguirla de las otras seis de un vistazo.
+   *
+   * El presupuesto lo vigila `budget()` y lo fija un test (ver agente.test.mjs):
+   * si alguien vuelve a escribir un párrafo, el test se pone rojo. */
+  function manifest(solo) {
+    var out = [];
+    var names = (solo && solo.length) ? solo : toolNames();
+    for (var i = 0; i < names.length; i++) {
+      var t = TOOLS[names[i]];
+      var as = [];
+      for (var k in t.args) {
+        if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
+        var a = t.args[k];
+        as.push(k + (a.required ? '' : '?') + ': ' + a.desc);
+      }
+      out.push(t.name + '(' + as.join(', ') + ') — ' + t.desc);
+    }
+    return out.join('\n');
+  }
+
+  /* Tokens estimados del prompt completo. Es una estimación (≈3,6 car/token para
+     español con estos modelos), no un tokenizador real: alcanza para detectar que
+     algo se duplicó o se llenó de prosa, que es lo que este número tiene que
+     vigilar. Medirlo de verdad es un test de integración con el tokenizador. */
+  function budget() {
+    var p = systemPrompt('x', null, [], false);
+    var m = manifest();
+    return {
+      manifiestoChars: m.length,
+      manifiestoTok: Math.round(m.length / 3.6),
+      promptChars: p.length,
+      promptTok: Math.round(p.length / 3.6)
+    };
+  }
+
+  /* ================= gramática GBNF =================
+   *
+   * Deriva la gramática de muestreo del MISMO `args` que valida y que arma el
+   * manifiesto. No es una copia: si mañana agregás un argumento, la validación lo
+   * ve, el prompt lo documenta y la gramática lo acepta, sin que haya que
+   * acordarse de tres lugares.
+   *
+   * Para qué sirve: con la gramática, el motor NO PUEDE emitir un JSON roto —
+   * el sampler descarta los tokens que no encajan. Sin ella, un modelo chico
+   * falla el JSON de vez en cuando y el bucle lo reintenta gastando una
+   * generación entera. En un teléfono eso son segundos.
+   *
+   * OJO — esto NO arregla el problema de fondo. La gramática garantiza que el
+   * JSON sea sintácticamente válido, no que la herramienta sea la correcta: un
+   * modelo puede llamar `set_alarm` cuando debía leer la agenda, y la gramática
+   * lo va a dejar pasar igual. Para eso está la validación y la observación que
+   * vuelve al bucle. Gramática = menos reintentos. Validación = menos errores.
+   * Hacen falta las dos.
+   *
+   * Se le pasa a `llama_sampler_init_grammar(vocab, texto, "root")` en el nativo
+   * (ver el TODO en kiullama_jni.cpp). Acá solo se genera el texto.
+   */
+
+  /* Escapa un literal de GBNF: las comillas y las barras invertidas se
+     anteceden con una barra, porque la gramática es un DSL y no JSON. */
+  function lit(s0) {
+    return '"' + String(s0).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+  /* Un valor de tipo string: cualquier cosa menos la comilla de cierre, porque
+     el motor no puede "deshacer" un token ya emitido. */
+  function strValue() {
+    return '( [^"\\\\\\n] | "\\\\\"" )+';
+  }
+
+  function grammarTools() {
+    var g = [];
+    var names = toolNames();
+    for (var i = 0; i < names.length; i++) {
+      var t = TOOLS[names[i]];
+      g.push(toolRule(t));
+    }
+    return g;
+  }
+
+  /* Regla de UNA herramienta:
+       tool ::= "set_alarm" "{" "when" ":" string "}"      (los requeridos van)
+              | "set_alarm" "{" "when" ":" string "," "label" ":" string "}"
+     Los opcionales abren DOS alternativas: la de solo los requeridos, y la de
+     todos. Es más fácil de generar y de verificar que una regla con duplicados
+     opcionales, y no deja de ser válida.
+     Solo se generan las alternativas de subconjuntos NO VACÍOS de opcionales:
+     una herramienta con cinco opcionales daría 31 ramas y la gramática se
+     vuelve un mapa de estados más caro que lo que justifica el benefit. Con
+     1 o 2 opcionales, las alternativas son exactas. */
+  function toolRule(t) {
+    var req = [], opt = [];
+    for (var k in t.args) {
+      if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
+      (t.args[k].required ? req : opt).push(k);
+    }
+    var nameLit = lit(t.name);
+    var ramas = [];
+    // sin opcionales: una sola rama
+    ramas.push(nameLit + ' "{" ' + objBody(req, t) + ' }');
+    // con opcionales: por cada subconjunto no vacío
+    if (opt.length === 1) {
+      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[0]]), t) + ' }');
+    } else if (opt.length === 2) {
+      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[0]]), t) + ' }');
+      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[1]]), t) + ' }');
+      ramas.push(nameLit + ' "{" ' + objBody(req.concat(opt), t) + ' }');
+    }
+    // >2 opcionales: la de todos. Ver la nota de arriba.
+    if (opt.length > 2) {
+      ramas.length = 1;
+      ramas.push(nameLit + ' "{" ' + objBody(req.concat(opt), t) + ' }');
+    }
+    return t.name + ' ::= ' + ramas.join('\n           | ');
+  }
+
+  /* El cuerpo del objeto: campos separados por coma, en el orden del esquema. */
+  function objBody(keys, t) {
+    if (!keys.length) return '';
+    var partes = [];
+    for (var i = 0; i < keys.length; i++) {
+      partes.push(lit(keys[i]) + ' ":" ' + valueRule(t.args[keys[i]], t));
+    }
+    return partes.join(' "," ');
+  }
+
+  /* El valor de un campo: por tipo, y acotado si el esquema lo acota.
+     Los ENUM son los que másBytes ahorran: en vez de un string libre, el modelo
+     solo puede decir una de las palabras de la lista. */
+  function valueRule(spec, t) {
+    if (spec.enum && spec.enum.length) {
+      return '( ' + spec.enum.map(lit).join(' | ') + ' )';
+    }
+    if (spec.type === 'number' || spec.type === 'integer') {
+      return '( "-" | [0-9] ) ( [0-9] | [1-9] [0-9] )*';
+    }
+    if (spec.type === 'boolean') {
+      return '( "true" | "false" )';
+    }
+    return strValue();
+  }
+
+  /* La gramática entera, con la raíz que acepta tanto una herramienta como el
+     "listo". Es lo que se le pasa a llama_sampler_init_grammar como root. */
+  function grammar(solo) {
+    var g = grammarTools(solo);
+    g.push('done ::= "{\\"listo\\": true}"');
+    g.push('root ::= ' + g.map(function (r) { return r.split(' ::=')[0]; }).join(' | '));
+    return g.join('\n') + '\n';
+  }
+
+  /* ================= validación estricta ================= */
+  /* Devuelve {ok:true, args} o {ok:false, err}. El error va al modelo tal cual:
+     que sepa QUÉ estuvo mal es lo que hace que el segundo intento acierte. */
+  function validate(name, raw) {
+    var t = getTool(name);
+    if (!t) {
+      return {
+        ok: false,
+        err: 'la herramienta "' + s(name, 40) + '" no existe. Solo podés usar: ' + toolNames().join(', ') + '.'
+      };
+    }
+    var args = {};
+    var k;
+    for (k in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+      if (!Object.prototype.hasOwnProperty.call(t.args, k)) {
+        return {
+          ok: false,
+          err: 'el argumento "' + s(k, 30) + '" no existe en ' + t.name + '. Sus argumentos son: ' +
+            Object.keys(t.args).join(', ') + '.'
+        };
+      }
+    }
+    for (k in t.args) {
+      if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
+      var spec = t.args[k], v = raw[k];
+      if (v === undefined || v === null || v === '') {
+        if (spec.required) return { ok: false, err: 'falta el argumento obligatorio "' + k + '" de ' + t.name + '.' };
+        continue;
+      }
+      if (spec.type === 'string') {
+        var str = String(v);
+        if (str.length > MAX_ARG_LEN) return { ok: false, err: 'el argumento "' + k + '" es demasiado largo.' };
+        /* v2.9.2: el enum se valida acá además de estar en la gramática. La
+           gramática no siempre está activa (sin JNI, o cuando la decisión va
+           por un proveedor), y esta lista cerrada es la que evita que el modelo
+           invente acciones. */
+        if (spec.enum && spec.enum.length && spec.enum.indexOf(str) === -1) {
+          return {
+            ok: false,
+            err: '"' + str + '" no es un valor válido de "' + k + '". Solo: ' + spec.enum.join(', ') + '.'
+          };
+        }
+        args[k] = str;
+      } else if (spec.type === 'number' || spec.type === 'integer') {
+        var n = num(v);
+        if (n === null) return { ok: false, err: 'el argumento "' + k + '" tiene que ser un número.' };
+        args[k] = spec.type === 'integer' ? Math.round(n) : n;
+      } else if (spec.type === 'boolean') {
+        args[k] = (v === true || v === 'true' || v === 1 || v === '1');
+      } else {
+        args[k] = String(v);
+      }
+    }
+    return { ok: true, args: args };
+  }
+
+  /* ================= parse de la decisión =================
+     Un modelo chico devuelve: ```json\n{...}\n```, o "{\"tool\":...}" con comillas
+     raras, o JSON con trailing commas. Todo eso es recuperable. */
+  function parseDecision(text) {
+    if (!text) return null;
+    var t = String(text);
+    t = t.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '');
+    t = t.replace(/<\/?think>/gi, '').trim();
+    var fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) t = fence[1].trim();
+    /* si hay texto alrededor, nos quedamos con el primer {...} balanceado */
+    var i = t.indexOf('{');
+    if (i > -1) {
+      var depth = 0, end = -1, inStr = false, esc2 = false;
+      for (var j = i; j < t.length; j++) {
+        var ch = t[j];
+        if (inStr) {
+          if (esc2) esc2 = false;
+          else if (ch === '\\') esc2 = true;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) { end = j; break; } }
+      }
+      if (end > -1) t = t.slice(i, end + 1);
+    }
+    t = t.replace(/,\s*([}\]])/g, '$1');           /* trailing commas */
+    t = t.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    try {
+      var o = JSON.parse(t);
+      return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+    } catch (e) { return null; }
+  }
+
+  /* acepta "tool"/"herramienta", "args"/"arguments"/"argumentos"/"params" */
+  function readDecision(o) {
+    var name = o.tool || o.herramienta || o.function || o.name;
+    var raw = o.args || o.arguments || o.argumentos || o.params || o.parameters || o.input;
+    if (name && typeof name === 'object') {
+      /* formato OpenAI: {"function":{"name":...,"arguments":"{...}"}} */
+      var f = name;
+      if (!raw && f.arguments) raw = f.arguments;
+      name = f.name;
+    }
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch (e) { return { name: name, raw: {}, bad: 'los argumentos no son JSON válido' }; }
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
+    return { name: name, raw: raw, bad: null };
+  }
+
+  /* "¿No falta nada más?" → sí, cuando NO pidió ninguna herramienta.
+     La clave: si el objeto trae una herramienta, NO está terminado, aunque no
+     diga "listo". La versión anterior devolvía true siempre que no viniera la
+     palabra, así que un {"tool":"set_alarm",...} sin más se leía como "terminado"
+     y el bucle cortaba ANTES de ejecutar nada. Un modelo chico que no entiende la
+     instrucción "si no necesitás ninguna: {listo:true}" y devuelve solo la
+     herramienta se quedaba mudo. */
+  function isDone(o) {
+    if (!o || typeof o !== 'object') return true;
+    var name = o.tool || o.herramienta || o.function || o.name;
+    if (name && typeof name === 'object') name = name.name;
+    if (name) return false;
+    var v = o.listo !== undefined ? o.listo : (o.done !== undefined ? o.done : true);
+    if (v === true) return true;
+    var sv = String(v).trim().toLowerCase();
+    return sv === '1' || sv === 'true' || sv === 'si' || sv === 'sí' || sv === 'listo' || sv === 'ya' || sv === 'nada';
+  }
+
+  /* ================= el bucle =================
+     Un paso = una consulta al modelo + una decisión validada + su ejecución.
+     Se corta en cuanto el modelo dice "listo" o no queda nada por hacer. */
+  function run(opts, cb) {
+    var o = opts || {};
+    var K = window.Kiu;
+    var herramientas = o.tools && o.tools.length ? o.tools : toolNames();
+    var max = o.maxSteps || MAX_STEPS;
+    var obs = [];
+    var hecho = [];
+    var n = 0;
+
+    if (!K || typeof K.ask !== 'function') { cb({ ok: false, err: 'sin motor' }); return; }
+    if (!window.S || !window.S.kiu || !window.S.kiu.ok) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
+
+    function paso() {
+      if (n >= max) { finish(); return; }
+      n++;
+      var hist = [{ role: 'system', content: systemPrompt(o.pedido, herramientas, obs, o.habla && o.habla.length) }];
+      if (o.habla && o.habla.length) {
+        for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
+      }
+      /* v2.9.2: se pasa la gramatica SOLO si el motor la acepta. Se consulta
+         antes de generar porque si el nativo no la soporta, la decision sale sin
+         restringir y el parse + reintento tiene que estar listo igual (que
+         igual hace falta: un modelo chico va a fallar el JSON de vez en cuando).
+         La gramatica se deriva del esquema, asi que no puede quedar vieja. */
+      var gbnf = null;
+      if (o.usarGramatica !== false) {
+        try {
+          if (rawBridge('kiuGenGrammarOk') !== false) gbnf = grammar(herramientas);
+        } catch (eGr) { gbnf = null; }
+      }
+      K.ask(hist, o.maxTokens || 120, function (res) {
+        if (!res || !res.ok || !res.text) { finish(); return; }
+        var d = parseDecision(res.text);
+        if (!d) { obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
+        if (isDone(d)) { finish(); return; }
+        var rd = readDecision(d);
+        if (rd.bad) { obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
+        var v = validate(rd.name, rd.raw);
+        if (!v.ok) { obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
+        var t = getTool(rd.name);
+        var out;
+        try { out = t.run(v.args); } catch (e) { out = { ok: false, err: 'la herramienta falló: ' + e.message }; }
+        var txt = (out && (out.text || out.err)) || '';
+        obs.push(txt);
+        if (out && out.ok && out.text) hecho.push(out.text);
+        paso();
+      }, null, gbnf);
+    }
+    function finish() {
+      cb({
+        ok: hecho.length > 0,
+        text: hecho.join('\n'),
+        obs: obs,
+        steps: n
+      });
+    }
+    paso();
+  }
+
+  function systemPrompt(pedido, herramientas, obs, hayHabla) {
+    /* Si el llamador pasa una lista, el prompt muestra SOLO esas herramientas.
+       Importa para un modelo chico: cada línea del manifiesto es contexto que no
+       está usando, y cada herramienta de más es una chance más de que elija mal. */
+    var lista = manifest(herramientas);
+    var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n\n' +
+      'HERRAMIENTAS:\n' + lista + '\n\n' +
+      /* v2.9.2: la TAREA solo va si NO hay historial. Con historial, el último
+         mensaje del usuario YA es la tarea y repetirla acá es tokens de prefill
+         tirados a la basura — y en un teléfono, cada token cuenta. */
+      (hayHabla ? '' : 'TAREA: ' + s(pedido, 300) + '\n\n') +
+      'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' +
+      'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n' +
+      'Si no necesitás ninguna: {"listo": true}\n\n' +
+      'Usá una herramienta por vez. Elegí la más específica que sirva.';
+    if (obs && obs.length) {
+      p += '\n\nYA INTENTASTE:\n' + obs.map(function (o, i2) { return (i2 + 1) + ') ' + o; }).join('\n') +
+        '\nCon eso decidí si falta algo o si ya está listo.';
+    }
+    return p;
+  }
+
+  return {
+    TOOLS: TOOLS,
+    toolNames: toolNames,
+    get: getTool,
+    manifest: manifest,
+    grammar: grammar,
+    lit: lit,
+    budget: budget,
+    validate: validate,
+    parseDecision: parseDecision,
+    readDecision: readDecision,
+    isDone: isDone,
+    run: run,
+    systemPrompt: systemPrompt,
+    MAX_STEPS: MAX_STEPS,
+    DEVICE_WHAT: DEVICE_WHAT,
+    /* para los tests y para el diagnóstico */
+    _internals: { MAX_ARG_LEN: MAX_ARG_LEN }
+  };
+})();

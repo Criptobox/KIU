@@ -55,6 +55,17 @@ public class BootReceiver extends BroadcastReceiver {
     /* v2.8.0: arranca el servicio de wake word; si Android 14 lo bloquea desde el
        arranque, avisa con una notificación en vez de quedarse mudo. */
     static void startWakeOrAsk(Context context) {
+        /* v2.11.2 · BUG REAL: desde Android 14 (targetSdk 34) NO se puede arrancar un servicio
+           de micrófono desde BOOT_COMPLETED ni desde MY_PACKAGE_REPLACED. startForegroundService()
+           no lanzaba excepción (por eso el catch de abajo nunca avisaba): fallaba después, en
+           startForeground() dentro del servicio. Resultado tras CADA actualización: wake=true en
+           ajustes, nadie escuchando, y a veces cierre de la app. Ahora no se intenta: se desmarca
+           «wake» (la UI deja de mentir) y se avisa para que abras Kiu una vez. */
+        if (Build.VERSION.SDK_INT >= 34) {
+            try { context.getSharedPreferences("kiu_native", 0).edit().putBoolean("wake", false).apply(); } catch (Exception ignored) { }
+            askToReactivate(context);
+            return;
+        }
         boolean started = false;
         try {
             Intent intent2 = new Intent(context, (Class<?>) KiuService.class);
@@ -86,9 +97,9 @@ public class BootReceiver extends BroadcastReceiver {
                     ? new Notification.Builder(context, CH_WAKE_BACK)
                     : new Notification.Builder(context);
             b.setSmallIcon(R.drawable.ic_notif)
-                    .setContentTitle("Kiu no pudo escuchar «Kiu» al arrancar")
-                    .setContentText("Android 14 no deja abrir el micrófono al iniciar el teléfono. Abrí Kiu una vez y vuelve a prender el despertador por voz.")
-                    .setStyle(new Notification.BigTextStyle().bigText("Android 14 no deja abrir el micrófono al iniciar el teléfono. Abrí Kiu una vez y vuelve a prender el despertador por voz."))
+                    .setContentTitle("Kiu dejó de escuchar")
+                    .setContentText("Android no deja abrir el micrófono en segundo plano (al iniciar o actualizar). Abrí Kiu una vez y vuelve a prender el despertador por voz.")
+                    .setStyle(new Notification.BigTextStyle().bigText("Android no deja abrir el micrófono en segundo plano (al iniciar o actualizar). Abrí Kiu una vez y vuelve a prender el despertador por voz."))
                     .setContentIntent(pi)
                     .setAutoCancel(true);
             nm.notify(202, b.build());

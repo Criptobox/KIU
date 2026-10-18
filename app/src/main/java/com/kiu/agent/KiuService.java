@@ -35,6 +35,10 @@ public class KiuService extends Service {
     private long wakeAt = 0;
     private boolean started = false;
     private boolean listening = false;
+    /* v2.11.2: idioma con respaldo. Con es-AR fijo, un teléfono sin ese paquete daba error 12/13
+       en bucle y Kiu no escuchaba nunca. */
+    private static final String[] LANGS = {"es-AR", "es-419", "es-ES", "es"};
+    private int langIdx = 0;
 
     /* v2.9.3 · WATCHDOG. BUG REAL encontrado auditando el arranque de voz.
 
@@ -94,6 +98,9 @@ public class KiuService extends Service {
         @Override // android.speech.RecognitionListener
         public void onError(int i) {
             KiuService.this.listening = false;
+            if (i == 12 || i == 13) {
+                KiuService.this.langIdx = (KiuService.this.langIdx + 1) % KiuService.LANGS.length;
+            }
             if (i == 6 || i == 7) {
                 KiuService.this.fails = 0;
                 KiuService.this.schedule(300L);
@@ -132,11 +139,22 @@ public class KiuService extends Service {
 
     @Override // android.app.Service
     public int onStartCommand(Intent intent, int i, int i2) {
-        ACTIVE = true;
+        /* v2.11.2 · BUG REAL: startForeground() fallaba en silencio. Desde Android 12/14 un
+           servicio de MICRÓFONO no puede pasar a primer plano si se arrancó desde segundo plano
+           (tras actualizar la app, al reiniciar, o desde la alarma de onTaskRemoved). El catch
+           vacío dejaba al servicio vivo SIN foreground: el sistema lo mataba o cerraba la app
+           (ForegroundServiceDidNotStartInTimeException) y los ajustes seguían diciendo
+           «escuchando». Ahora, si no puede, se apaga limpio, se desmarca «wake» y se avisa. */
         try {
             startForeground(2001, notif());
         } catch (Exception unused) {
+            ACTIVE = false;
+            try { getSharedPreferences("kiu_native", 0).edit().putBoolean("wake", false).apply(); } catch (Exception ignored) { }
+            BootReceiver.askToReactivate(this);
+            stopSelf();
+            return 2; /* START_NOT_STICKY */
         }
+        ACTIVE = true;
         if (!this.started) {
             this.started = true;
             this.h.postDelayed(this.cycleR, 500L);
@@ -163,7 +181,8 @@ public class KiuService extends Service {
     public void onTaskRemoved(Intent intent) {
         try {
             AlarmManager alarmManager = (AlarmManager) getSystemService("alarm");
-            if (alarmManager != null) {
+            /* v2.11.2: desde Android 14 no se puede reabrir un servicio de micrófono desde una alarma */
+            if (alarmManager != null && Build.VERSION.SDK_INT < 34) {
                 alarmManager.setExactAndAllowWhileIdle(2, SystemClock.elapsedRealtime() + 2000, (Build.VERSION.SDK_INT >= 26
                     ? PendingIntent.getForegroundService(this, 99, new Intent(this, (Class<?>) KiuService.class), 1140850688)
                     : PendingIntent.getService(this, 99, new Intent(this, (Class<?>) KiuService.class), 1140850688)) /* v2.7.3: getService desde segundo plano falla en Android 8+ */);
@@ -235,8 +254,8 @@ public class KiuService extends Service {
             }
             Intent intent = new Intent("android.speech.action.RECOGNIZE_SPEECH");
             intent.putExtra("android.speech.extra.LANGUAGE_MODEL", "free_form");
-            intent.putExtra("android.speech.extra.LANGUAGE", "es-AR");
-            intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", "es-AR");
+            intent.putExtra("android.speech.extra.LANGUAGE", LANGS[langIdx]);
+            intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", LANGS[langIdx]);
             intent.putExtra("android.speech.extra.PARTIAL_RESULTS", true);
             intent.putExtra("calling_package", getPackageName());
             intent.putExtra("android.speech.extra.MAX_RESULTS", 3);

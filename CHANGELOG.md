@@ -2,6 +2,12 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.2] — Voz: el servicio de micrófono ya no falla en silencio
+
+- **Bug real tras actualizar/reiniciar:** en Android 14 un servicio de micrófono no puede pasar a primer plano si se arrancó desde segundo plano (`MY_PACKAGE_REPLACED`, `BOOT_COMPLETED`, alarma de `onTaskRemoved`). `startForeground()` fallaba dentro de un `catch` vacío: ajustes decía «escuchando», nadie escuchaba y a veces se cerraba la app. Ahora no se intenta desde segundo plano en Android 14+, se desmarca `wake` y se avisa con una notificación; si `startForeground` falla, el servicio se apaga limpio.
+- **Idioma de respaldo:** el servicio usaba solo `es-AR`; ante los errores 12/13 del reconocedor ahora prueba `es-419`, `es-ES` y `es`.
+- **Actualizaciones:** el Release se publica en cada push a `main` (antes solo con tags `v*`, y el buscador decía «todavía no hay versiones publicadas»).
+
 ## [2.11.1] — Voz: el modelo sí estaba y el diagnóstico mentía
 
 - **Bug real:** el diagnóstico buscaba `final.mdl` solo en la raíz del modelo, pero el modelo oficial lo deja en `am/final.mdl` (el motor sí lo aceptaba). La app instalaba bien el modelo y mostraba «SIN MODELO». Ahora usa la misma comprobación que el motor, y con el modelo instalado muestra si está escuchando, en pausa o por qué se detuvo.

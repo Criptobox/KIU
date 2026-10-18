@@ -124,9 +124,26 @@
       document.addEventListener('click', function (e) { if (e.target && e.target.id === 'typing-cancel') App.cancelApi(); });
       /* Callbacks de voz: manejadores estables (Java los dispara en cualquier momento) */
       window.nexoOnVoice = function (text) { App.handleVoice(text); };
+      /* v2.10.3: antes solo 2 códigos se mostraban y todo lo demás se tiraba con
+         voiceError(null). Un reconocedor roto, sin internet o sin el idioma fallaba mudo. */
       window.nexoVoiceError = function (err) {
-        if (err === 'unavailable') App.voiceError('El micrófono no está disponible ahora');
-        else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
+        var m = {
+          unavailable: 'El micrófono no está disponible ahora',
+          no_permission: 'Falta permiso de micrófono: Ajustes → Diagnosticar voz',
+          net: 'Sin internet: el reconocimiento de voz del sistema la necesita',
+          audio: 'Error de audio: otra app puede estar usando el micrófono',
+          server: 'El servicio de voz del teléfono falló. Probá de nuevo',
+          client: 'El servicio de voz del teléfono no respondió. Probá de nuevo',
+          timeout: 'No te escuché nada. Tocá el micrófono y hablá enseguida',
+          no_match: 'No te entendí. Repetilo un poco más claro',
+          busy: 'El reconocedor de voz está ocupado. Esperá un segundo',
+          too_many: 'Demasiados intentos seguidos. Esperá un momento',
+          lang: 'Ese servicio de voz no tiene español. Revisá Diagnosticar voz',
+          error: 'No pude escucharte. Probá de nuevo'
+        };
+        var s = String(err || '');
+        if (m[s]) App.voiceError(m[s]);
+        else if (s.length > 12) App.voiceError(s.charAt(0).toUpperCase() + s.slice(1));
         else App.voiceError(null);
       };
       /* v2.8.1: nexoListenStart marcaba la UI pero no App.voiceBusy, así que el JS
@@ -236,6 +253,10 @@
       if (dvb) {
         dvb.addEventListener('click', function (ev) {
           var tgt = ev.target;
+          if (tgt && tgt.id === 'btn-tts-test') {
+            bridge('speak', ['Hola, soy Kiu. Si me escuchás, la voz funciona.']);
+            return;
+          }
           if (tgt && tgt.id === 'btn-tts-set') { bridge('openSettings', ['tts']); return; }
           if (tgt && tgt.id === 'btn-rec-set') { bridge('openSettings', ['voiceinput']); return; }
           if (tgt && tgt.id === 'btn-mic-perm') {
@@ -336,7 +357,10 @@
     greet: function () {
       if (!S.greetOn) return;
       var last = store('nexo_greet') || 0;
-      if (Date.now() - last < 20 * 60000) return;
+      /* v2.10.2: 20 min de espera = si cerrabas y abrías la app para probar, nunca
+         saludaba y parecía roto. 90 s alcanzan para no repetirlo en el «Reiniciar
+         interfaz» ni en un cierre accidental. */
+      if (Date.now() - last < 90 * 1000) return;
       store('nexo_greet', Date.now());
       var h = new Date().getHours();
       var hi = h >= 6 && h < 13 ? 'Buenos días' : h >= 13 && h < 20 ? 'Buenas tardes' : 'Buenas noches';

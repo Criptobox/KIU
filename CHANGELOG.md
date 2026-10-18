@@ -2,6 +2,19 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.10.3] — Comandos de voz: errores visibles y frases como las dicta Google
+
+- **Los errores del reconocedor se tiraban.** Java ignoraba el código de error y la interfaz solo mostraba 2 de todos los avisos posibles: si el reconocimiento fallaba (sin internet, idioma no disponible, servicio roto, nada entendido) tocabas el micrófono y no pasaba nada. Ahora cada código se traduce a un aviso claro y el diagnóstico muestra el último error.
+- **Idioma:** si el reconocedor no tiene es-AR (error 12/13) se reintenta una vez con es-ES.
+- **Comandos:** el cerebro entiende números en letras («a las siete», «cinco minutos»), comandos sin verbo («linterna», «alarma a las 7», «temporizador de 5 minutos») y sinónimos («lámpara», «prende la luz del celular», «apaga la luz»).
+
+## [2.10.2] — Modelo de voz detectado, palabra de activación con respaldo
+
+- **«SIN MODELO» con el modelo instalado:** el diagnóstico buscaba `final.mdl` en la raíz y el modelo oficial lo trae en `am/final.mdl`. Ahora usa el mismo criterio que el motor.
+- **Palabra de activación local:** «kiu» no es una palabra del español y el modelo solo reconoce las de su vocabulario, así que el motor arrancaba y nunca podía oírla. Ahora se prueban varias grafías (kiu, quiu, kiwi, kyu, ciu, chiu, kio), se dejan las que existen en `graph/words.txt`, y la gramática lleva `[unk]`. Si el motor local falla por cualquier motivo, se cae solo al reconocedor del sistema.
+- **Reconocedor de comandos:** si el predeterminado del sistema no es el de Google (tu lista incluye Claude y Meta AI), se usa el de Google por nombre.
+- **Saludo:** la espera entre saludos baja de 20 min a 90 s (probar cerrando y abriendo no saludaba). Botón «Probar la voz de Kiu» en el diagnóstico. Si el TTS rechaza la frase, ahora se avisa.
+
 ## [2.10.1] — Voz, modelos y descargas
 
 - **Saludo:** el TTS de Android tarda 1-3 s en arrancar y el saludo sale a los 1,6 s. `speak()` descartaba la frase si `ttsReady` era false y el JS lo daba por hablado. Ahora la frase queda en cola y se dice al estar listo el TTS (si es de hace más de 20 s se descarta).

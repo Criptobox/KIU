@@ -125,6 +125,8 @@ public final class KiuVoskInstall {
             job.err = "el modelo quedó mal puesto: falta am/final.mdl";
         } else {
             job.state = "done";
+            /* modelo nuevo: se le da otra oportunidad al motor local */
+            WakeWordEngine.localUnusable = false;
         }
     }
 

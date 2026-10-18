@@ -31,6 +31,22 @@ window.KiuBrain = (function () {
     /* alarma: «despiértame a las 7», «quiero una alarma…», «crea una alarma…» */
     t = t.replace(/^(?:despiertame|despertame|levantame)\s+(?:a\s+las?|para\s+las?|las?)\s+/, 'pon alarma a las ');
     t = t.replace(/^(?:crea|crear|activa|activar|agrega|agregar|haz|hace|haceme|hazme|programame|quiero|necesito)\s+(?:una\s+|un\s+)?(alarma|despertador)\b/, 'pon $1');
+    /* v2.10.3 · COMO LO DICTA GOOGLE: «a las siete», «cinco minutos», «linterna» a secas,
+       «prende la luz del celular». El reconocedor escribe los números en letras a veces y en
+       cifras otras; los comandos esperaban cifras y un verbo. Solo se convierten los
+       números en contextos de hora o duración, para no tocar «pon UNA alarma». */
+    var NUM = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8,
+      nueve: 9, diez: 10, once: 11, doce: 12, quince: 15, veinte: 20, treinta: 30, cuarenta: 40,
+      cincuenta: 50, sesenta: 60 };
+    var NUMRE = '(?:' + Object.keys(NUM).join('|') + ')';
+    t = t.replace(new RegExp('\\b(a las?|las?)\\s+(' + NUMRE + ')\\b', 'g'), function (_, a, w) { return a + ' ' + NUM[w]; });
+    t = t.replace(new RegExp('\\b(' + NUMRE + ')\\s+(minutos?|segundos?|horas?)\\b', 'g'), function (_, w, u) { return NUM[w] + ' ' + u; });
+    t = t.replace(/\blampara\b/g, 'linterna');
+    t = t.replace(/^(?:(?:la|el)\s+)?(linterna|flash)$/, 'enciende la linterna');
+    t = t.replace(/^(?:enciende|prende|prender|encender|activa|activar|pon|pone|poner)\s+(?:la\s+)?luz(?:\s+del?\s+(?:celular|telefono|movil))?$/, 'enciende la linterna');
+    t = t.replace(/^(?:apaga|apagar|apague)\s+(?:la\s+)?luz(?:\s+del?\s+(?:celular|telefono|movil))?$/, 'apaga la linterna');
+    t = t.replace(/^(?:una\s+)?(alarma|despertador)\s+(?:a|para)\s+las?\s/, 'pon $1 a las ');
+    t = t.replace(/^(?:un\s+)?(temporizador|timer)\s+(?:de|por)\s/, 'pon un temporizador de ');
     /* «alarma para las 7» -> «alarma a las 7»: el handler se come el «para» y
        parseWhen no entiende «las 7» a secas. */
     t = t.replace(/^(pon (?:una |un )?(?:alarma|despertador))\s+(?:para\s+)?(las?\s)/, '$1 a $2');

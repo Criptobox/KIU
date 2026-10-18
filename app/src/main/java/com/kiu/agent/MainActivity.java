@@ -94,6 +94,11 @@ public class MainActivity extends Activity {
     private volatile long pendingSpeakAt = 0L;
     private volatile boolean ttsGaveUp = false;
     private boolean micAskedOnce = false;
+    /* v2.10.3: idioma del reconocedor. es-AR no existe en todos los reconocedores (en los
+       que no, devuelven error 12/13 y antes eso se tragaba en silencio). */
+    private String recLang = "es-AR";
+    private boolean recLangProbado = false;
+    private volatile String lastRecErr = "";
     private Runnable micWatch = null;
     private static final long MIC_WATCHDOG_MS = 20000L;
 
@@ -514,7 +519,11 @@ public class MainActivity extends Activity {
         this.tts.setPitch(this.ttsPitch);
         Bundle bundle = new Bundle();
         bundle.putString("networkTts", "true");
-        this.tts.speak(str, 0, bundle, "kiu_utt");
+        int rc = this.tts.speak(str, 0, bundle, "kiu_utt");
+        if (rc != 0) {
+            /* speak() devuelve ERROR (-1) sin lanzar nada: antes ese fallo era invisible */
+            js("nexoVoiceError('la voz del teléfono no aceptó la frase')");
+        }
     }
 
     /** TTS todavia no listo: guarda la frase (solo la ultima) para decirla al arrancar.
@@ -796,6 +805,74 @@ public class MainActivity extends Activity {
     }
 
     /* JADX INFO: Access modifiers changed from: private */
+    /** v2.10.2 · El diagnóstico del usuario lista cuatro servicios de reconocimiento
+        (as, tts, Claude, Meta AI) y ningún googlequicksearchbox. Si el predeterminado
+        del sistema no es el de Google, createSpeechRecognizer(ctx) usa el que sea: puede
+        ser uno que no entiende comandos. Se elige el de Google por nombre. */
+    public static android.speech.SpeechRecognizer newRecognizer(android.content.Context ctx) {
+        try {
+            String def = android.provider.Settings.Secure.getString(ctx.getContentResolver(), "voice_recognition_service");
+            boolean googleDef = def != null && (def.startsWith("com.google.android.googlequicksearchbox/")
+                    || def.startsWith("com.google.android.tts/"));
+            if (!googleDef) {
+                android.content.Intent q = new android.content.Intent(android.speech.RecognitionService.SERVICE_INTERFACE);
+                java.util.List<android.content.pm.ResolveInfo> list = ctx.getPackageManager().queryIntentServices(q, 0);
+                android.content.ComponentName pick = null;
+                if (list != null) {
+                    for (android.content.pm.ResolveInfo ri : list) {
+                        if (ri.serviceInfo == null) {
+                            continue;
+                        }
+                        String pkg = ri.serviceInfo.packageName;
+                        if ("com.google.android.googlequicksearchbox".equals(pkg)) {
+                            pick = new android.content.ComponentName(pkg, ri.serviceInfo.name);
+                            break;
+                        }
+                        if (pick == null && "com.google.android.tts".equals(pkg)) {
+                            pick = new android.content.ComponentName(pkg, ri.serviceInfo.name);
+                        }
+                    }
+                }
+                if (pick != null) {
+                    return android.speech.SpeechRecognizer.createSpeechRecognizer(ctx, pick);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return android.speech.SpeechRecognizer.createSpeechRecognizer(ctx);
+    }
+
+    /** Nombre corto del código de SpeechRecognizer.ERROR_*; la interfaz lo traduce a un aviso. */
+    static String recErrCode(int i) {
+        switch (i) {
+            case 1:
+            case 2:
+                return "net";
+            case 3:
+                return "audio";
+            case 4:
+            case 11:
+                return "server";
+            case 5:
+                return "client";
+            case 6:
+                return "timeout";
+            case 7:
+                return "no_match";
+            case 8:
+                return "busy";
+            case 9:
+                return "no_permission";
+            case 10:
+                return "too_many";
+            case 12:
+            case 13:
+                return "lang";
+            default:
+                return "error";
+        }
+    }
+
     public void startWakeNow() {
         runOnUiThread(new Runnable() { // from class: com.kiu.agent.MainActivity.6
             @Override // java.lang.Runnable
@@ -807,7 +884,7 @@ public class MainActivity extends Activity {
                    esté en la carpeta alcanza, y se recuerda que ya se eligió local. */
                 SharedPreferences sp = MainActivity.this.getSharedPreferences("kiu_native", 0);
                 boolean wwLocal = sp.getBoolean("wwLocal", false) || WakeWordEngine.modelPresent(MainActivity.this);
-                if (wwLocal && WakeWordEngine.modelPresent(MainActivity.this)) {
+                if (wwLocal && WakeWordEngine.modelPresent(MainActivity.this) && !WakeWordEngine.localUnusable) {
                     boolean ok = WakeWordEngine.get().start(MainActivity.this);
                     MainActivity.this.getSharedPreferences("kiu_native", 0)
                             .edit().putBoolean("wwLocal", true).putBoolean("wake", ok).apply();
@@ -1963,13 +2040,22 @@ public class MainActivity extends Activity {
             boolean mdl = false;
             String msize = "-";
             try {
-                java.io.File f = new java.io.File(WakeWordEngine.modelDir(MainActivity.this), "final.mdl");
+                /* v2.10.2: el modelo oficial trae am/final.mdl. Este chequeo miraba solo la
+                   raíz y decía «SIN MODELO» con el modelo bien instalado (el motor ya
+                   aceptaba los dos layouts desde 2.9.3; el diagnóstico quedó atrás). */
+                java.io.File base = new java.io.File(WakeWordEngine.modelDir(MainActivity.this));
+                java.io.File f = new java.io.File(base, "am/final.mdl");
+                if (!f.exists()) {
+                    f = new java.io.File(base, "final.mdl");
+                }
                 mdl = f.exists();
                 if (mdl) {
                     msize = String.format(java.util.Locale.US, "%.0f MB", f.length() / 1048576.0);
                 }
             } catch (Throwable th) {
             }
+            b.append("\"lastRecErr\":").append(q(this.lastRecErr)).append(",");
+            b.append("\"recLang\":").append(q(this.recLang)).append(",");
             b.append("\"voskModel\":").append(mdl).append(",");
             b.append("\"voskSize\":").append(q(msize)).append(",");
             try {
@@ -2351,7 +2437,7 @@ public class MainActivity extends Activity {
             KiuService.resumeSoon();
             return;
         }
-        SpeechRecognizer createSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        SpeechRecognizer createSpeechRecognizer = newRecognizer(this);
         this.recognizer = createSpeechRecognizer;
         createSpeechRecognizer.setRecognitionListener(new RecognitionListener() { // from class: com.kiu.agent.MainActivity.7
             @Override // android.speech.RecognitionListener
@@ -2391,13 +2477,31 @@ public class MainActivity extends Activity {
             @Override // android.speech.RecognitionListener
             public void onError(int i) {
                 MainActivity.this.stopSpeech();
+                /* v2.10.3 · EL CÓDIGO DE ERROR SE IGNORABA. Cualquier fallo del reconocedor
+                   (sin internet, idioma no disponible, servicio roto, nada entendido) llegaba
+                   a la interfaz como un «error» sin nombre, y la interfaz lo descartaba: tocabas
+                   el micrófono y no pasaba nada, sin forma de saber por qué. */
+                String code = MainActivity.recErrCode(i);
+                MainActivity.this.lastRecErr = code + " (" + i + ")";
+                if ((i == 12 || i == 13) && !MainActivity.this.recLang.equals("es-ES")) {
+                    /* el reconocedor no tiene es-AR: se reintenta una vez con es-ES */
+                    MainActivity.this.recLang = "es-ES";
+                    MainActivity.this.recLangProbado = true;
+                    MainActivity.this.tHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            MainActivity.this.startSpeech();
+                        }
+                    }, 300L);
+                    return;
+                }
                 if (!MainActivity.this.convArmed || !MainActivity.this.handsFree || !MainActivity.this.resumed || !MainActivity.convWindowOpen(MainActivity.this.lastConvBeat)) {
                     MainActivity.this.convArmed = false;
                     KiuService.resumeSoon();
                     MainActivity.this.js("nexoListenEnd()");
                     if (MainActivity.this.pendingListen) {
                         MainActivity.this.pendingListen = false;
-                        MainActivity.this.js("nexoVoiceError('error')");
+                        MainActivity.this.js("nexoVoiceError('" + code + "')");
                         return;
                     }
                     return;
@@ -2436,8 +2540,8 @@ public class MainActivity extends Activity {
         });
         Intent intent = new Intent("android.speech.action.RECOGNIZE_SPEECH");
         intent.putExtra("android.speech.extra.LANGUAGE_MODEL", "free_form");
-        intent.putExtra("android.speech.extra.LANGUAGE", "es-AR");
-        intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", "es-AR");
+        intent.putExtra("android.speech.extra.LANGUAGE", this.recLang);
+        intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", this.recLang);
         intent.putExtra("android.speech.extra.PARTIAL_RESULTS", true);
         intent.putExtra("android.speech.extra.MAX_RESULTS", 2);
         intent.putExtra("calling_package", getPackageName());

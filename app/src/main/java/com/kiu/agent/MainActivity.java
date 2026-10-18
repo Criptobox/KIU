@@ -3,6 +3,7 @@ package com.kiu.agent;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -75,6 +76,11 @@ public class MainActivity extends Activity {
     WebView web;
     /* v2.11.0: último aviso de nivel de voz enviado a la UI (para no inundar el puente) */
     private long lastRmsMs = 0L;
+    /* v2.11.1: idiomas a probar si el servicio de voz rechaza el anterior, y si hay que
+       volver al reconocedor por defecto cuando el elegido no se deja usar. */
+    private static final String[] SPEECH_LANGS = {"es-AR", "es-419", "es-ES", "es"};
+    private int speechLangIdx = 0;
+    private boolean recForceDefault = false;
     /* v2.3.0 (sección 2 · seguridad): sirve la UI por https://appassets.androidplatform.net
        (origen seguro gestionado por androidx.webkit) en vez de file:// — así la WebView
        no necesita permisos universales de lectura de archivos. */
@@ -1994,11 +2000,24 @@ public class MainActivity extends Activity {
             boolean mdl = false;
             String msize = "-";
             try {
-                java.io.File f = new java.io.File(WakeWordEngine.modelDir(MainActivity.this), "final.mdl");
-                mdl = f.exists();
+                /* v2.11.1: BUG REAL. Se miraba solo <dir>/final.mdl, pero el modelo oficial deja
+                   <dir>/am/final.mdl: la app lo instalaba bien y el diagnóstico decía «SIN MODELO». */
+                java.io.File base = new java.io.File(WakeWordEngine.modelDir(MainActivity.this));
+                java.io.File f = new java.io.File(base, "am/final.mdl");
+                if (!f.exists()) {
+                    f = new java.io.File(base, "final.mdl");
+                }
+                mdl = WakeWordEngine.modelPresent(MainActivity.this);
                 if (mdl) {
                     msize = String.format(java.util.Locale.US, "%.0f MB", f.length() / 1048576.0);
                 }
+            } catch (Throwable th) {
+            }
+            try {
+                String rd = android.provider.Settings.Secure.getString(MainActivity.this.getContentResolver(), "voice_recognition_service");
+                b.append("\"recogDefault\":").append(q(rd == null ? "" : rd)).append(",");
+                android.content.ComponentName pick = MainActivity.this.pickRecognizer();
+                b.append("\"recogUsed\":").append(q(pick == null ? "(el del sistema)" : pick.getPackageName())).append(",");
             } catch (Throwable th) {
             }
             b.append("\"voskModel\":").append(mdl).append(",");
@@ -2359,6 +2378,55 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* v2.11.1: el reconocedor «por defecto» del teléfono puede ser uno que no sirve para dictar
+       (la lista de servicios incluía el de otras apps). Se prefiere el de Google; si no hay,
+       se usa el del sistema. */
+    ComponentName pickRecognizer() {
+        try {
+            java.util.List<android.content.pm.ResolveInfo> l = getPackageManager().queryIntentServices(new Intent("android.speech.RecognitionService"), 0);
+            String[] pref = {"com.google.android.googlequicksearchbox", "com.google.android.tts"};
+            for (String p : pref) {
+                for (android.content.pm.ResolveInfo ri : l) {
+                    if (ri.serviceInfo != null && p.equals(ri.serviceInfo.packageName)) {
+                        return new ComponentName(ri.serviceInfo.packageName, ri.serviceInfo.name);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /* v2.11.1: errores que se arreglan solos probando otra cosa: idioma no soportado (12/13) y
+       servicio que no atiende (5/11). Acotado: cada salida se usa una sola vez. */
+    private boolean retrySpeech(int code) {
+        if (code == 12 || code == 13) {
+            if (speechLangIdx < SPEECH_LANGS.length - 1) {
+                speechLangIdx++;
+                scheduleSpeechRetry();
+                return true;
+            }
+            speechLangIdx = 0;
+            return false;
+        }
+        if ((code == 5 || code == 11) && !recForceDefault) {
+            recForceDefault = true;
+            scheduleSpeechRetry();
+            return true;
+        }
+        return false;
+    }
+
+    private void scheduleSpeechRetry() {
+        stopSpeech();
+        tHandler.postDelayed(new Runnable() { // from class: com.kiu.agent.MainActivity.retry
+            @Override // java.lang.Runnable
+            public void run() {
+                MainActivity.this.startSpeech();
+            }
+        }, 300L);
+    }
+
     /* JADX INFO: Access modifiers changed from: private */
     public void startSpeech() {
         KiuService.suspend();
@@ -2382,7 +2450,10 @@ public class MainActivity extends Activity {
             KiuService.resumeSoon();
             return;
         }
-        SpeechRecognizer createSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        ComponentName recPick = this.recForceDefault ? null : pickRecognizer();
+        SpeechRecognizer createSpeechRecognizer = recPick != null
+                ? SpeechRecognizer.createSpeechRecognizer(this, recPick)
+                : SpeechRecognizer.createSpeechRecognizer(this);
         this.recognizer = createSpeechRecognizer;
         createSpeechRecognizer.setRecognitionListener(new RecognitionListener() { // from class: com.kiu.agent.MainActivity.7
             @Override // android.speech.RecognitionListener
@@ -2430,13 +2501,16 @@ public class MainActivity extends Activity {
             @Override // android.speech.RecognitionListener
             public void onError(int i) {
                 MainActivity.this.stopSpeech();
+                if (MainActivity.this.retrySpeech(i)) {
+                    return;
+                }
                 if (!MainActivity.this.convArmed || !MainActivity.this.handsFree || !MainActivity.this.resumed || !MainActivity.convWindowOpen(MainActivity.this.lastConvBeat)) {
                     MainActivity.this.convArmed = false;
                     KiuService.resumeSoon();
                     MainActivity.this.js("nexoListenEnd()");
                     if (MainActivity.this.pendingListen) {
                         MainActivity.this.pendingListen = false;
-                        MainActivity.this.js("nexoVoiceError('error')");
+                        MainActivity.this.js("nexoVoiceError('err_" + i + "')");
                         return;
                     }
                     return;
@@ -2475,8 +2549,8 @@ public class MainActivity extends Activity {
         });
         Intent intent = new Intent("android.speech.action.RECOGNIZE_SPEECH");
         intent.putExtra("android.speech.extra.LANGUAGE_MODEL", "free_form");
-        intent.putExtra("android.speech.extra.LANGUAGE", "es-AR");
-        intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", "es-AR");
+        intent.putExtra("android.speech.extra.LANGUAGE", SPEECH_LANGS[this.speechLangIdx]);
+        intent.putExtra("android.speech.extra.LANGUAGE_PREFERENCE", SPEECH_LANGS[this.speechLangIdx]);
         intent.putExtra("android.speech.extra.PARTIAL_RESULTS", true);
         intent.putExtra("android.speech.extra.MAX_RESULTS", 2);
         intent.putExtra("calling_package", getPackageName());

@@ -2,6 +2,12 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.1] — Voz: el modelo sí estaba y el diagnóstico mentía
+
+- **Bug real:** el diagnóstico buscaba `final.mdl` solo en la raíz del modelo, pero el modelo oficial lo deja en `am/final.mdl` (el motor sí lo aceptaba). La app instalaba bien el modelo y mostraba «SIN MODELO». Ahora usa la misma comprobación que el motor, y con el modelo instalado muestra si está escuchando, en pausa o por qué se detuvo.
+- **Reconocimiento de comandos:** Kiu elige explícitamente el servicio de voz de Google (si está) en vez del «por defecto» del teléfono, que podía ser el de otra app. Si el servicio rechaza el idioma, prueba es-AR, es-419, es-ES y es; si no se deja usar, vuelve al del sistema. Cada reintento se hace una sola vez.
+- **Errores con nombre:** antes todo error del reconocedor se descartaba en silencio. Ahora el aviso dice el motivo (sin internet, no te escuché, falta el español, etc.). El diagnóstico muestra qué servicio usa Kiu.
+
 ## [2.11.0] — Pantalla de llamada con Kiu
 
 - **Recomendador según tu teléfono:** botón «Recomendarme modelos para mi teléfono» en Modelos → Teléfono. Lee RAM, núcleos y espacio libre y propone qué bajar: texto (mejor calidad, equilibrado, más rápido, más extras de código y razonamiento) con botón Descargar, y modelos de visión para correr con Ollama en el teléfono o en tu PC. Usa el mismo criterio que «Entra ✓» (RAM del modelo ≤ RAM total − 1); con 4 núcleos o menos limita a modelos chicos. El motor interno todavía lee solo texto: la visión sigue yendo por servidor o nube.

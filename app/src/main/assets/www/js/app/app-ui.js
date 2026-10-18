@@ -127,6 +127,8 @@
       window.nexoVoiceError = function (err) {
         if (err === 'unavailable') App.voiceError('El micrófono no está disponible ahora');
         else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
+        else if (err === 'no_match') App.voiceError('No te entendí. Probá de nuevo, más cerca del micrófono.');
+        else if (/^err_\d+$/.test(String(err))) App.voiceError(App.vozErrTexto(parseInt(String(err).slice(4), 10)));
         else App.voiceError(null);
       };
       /* v2.8.1: nexoListenStart marcaba la UI pero no App.voiceBusy, así que el JS
@@ -4619,6 +4621,26 @@
       if (!text) return;
       this.go('chat');
       this.sendMsg(text);
+    },
+    /* v2.11.1: códigos de SpeechRecognizer.ERROR_* en palabras. Antes se descartaban y Kiu
+       «no entendía» sin decir por qué. */
+    vozErrTexto: function (c) {
+      var T = {
+        1: 'El servicio de voz no respondió a tiempo. Revisá tu conexión.',
+        2: 'El servicio de voz de Google necesita internet y no lo logra. Revisá tu conexión.',
+        3: 'Error de audio: el micrófono no entregó sonido.',
+        4: 'El servicio de voz falló. Probá de nuevo en un momento.',
+        5: 'El servicio de voz no se pudo usar. Abrí Asistente de voz en Ajustes.',
+        6: 'No te escuché. Hablá apenas aparezca «Te escucho».',
+        7: 'No te entendí. Probá de nuevo, más cerca del micrófono.',
+        8: 'El reconocedor está ocupado. Esperá un segundo.',
+        9: 'Falta un permiso de voz. Abrí Asistente de voz en Ajustes.',
+        10: 'Demasiados pedidos seguidos al servicio de voz. Esperá un momento.',
+        11: 'El servicio de voz se cortó. Probá de nuevo.',
+        12: 'El servicio de voz no tiene el español instalado. En Ajustes del teléfono: Idioma de voz, bajá el español.',
+        13: 'El idioma español no está disponible sin internet en el servicio de voz.'
+      };
+      return T[c] || ('Error de voz (código ' + c + ')');
     },
     voiceError: function (msg) {
       this.voiceBusy = false;

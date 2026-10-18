@@ -78,6 +78,32 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.11\.0"/);
-  assert.match(gradle, /val kiuVersionCode = 50/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.1"/);
+  assert.match(gradle, /val kiuVersionCode = 51/);
+});
+
+/* ---- v2.11.1: el modelo estaba instalado y el diagnóstico decía SIN MODELO ---- */
+test('el diagnóstico acepta am/final.mdl (layout oficial) igual que el motor', () => {
+  const m = java.match(/"voskModel[\s\S]{0,40}|am\/final\.mdl[\s\S]{0,300}/);
+  assert.match(java, /new java\.io\.File\(base, "am\/final\.mdl"\)/);
+  assert.match(java, /mdl = WakeWordEngine\.modelPresent\(MainActivity\.this\)/);
+  assert.doesNotMatch(java, /WakeWordEngine\.modelDir\(MainActivity\.this\), "final\.mdl"\)/);
+});
+
+test('el reconocedor: prefiere el de Google, prueba otros idiomas y dice el motivo del error', () => {
+  assert.match(java, /ComponentName pickRecognizer\(\)/);
+  assert.match(java, /googlequicksearchbox/);
+  assert.match(java, /createSpeechRecognizer\(this, recPick\)/);
+  assert.match(java, /SPEECH_LANGS = \{"es-AR", "es-419", "es-ES", "es"\}/);
+  assert.match(java, /if \(MainActivity\.this\.retrySpeech\(i\)\)/);
+  assert.match(java, /nexoVoiceError\('err_" \+ i \+ "'\)/);
+  assert.match(java, /^import android\.content\.ComponentName;/m);
+  assert.match(ui, /vozErrTexto: function/);
+  assert.match(ui, /err_\\d\+/);
+});
+
+test('cada reintento del reconocedor está acotado (no hay bucle infinito)', () => {
+  assert.match(java, /speechLangIdx < SPEECH_LANGS\.length - 1/);
+  assert.match(java, /speechLangIdx = 0;\s*return false;/);
+  assert.match(java, /\(code == 5 \|\| code == 11\) && !recForceDefault/);
 });

@@ -86,6 +86,18 @@
     return { ok: ok, titulo: titulo, detalle: detalle || '', grilla: grilla || '' };
   }
 
+  /* v2.11.1: con el modelo instalado, ¿el motor está escuchando? Si no, el motivo en palabras. */
+  function estadoVosk(d) {
+    var v = null;
+    try { v = typeof d.voskState === 'string' ? JSON.parse(d.voskState) : d.voskState; } catch (e) { v = null; }
+    if (!v) return '';
+    if (v.err) return ' · detenido: ' + v.err;
+    if (v.st === 'run') return ' · escuchando';
+    if (v.st === 'pause') return ' · en pausa (el micrófono lo usa otra cosa)';
+    if (v.st === 'load') return ' · cargando…';
+    return '';
+  }
+
   KiuDiagVoz.diagVoz = function () {
     var d = KiuDiagVoz.raw;
     if (!d) { KiuDiagVoz.verReal(); d = KiuDiagVoz.raw || {}; }
@@ -119,12 +131,12 @@
        escuchar; en el segundo hay algo pero el sistema no lo expone. */
     f.push(fila(!!d.recogn && svcs.length > 0, 'Reconocimiento de voz',
       d.recogn
-        ? (svcs.length + ' servicio(s): ' + svcs.join(', '))
+        ? (svcs.length + ' servicio(s): ' + svcs.join(', ') + (d.recogUsed ? ' · Kiu usa: ' + d.recogUsed : ''))
         : 'isRecognitionAvailable() = false' + (svcs.length ? ' (hay ' + svcs.length + ' servicio(s) pero no se expone)' : ' (no hay ninguno instalado)'),
       d.recogn ? '' : 'Sin servicio de voz del sistema no hay contra qué escuchar la palabra de activación.'))
 
     f.push(fila(!!d.voskModel, 'Palabra de activación local (Vosk)',
-      d.voskModel ? 'Modelo instalado (' + (d.voskSize || '?') + ')' : 'SIN MODELO — el camino local está muerto',
+      d.voskModel ? 'Modelo instalado (' + (d.voskSize || '?') + ')' + estadoVosk(d) : 'SIN MODELO — el camino local está muerto',
       d.voskModel ? '' : 'Son 40 MB y no van en el repo. Sin esto la palabra de activación solo puede usar el servicio del sistema, que necesita internet.'));
 
     f.push(fila(!!d.ttsReady, 'Voz de Kiu (TTS)',

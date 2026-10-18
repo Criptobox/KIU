@@ -5,6 +5,12 @@ Formato basado en Keep a Changelog. Fechas en 2026.
 ## [2.11.0] — Pantalla de llamada con Kiu
 
 - **Recomendador según tu teléfono:** botón «Recomendarme modelos para mi teléfono» en Modelos → Teléfono. Lee RAM, núcleos y espacio libre y propone qué bajar: texto (mejor calidad, equilibrado, más rápido, más extras de código y razonamiento) con botón Descargar, y modelos de visión para correr con Ollama en el teléfono o en tu PC. Usa el mismo criterio que «Entra ✓» (RAM del modelo ≤ RAM total − 1); con 4 núcleos o menos limita a modelos chicos. El motor interno todavía lee solo texto: la visión sigue yendo por servidor o nube.
+- **Asistente de voz:** botón «Asistente de voz (paso a paso)» en Ajustes. Revisa micrófono, servicio de voz, modelo de despertar sin internet, voz del teléfono, batería sin restricciones y volumen, y deja arreglar cada cosa con un toque. Se abre solo la primera vez si falta algo.
+- **Actualizaciones:** «Buscar versión nueva» consulta el último Release de GitHub y abre la descarga del APK. Opcional y apagado por defecto: avisar una vez al día.
+- **Barras que siguen tu voz:** la pantalla de llamada usa el volumen real del micrófono (el brillo de Kiu también respira con él). Sin dato, vuelve a la animación de antes.
+- **Velocidad medida:** Kiu anota los tokens por segundo de cada modelo en tu teléfono (al usarlo o con «Probar motor»). Si uno anduvo lento, el recomendador propone solo modelos más chicos.
+- **Descargas con cuidado:** avisa antes de bajar un modelo pesado con datos móviles, con batería menor al 15% sin cargar, o con el teléfono a 42 °C o más.
+- **Firma:** el build verifica el keystore y corta con el motivo exacto (vacío, contraseña, alias). Deja la huella SHA-256 en el resumen para comprobar que no cambió. Nuevo `docs/FIRMA.md`. Corregido que el keystore se buscaba en dos carpetas distintas (`not found` en `validateSigningRelease`).
 - **Llamada:** la pantalla «Te escucho…» ahora muestra a Kiu en el centro, con tres modos que siguen al estado real: escucha (verde azulado), piensa (violeta) y habla (naranja). Tarjeta con lo que vas diciendo en vivo, lo que entendió y lo que responde. En modo conversación la pantalla sigue abierta mientras Kiu piensa y habla, y se cierra sola tras 7 s sin actividad. Botones redondos: Escribir (corta la escucha y abre el chat) y Colgar. No hay botón de silenciar: no existe esa función todavía.
 
 ## [2.10.1] — Voz, modelos y descargas

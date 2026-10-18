@@ -849,6 +849,8 @@ select { appearance:none; }
 .vp-bars i:nth-child(7) { animation-delay:.6s; height:14px; }
 .voice-pulse[data-st="think"] .vp-bars i { animation:none; height:8px; }
 @keyframes vpb { 50% { transform:scaleY(.35); } }
+.voice-pulse.live[data-st="listen"] .vp-bars i { animation:none; transition:transform .09s linear; }
+.voice-pulse.live[data-st="listen"] .vp-glow { transform:scale(calc(1 + var(--vp-lvl,0) * .14)); transition:transform .12s linear; }
 @media (prefers-reduced-motion:reduce) { .vp-bars i { animation:none; } }
 #vp-text { margin:18px 0 0; font-size:28px; font-weight:700; max-width:90%; text-align:center; }
 .vp-hint { margin-top:6px; font-size:13.5px; color:#9aa4b8; text-align:center; }

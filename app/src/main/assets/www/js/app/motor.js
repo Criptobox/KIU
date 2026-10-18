@@ -460,6 +460,7 @@
         jobOff(o.ok ? 'Respuesta lista' : 'Error', 2200);
         if (o.ok) {
           var txt = String(o.text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim();
+          try { if (o.tps && txt.length >= 24 && S.kiu && S.kiu.name && window.KiuBench) KiuBench.rec(S.kiu.name, o.tps); } catch (eB) { }
           p.cb({ ok: true, text: txt, tps: o.tps || 0, ms: o.ms || 0 });
         } else {
           p.cb({ ok: false, err: o.err || 'error' });

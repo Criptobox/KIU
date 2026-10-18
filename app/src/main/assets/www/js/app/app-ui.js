@@ -138,6 +138,8 @@
       window.nexoVoicePartial = function (text) {
         App.partialVoice(text);
       };
+      /* v2.11.0: nivel del micrófono (dB del reconocedor) → barras y brillo de Kiu */
+      window.nexoVoiceLevel = function (db) { App.vpLevel(db); };
       /* v2.8.0: el TTS avisa cuándo empieza y cuándo termina de verdad. Antes se
          calculaba la duración por el largo del texto (Math.min(45000, 3500 + len*70))
          y el bot cortaba o se Pasaba. Ahora manda el evento. */
@@ -221,6 +223,21 @@
       var vph = document.getElementById('vp-hang');
       if (vph) vph.addEventListener('click', function () { self.hangUp(); });
       /* v2.11.0: «Escribir» corta la escucha y deja el cursor en el chat */
+      var bav = document.getElementById('btn-asist-voz');
+      if (bav) bav.addEventListener('click', function () { self.asistenteVoz(); });
+      var bup = document.getElementById('btn-upd');
+      if (bup) bup.addEventListener('click', function () { self.buscarUpdate(true); });
+      var tgu = document.getElementById('tg-upd');
+      if (tgu) {
+        tgu.classList.toggle('on', !!(S.upd && S.upd.auto));
+        tgu.addEventListener('click', function () {
+          S.upd = S.upd || {}; S.upd.auto = !S.upd.auto; saveS();
+          tgu.classList.toggle('on', !!S.upd.auto);
+          if (S.upd.auto) self.buscarUpdate(false);
+        });
+      }
+      setTimeout(function () { self.asistenteAuto(); }, 5000);
+      setTimeout(function () { self.buscarUpdate(false); }, 9000);
       var drc = document.getElementById('dev-reco');
       if (drc) drc.addEventListener('click', function () { self.recomendar(); });
       var vpw = document.getElementById('vp-write');
@@ -1016,6 +1033,7 @@
             if (!S.kiu.ok) return;
             el.textContent = 'Probando…';
             Kiu.ask([{ role: 'user', content: 'Contestá solo con: OK' }], 16, function (out) {
+              if (out.ok && out.tps && window.KiuBench) KiuBench.rec(S.kiu.name, out.tps);
               self.renderModels();
               self.toast(out.ok ? ('Motor OK · ' + (out.tps ? out.tps.toFixed(1).replace('.', ',') + ' tok/s' : 'listo')) : ('Falló: ' + out.err));
             });
@@ -1084,6 +1102,7 @@
         bt.textContent = 'Probando…';
         Kiu.ask([{ role: 'user', content: 'Contestá solo con: OK' }], 16, function (out) {
           bt.textContent = 'Probar motor';
+          if (out.ok && out.tps && window.KiuBench) KiuBench.rec(S.kiu.name, out.tps);
           self.toast(out.ok ? ('Motor OK · ' + (out.tps ? out.tps.toFixed(1).replace('.', ',') + ' tok/s' : 'listo')) : ('Falló: ' + out.err));
         });
       });
@@ -3760,12 +3779,121 @@
       { g: 'Visión', n: 'Qwen2.5-VL 7B Q4 (+mmproj)', s: '5,5 GB', r: 7.6, u: 'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-GGUF' },
       { g: 'Visión', n: 'MiniCPM-V 2.6 Q4', s: '5,4 GB', r: 7.4, u: 'https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf' }
     ],
+    /* v2.11.0 · ASISTENTE DE VOZ. Junta lo que hace falta para que Kiu oiga y hable
+       (micrófono, servicio de voz, modelo local, voz del teléfono, batería sin restricción,
+       volumen) y deja arreglar cada cosa con un toque. Se abre solo la primera vez. */
+    vozPasos: function () {
+      try { KiuDiagVoz.verReal(); } catch (e) { }
+      var d = KiuDiagVoz.raw || {};
+      var x = {};
+      try { x = JSON.parse(rawBridge('kiuAsist') || '{}'); } catch (e2) { }
+      return [
+        { id: 'mic', ok: !!d.mic, t: 'Micrófono', ok_d: 'Permiso concedido', bad_d: 'Falta el permiso para oírte', btn: 'Dar permiso' },
+        { id: 'rec', ok: !!d.recogn, t: 'Servicio de voz del teléfono', ok_d: 'Disponible', bad_d: 'No hay un servicio de reconocimiento de voz activo', btn: 'Abrir ajustes' },
+        { id: 'model', ok: !!d.voskModel, t: 'Despertar por voz sin internet', ok_d: 'Modelo instalado', bad_d: 'Falta el modelo de voz (39 MB). Sin él, «Kiu» necesita internet para despertarla', btn: 'Instalarlo' },
+        { id: 'tts', ok: !!d.ttsReady, t: 'Voz de Kiu', ok_d: 'Lista', bad_d: 'El teléfono no arrancó su motor de voz: Kiu responde escrito pero no habla', btn: 'Abrir ajustes' },
+        { id: 'bat', ok: x.bateriaLibre !== false, t: 'Batería sin restricciones', ok_d: 'Kiu puede escuchar en segundo plano', bad_d: 'Android puede cerrar la escucha con la pantalla apagada. Buscá Kiu y elegí «Sin restricciones»', btn: 'Abrir ajustes' },
+        { id: 'vol', ok: !(x.vol >= 0 && x.vol < 20), t: 'Volumen de medios', ok_d: x.vol >= 0 ? 'Al ' + x.vol + '%' : 'Correcto', bad_d: 'Está muy bajo (' + x.vol + '%): no vas a oír a Kiu', btn: 'Subir volumen' }
+      ];
+    },
+    asistenteVoz: function () {
+      var self = this;
+      var pasos = this.vozPasos();
+      var malos = pasos.filter(function (p) { return !p.ok; });
+      var html = '<p class="set-hint" style="margin:2px 0 10px">' + (malos.length ? 'Hay ' + malos.length + (malos.length === 1 ? ' cosa' : ' cosas') + ' para arreglar. Tocá cada botón; al volver, revisá de nuevo.' : 'Todo listo: Kiu puede oírte y hablarte.') + '</p><div class="list">';
+      pasos.forEach(function (p) {
+        html += '<div class="list-row"><span class="list-ic" style="color:' + (p.ok ? '#34D399' : '#FBBF24') + ';font-weight:900">' + (p.ok ? '✓' : '!') + '</span>' +
+          '<div class="list-txt"><strong>' + esc(p.t) + '</strong><span>' + esc(p.ok ? p.ok_d : p.bad_d) + '</span></div>' +
+          (p.ok ? '' : '<button class="chip-btn" data-av="' + p.id + '">' + esc(p.btn) + '</button>') + '</div>';
+      });
+      html += '</div><button class="btn-primary full" id="av-again" style="margin-top:12px">Revisar de nuevo</button>';
+      var body = this.modal('Asistente de voz', html);
+      if (!body) return;
+      body.addEventListener('click', function (ev) {
+        if (ev.target.closest('#av-again')) { self.asistenteVoz(); return; }
+        var b = ev.target.closest('[data-av]');
+        if (!b) return;
+        var id = b.getAttribute('data-av');
+        if (id === 'mic') { bridge('listen'); setTimeout(function () { self.asistenteVoz(); }, 4500); return; }
+        if (id === 'rec') { bridge('openSettings', ['voiceinput']); return; }
+        if (id === 'tts') { bridge('openSettings', ['tts']); return; }
+        if (id === 'bat') { bridge('openSettings', ['bateriaapp']); return; }
+        if (id === 'vol') { bridge('openSettings', ['sonido']); return; }
+        if (id === 'model') {
+          self.closeModal(); self.go('settings'); self.renderDiagVoz();
+          setTimeout(function () { var bx = document.getElementById('diag-voz-box'); if (bx && bx.scrollIntoView) bx.scrollIntoView({ block: 'start' }); }, 250);
+        }
+      });
+    },
+    /* Primera vez: si falta algo de la voz, el asistente se abre solo (una sola vez). */
+    asistenteAuto: function () {
+      try {
+        if (store('kiu_asist_voz') || !store('nexo_onb')) return;
+        var root = document.getElementById('modal-root');
+        if (root && !root.classList.contains('hidden')) return;
+        var malos = this.vozPasos().filter(function (p) { return !p.ok; });
+        store('kiu_asist_voz', 1);
+        if (malos.length) this.asistenteVoz();
+      } catch (e) { }
+    },
+
+    /* v2.11.0 · ACTUALIZACIONES. Consulta el último Release de GitHub y compara con la versión
+       instalada. Solo abre la descarga: instalar lo hace Android, y solo acepta el APK si está
+       firmado con la misma clave. */
+    verNum: function (v) {
+      var m = String(v || '').match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+      return m ? [+m[1], +(m[2] || 0), +(m[3] || 0)] : null;
+    },
+    buscarUpdate: function (manual) {
+      var self = this;
+      if (!manual) {
+        var u = (S.upd = S.upd || {});
+        if (!u.auto || Date.now() - (u.last || 0) < 86400000) return;
+        u.last = Date.now(); saveS();
+      }
+      var cur = '';
+      try { KiuDiagVoz.verReal(); cur = KiuDiagVoz.ver || ''; } catch (e) { }
+      if (manual) this.toast('Buscando versión nueva…');
+      fetch('https://api.github.com/repos/Criptobox/KIU/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+        .then(function (r) {
+          if (r.status === 404) { var e404 = new Error('todavía no hay versiones publicadas'); e404.soft = true; throw e404; }
+          if (!r.ok) throw new Error('GitHub respondió ' + r.status);
+          return r.json();
+        })
+        .then(function (rel) {
+          var tag = String(rel.tag_name || '');
+          var a = self.verNum(tag), b = self.verNum(cur);
+          var nueva = !!(a && b && (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) > 0);
+          if (!b) { if (manual) self.toast('No pude leer tu versión instalada; la última publicada es ' + tag); return; }
+          if (!nueva) { if (manual) self.toast('Ya tenés la última versión (' + cur + ')'); return; }
+          if (!manual && store('kiu_upd_visto') === tag) return;
+          store('kiu_upd_visto', tag);
+          var apk = null, as = rel.assets || [];
+          for (var i = 0; i < as.length; i++) if (/\.apk$/i.test(as[i].name) && /release/i.test(as[i].name)) { apk = as[i]; break; }
+          if (!apk) for (var j = 0; j < as.length; j++) if (/\.apk$/i.test(as[j].name)) { apk = as[j]; break; }
+          var notas = String(rel.body || '').replace(/[#*`>]/g, '').trim().slice(0, 500);
+          var html = '<p class="set-hint" style="margin:2px 0 8px">Tenés <b>' + esc(cur) + '</b> y está disponible <b>' + esc(tag) + '</b>.</p>' +
+            (notas ? '<p class="set-hint small" style="white-space:pre-wrap;margin:0 0 10px">' + esc(notas) + '</p>' : '') +
+            (apk ? '<button class="btn-primary full" id="upd-apk">Bajar el APK</button>' : '') +
+            '<button class="btn-ghost full" id="upd-gh" style="justify-content:center;margin-top:8px">Ver en GitHub</button>' +
+            '<p class="set-hint small" style="margin:10px 0 0">Al abrirlo, Android pide confirmar la instalación. Se actualiza sin borrar tus datos si el build está firmado con la misma clave.</p>';
+          var body = self.modal('Hay una versión nueva', html);
+          if (!body) return;
+          var ba = body.querySelector('#upd-apk');
+          if (ba) ba.addEventListener('click', function () { if (!self.openUrl(apk.browser_download_url)) self.copyText(apk.browser_download_url); });
+          body.querySelector('#upd-gh').addEventListener('click', function () { if (!self.openUrl(rel.html_url)) self.copyText(rel.html_url); });
+        })
+        .catch(function (err) {
+          if (manual) self.toast('No pude buscar: ' + (err && err.message ? err.message : 'sin conexión'));
+        });
+    },
+
     /* v2.11.0 · «Recomendarme modelos para mi teléfono»: lee RAM, núcleos y espacio libre
        (sysInfo) y propone qué bajar, en texto (motor interno) y en visión (fotos). */
     recomendar: function () {
       var self = this;
       try { Sys.refresh(); } catch (e) { }
-      var plan = window.KiuReco ? KiuReco.plan(Sys.d, { done: (S.dl && S.dl.done) || {}, vis: this.CATALOG }) : { unknown: true };
+      var plan = window.KiuReco ? KiuReco.plan(Sys.d, { done: (S.dl && S.dl.done) || {}, vis: this.CATALOG, bench: S.bench || {} }) : { unknown: true };
       if (plan.unknown) {
         this.modal('Recomendados para tu teléfono', '<p class="set-hint">No pude leer la memoria de este dispositivo. Esto funciona dentro de la app del teléfono.</p>');
         return;
@@ -3786,6 +3914,13 @@
       html += plan.text.length ? plan.text.map(row).join('') : '<p class="set-hint small">Ningún modelo de la lista entra con la RAM y el espacio libres de ahora.</p>';
       html += '</div>';
       if (plan.extras.length) html += '<p class="set-hint small" style="margin:10px 0 4px"><b>Extras</b></p><div class="list">' + plan.extras.map(row).join('') + '</div>';
+      if (plan.measured && plan.measured.length) {
+        html += '<p class="set-hint small" style="margin:12px 0 4px"><b>Velocidad medida en tu teléfono</b></p>' +
+          plan.measured.map(function (m) {
+            return '<p class="set-hint small" style="margin:0 0 2px">' + esc(prettyName(m.c.f)) + ': ' + g1(m.tps) + ' tok/s' + (m.tps < 4 ? ' · lento' : m.tps >= 10 ? ' · fluido' : '') + '</p>';
+          }).join('') +
+          '<p class="set-hint small" style="margin:2px 0 0">Se mide sola al usar Kiu, o tocá «Probar motor» en Modelos.</p>';
+      }
       html += '<p class="set-hint small" style="margin:12px 0 4px"><b>Visión</b> · entender fotos</p>' +
         '<p class="set-hint small" style="margin:0 0 6px">El motor interno de Kiu todavía lee solo texto. Para fotos se usa un modelo de visión en un servidor (Ollama en Termux, LM Studio en tu PC) o un proveedor en la nube.</p><div class="list">';
       var vrow = function (c, tag) {
@@ -4505,8 +4640,30 @@
         speak: ['Hablando…', 'Tocá Colgar para cortarlo']
       }[m] || ['Te escucho…', ''];
       pulse.setAttribute('data-st', m);
+      if (m !== 'listen') this.vpLive(false);
       var t = document.getElementById('vp-text'); if (t) t.textContent = T[0];
       var h = document.getElementById('vp-hint'); if (h) h.textContent = T[1];
+    },
+    vpLive: function (on) {
+      var pulse = document.getElementById('voice-pulse'); if (!pulse) return;
+      if (on) { pulse.classList.add('live'); return; }
+      pulse.classList.remove('live');
+      pulse.style.removeProperty('--vp-lvl');
+      var bars = pulse.querySelectorAll('.vp-bars i');
+      for (var i = 0; i < bars.length; i++) bars[i].style.transform = '';
+    },
+    vpLevel: function (db) {
+      var pulse = document.getElementById('voice-pulse');
+      if (!pulse || pulse.classList.contains('hidden') || pulse.getAttribute('data-st') !== 'listen') return;
+      var lvl = (Number(db) + 2) / 12;
+      if (!isFinite(lvl)) lvl = 0;
+      lvl = Math.max(0, Math.min(1, lvl));
+      this._vpLvl = (this._vpLvl || 0) * 0.5 + lvl * 0.5;
+      this._vpLvlT = Date.now();
+      this.vpLive(true);
+      pulse.style.setProperty('--vp-lvl', this._vpLvl.toFixed(2));
+      var bars = pulse.querySelectorAll('.vp-bars i'), K = [0.55, 0.8, 1, 0.85, 0.95, 0.7, 0.5];
+      for (var i = 0; i < bars.length; i++) bars[i].style.transform = 'scaleY(' + (0.2 + this._vpLvl * 0.8 * K[i % 7]).toFixed(2) + ')';
     },
     vpSay: function (text, label) {
       var card = document.getElementById('vp-card');
@@ -4525,6 +4682,7 @@
         if (!pulse || pulse.classList.contains('hidden')) { clearInterval(self._vpT); self._vpT = null; return; }
         var k = KS(), st = (k && k.get) ? k.get() : '';
         var m = pulse.getAttribute('data-st');
+        if (pulse.classList.contains('live') && Date.now() - (self._vpLvlT || 0) > 1200) self.vpLive(false);
         var next = st === 'Escuchando' ? 'listen' : (st === 'Generando' || st === 'Pensando') ? 'think' : st === 'Hablando' ? 'speak' : '';
         if (next) { self._vpIdle = Date.now(); if (next !== m) self.vpMode(next); }
         else if (m === 'listen') { self._vpIdle = Date.now(); }

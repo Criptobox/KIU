@@ -61,11 +61,34 @@
       if (ch) saveS();
       if (cb) cb();
     },
-    start: function (item) {
+    /* v2.11.0 · avisa antes de una descarga pesada si conviene esperar: datos móviles,
+       batería baja sin cargador o teléfono caliente. Devuelve el texto del aviso, o ''. */
+    guard: function (item) {
+      var w = [];
+      try { if (window.Sys && Sys.refresh) Sys.refresh(); } catch (e) { }
+      var d = (window.Sys && Sys.d) || {};
+      var c = modCatByFile(item.f) || item;
+      var gb = c.gb || 0;
+      var cn = (typeof navigator !== 'undefined') ? navigator.connection : null;
+      if (gb >= 0.3 && cn && cn.type === 'cellular') {
+        w.push('Estás con datos móviles y este modelo pesa ' + (gb < 1 ? Math.round(gb * 1024) + ' MB' : gb.toFixed(1).replace('.', ',') + ' GB') + '.');
+      }
+      if (d.bat && d.bat < 15 && !d.charging) w.push('La batería está al ' + d.bat + '% y no está cargando: una descarga larga puede cortarse.');
+      if (d.temp && d.temp >= 42) w.push('El teléfono está caliente (' + Math.round(d.temp) + ' °C): conviene esperar a que se enfríe.');
+      return w.join(' ');
+    },
+    start: function (item, skipGuard) {
       var self = this;
       bcrumb('descarga: ' + item.f);
       if (!rawBridge('dlStart2', ['', '', '', ''])) { App.toast('Las descargas funcionan en la app del teléfono'); return; }
       if (this.done(item.f) && this.fileByName(item.f)) { App.toast('Ya está descargado ✓'); App.renderModels(); return; }
+      if (!skipGuard) {
+        var aviso = this.guard(item);
+        if (aviso) {
+          App.confirm('Antes de bajar', aviso + ' ¿Bajar igual?', function () { self.start(item, true); }, { okLabel: 'Bajar igual', danger: false });
+          return;
+        }
+      }
       var cat0 = modCatByFile(item.f);
       /* v2.4.0 (sección 1): el catálogo trae el SHA-256 oficial (Hugging Face);
          Java lo verifica al terminar y borra lo que no coincida. */

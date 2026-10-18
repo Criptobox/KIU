@@ -87,6 +87,22 @@
     if (!ram) return out;
     out.tier = ram < 4 ? 'baja' : ram < 8 ? 'media' : 'alta';
     var cap = ram - 1;
+    /* velocidad medida en ESTE teléfono: si un modelo anduvo lento, no se proponen los de su tamaño ni mayores */
+    var bench = opts.bench || {}, slowR = 0;
+    out.measured = [];
+    MODCAT.forEach(function (c) {
+      var m = bench[c.f];
+      if (m && m.tps > 0) {
+        out.measured.push({ c: c, tps: m.tps });
+        if (m.tps < 4 && (!slowR || c.r < slowR)) slowR = c.r;
+      }
+    });
+    if (slowR) {
+      cap = Math.min(cap, slowR - 0.01);
+      out.notes.push('Mediste poca velocidad con un modelo de ~' + String(slowR).replace('.', ',') + ' GB de RAM: por eso propongo solo modelos más chicos.');
+    }
+    if (dev.temp && dev.temp >= 42) out.notes.push('El teléfono está caliente (' + Math.round(dev.temp) + ' °C): esperá a que se enfríe antes de bajar o cargar un modelo grande.');
+    if (dev.bat && dev.bat < 15 && !dev.charging) out.notes.push('Batería al ' + dev.bat + '% sin cargar: conectalo antes de bajar un modelo.');
     if (cores && cores <= 4) {
       cap = Math.min(cap, 3.5);
       out.notes.push('Tu teléfono tiene pocos núcleos (' + cores + '): te recomiendo modelos chicos para que respondan ágil.');
@@ -118,6 +134,19 @@
   }
 
   /* exports del módulo (cross-módulo vía window) */
+  /* v2.11.0 · velocidad real (tokens/s) por modelo, medida en este teléfono. Se promedia con
+     la medición anterior para que una sola prueba mala no condene a un modelo. */
+  function benchRec(file, tps) {
+    if (!file || !(tps > 0)) return;
+    try {
+      S.bench = S.bench || {};
+      var prev = S.bench[file];
+      var v = (prev && prev.tps) ? (prev.tps * 0.5 + tps * 0.5) : tps;
+      S.bench[file] = { tps: Math.round(v * 10) / 10, ts: Date.now() };
+      if (typeof saveS === 'function') saveS();
+    } catch (e) { }
+  }
+  window.KiuBench = { rec: benchRec };
   window.KiuReco = { plan: recomendar };
   window.MODCAT = MODCAT;
   window.guessFam = guessFam;

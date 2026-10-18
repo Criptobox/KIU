@@ -87,6 +87,44 @@ jobs:
             echo "::warning::Faltan los secretos KIU_KEYSTORE_BASE64 / KIU_KEYSTORE_PASSWORD. El APK release firma con la clave debug: sirve para probar, no para actualizar la app ya instalada."
           fi
 
+      # v2.11.0: red de seguridad de la firma. Si los secretos están pero el keystore no abre,
+      # el build corta ACÁ con el motivo en claro (y no 8 minutos después con un error de Gradle).
+      # Además deja la huella SHA-256 en el resumen del run: si es la misma que en el build
+      # anterior, la app se actualiza sin desinstalar.
+      - name: Verificar firma
+        if: env.KIU_PASS != ''
+        shell: bash
+        run: |
+          f=keystore/kiu-release.jks
+          alias="${KIU_ALIAS:-kiu}"
+          if [ ! -s "$f" ]; then
+            echo "::error::El keystore quedó vacío: KIU_KEYSTORE_BASE64 está mal pegado. Tiene que ser UNA línea de base64 (base64 -w0 kiu-release.jks), sin espacios ni saltos."
+            exit 1
+          fi
+          if ! out=$(keytool -list -v -keystore "$f" -storepass "$KIU_PASS" 2>&1); then
+            if echo "$out" | grep -qi "password was incorrect\|keystore was tampered"; then
+              echo "::error::La contraseña KIU_KEYSTORE_PASSWORD no abre el keystore. Revisá que sea exactamente la que usaste al crearlo (sin espacios al final)."
+            else
+              echo "::error::El archivo no es un keystore válido: KIU_KEYSTORE_BASE64 está cortado o dañado. Generalo de nuevo con base64 -w0."
+            fi
+            echo "$out" | head -3
+            exit 1
+          fi
+          if ! echo "$out" | grep -qi "Alias name: $alias"; then
+            echo "::error::El keystore no tiene el alias '$alias'. Alias que sí tiene:"
+            echo "$out" | grep -i "Alias name" || true
+            exit 1
+          fi
+          fp=$(echo "$out" | grep -m1 "SHA256:" | sed 's/.*SHA256: *//')
+          echo "Huella SHA-256 de la firma: $fp"
+          {
+            echo "### Firma del APK"
+            echo ""
+            echo "Huella SHA-256: \`$fp\`"
+            echo ""
+            echo "Si es la misma que en el build anterior, la app se actualiza sin desinstalar."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Tests Node (incluye el Java que se ejecuta de verdad)
         shell: bash
         run: |

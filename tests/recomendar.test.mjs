@@ -77,3 +77,49 @@ test('el botón y el método existen en la UI', () => {
   assert.match(ui, /recomendar: function \(\)/);
   assert.match(ui, /getElementById\('dev-reco'\)/);
 });
+
+/* ---- v2.11.0: velocidad medida, batería/temperatura, avisos de descarga ---- */
+test('un modelo medido como lento saca de la lista a los de su tamaño y mayores', () => {
+  const base = plan(dev(12), { vis: VIS });
+  const grande = base.text.find((t) => t.k === 'quality').c;
+  const p = plan(dev(12), { vis: VIS, bench: { [grande.f]: { tps: 2.1 } } });
+  for (const t of p.text) assert.ok(t.c.r < grande.r, t.c.n);
+  assert.ok(p.notes.some((n) => /poca velocidad/.test(n)));
+  assert.equal(p.measured.length, 1);
+});
+
+test('un modelo medido como fluido no cambia la recomendación', () => {
+  const base = plan(dev(6), { vis: VIS });
+  const q = base.text.find((t) => t.k === 'quality').c;
+  const p = plan(dev(6), { vis: VIS, bench: { [q.f]: { tps: 14 } } });
+  assert.equal(p.text.find((t) => t.k === 'quality').c.f, q.f);
+});
+
+test('teléfono caliente o con batería baja: lo avisa', () => {
+  const p = plan(dev(8, { temp: 44, bat: 9, charging: false }), { vis: VIS });
+  assert.ok(p.notes.some((n) => /caliente/.test(n)));
+  assert.ok(p.notes.some((n) => /Batería/.test(n)));
+  const ok = plan(dev(8, { temp: 30, bat: 90, charging: false }), { vis: VIS });
+  assert.ok(!ok.notes.some((n) => /caliente|Batería/.test(n)));
+});
+
+test('KiuBench promedia las mediciones y guarda', () => {
+  const calls = [];
+  const w2 = {};
+  const c2 = vm.createContext({ window: w2, S: {}, saveS: () => calls.push(1), console });
+  vm.runInContext(readFileSync(path.join(WWW, 'js/app/catalog.js'), 'utf8'), c2);
+  w2.KiuBench.rec('m.gguf', 10);
+  w2.KiuBench.rec('m.gguf', 6);
+  assert.equal(c2.S.bench['m.gguf'].tps, 8);
+  w2.KiuBench.rec('m.gguf', 0);
+  w2.KiuBench.rec('', 5);
+  assert.equal(calls.length, 2);
+});
+
+test('descarga: el aviso salta con datos móviles, batería baja o calor', () => {
+  const src = readFileSync(path.join(WWW, 'js/app/models.js'), 'utf8');
+  assert.match(src, /guard: function \(item\)/);
+  assert.match(src, /cn\.type === 'cellular'/);
+  assert.match(src, /start: function \(item, skipGuard\)/);
+  assert.match(src, /self\.start\(item, true\)/);
+});

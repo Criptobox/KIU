@@ -73,6 +73,8 @@ public class MainActivity extends Activity {
     private TextToSpeech tts;
     /* visible-de-paquete: KiuJsPost (mismo paquete) necesita inyectar JS */
     WebView web;
+    /* v2.11.0: último aviso de nivel de voz enviado a la UI (para no inundar el puente) */
+    private long lastRmsMs = 0L;
     /* v2.3.0 (sección 2 · seguridad): sirve la UI por https://appassets.androidplatform.net
        (origen seguro gestionado por androidx.webkit) en vez de file:// — así la WebView
        no necesita permisos universales de lectura de archivos. */
@@ -1704,6 +1706,32 @@ public class MainActivity extends Activity {
             }
         }
 
+        /* v2.11.0 · asistente de voz: lo que kiuDiag() no mira. ¿La batería de Kiu está sin
+           restricciones? (si no, Android mata la escucha en segundo plano) y el volumen de medios. */
+        @JavascriptInterface
+        public String kiuAsist() {
+            boolean bateriaLibre = true;
+            int vol = -1;
+            try {
+                android.os.PowerManager pm = (android.os.PowerManager) MainActivity.this.getSystemService("power");
+                if (pm != null) {
+                    bateriaLibre = pm.isIgnoringBatteryOptimizations(MainActivity.this.getPackageName());
+                }
+            } catch (Throwable ignore) {
+            }
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) MainActivity.this.getSystemService("audio");
+                if (am != null) {
+                    int max = am.getStreamMaxVolume(3);
+                    if (max > 0) {
+                        vol = (am.getStreamVolume(3) * 100) / max;
+                    }
+                }
+            } catch (Throwable ignore2) {
+            }
+            return "{\"bateriaLibre\":" + bateriaLibre + ",\"vol\":" + vol + "}";
+        }
+
         @JavascriptInterface
         public boolean openSettings(String str) {
             try {
@@ -1725,6 +1753,9 @@ public class MainActivity extends Activity {
                     str2 = "android.settings.VOICE_INPUT_SETTINGS";
                 } else if ("bateria".equals(str)) {
                     str2 = "android.settings.BATTERY_SAVER_SETTINGS";
+                } else if ("bateriaapp".equals(str)) {
+                    /* v2.11.0: lista de apps sin restricción de batería (sin permiso especial) */
+                    str2 = "android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS";
                 } else if ("apps".equals(str)) {
                     str2 = "android.settings.MANAGE_APPLICATIONS_SETTINGS";
                 }
@@ -2372,6 +2403,14 @@ public class MainActivity extends Activity {
 
             @Override // android.speech.RecognitionListener
             public void onRmsChanged(float f) {
+                /* v2.11.0: nivel del micrófono para que las barras de la pantalla de llamada
+                   sigan tu voz de verdad. Máximo ~11 avisos por segundo. */
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - MainActivity.this.lastRmsMs < 90) {
+                    return;
+                }
+                MainActivity.this.lastRmsMs = now;
+                MainActivity.this.js("nexoVoiceLevel(" + f + ")");
             }
 
             @Override // android.speech.RecognitionListener

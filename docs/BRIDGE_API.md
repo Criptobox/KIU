@@ -137,6 +137,11 @@ la recurrencia, así que "todos los lunes" aparece todos los lunes.
 ## Copia completa y verificación v2.4 (sección 3 / pendientes de la 1)
 
 ### Descargas con SHA-256
+- `updStart(url, nombre, tamaño)` → baja el APK de una actualización (v2.11.3). Solo acepta URLs de
+  `https://github.com/Criptobox/KIU/releases/download/`. Devuelve `{id, st, name, path}`; el progreso se
+  consulta con `dlStatus(id)` y se cancela con `dlCancel(id)`. Si ya está bajado completo, devuelve `st:"done"`.
+- `updInstall(ruta)` → abre el instalador de Android con el APK bajado. Devuelve `"ok"`, `"perm"` (falta
+  permitir instalar desde Kiu; abre ese ajuste) o `"err:motivo"`.
 - `dlStart2(url, nombre, auth, shaEsperado)` → igual que `dlStart`, pero Java verifica el
   SHA-256 del archivo completo al terminar (incluye el `.part` previo al reanudar). Si no
   coincide con el hash oficial del catálogo (Hugging Face), borra el archivo y devuelve

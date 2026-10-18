@@ -78,8 +78,8 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.11\.2"/);
-  assert.match(gradle, /val kiuVersionCode = 52/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.3"/);
+  assert.match(gradle, /val kiuVersionCode = 53/);
 });
 
 /* ---- v2.11.1: el modelo estaba instalado y el diagnóstico decía SIN MODELO ---- */
@@ -104,6 +104,8 @@ test('el reconocedor: prefiere el de Google, prueba otros idiomas y dice el moti
 
 test('cada reintento del reconocedor está acotado (no hay bucle infinito)', () => {
   assert.match(java, /speechLangIdx < SPEECH_LANGS\.length - 1/);
-  assert.match(java, /speechLangIdx = 0;\s*return false;/);
+  /* v2.11.3: agotados los idiomas se prueba UNA vez el reconocedor del sistema (guardado por
+     !recForceDefault); si vuelve a fallar, se resetea todo y se sale con false: sin bucle. */
+  assert.match(java, /speechLangIdx = 0;[\s\S]{0,900}?if \(!recForceDefault\) \{[\s\S]{0,400}?return true;\s*\}\s*recForceDefault = false;[\s\S]{0,200}?return false;/);
   assert.match(java, /\(code == 5 \|\| code == 11\) && !recForceDefault/);
 });

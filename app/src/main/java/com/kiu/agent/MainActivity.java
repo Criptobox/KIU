@@ -992,6 +992,26 @@ public class MainActivity extends Activity {
             }
         }
 
+        /* v2.11.3: actualizar la app sin salir de ella. updStart baja el APK (se consulta con
+           dlStatus y se cancela con dlCancel); updInstall lo entrega al instalador de Android. */
+        @JavascriptInterface
+        public String updStart(String str, String str2, String str3) {
+            try {
+                return KiuDownload.startApk(MainActivity.this, str, str2, str3);
+            } catch (Throwable th) {
+                return "{\"id\":\"\",\"st\":\"error\",\"err\":\"no se pudo iniciar\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public String updInstall(String str) {
+            try {
+                return KiuUpdate.install(MainActivity.this, str);
+            } catch (Throwable th) {
+                return "err:" + th;
+            }
+        }
+
         @JavascriptInterface
         public String dlStatus(String str) {
             try {
@@ -2407,6 +2427,19 @@ public class MainActivity extends Activity {
                 return true;
             }
             speechLangIdx = 0;
+            /* v2.11.3 · «El servicio de voz no tiene el español instalado» con el teléfono bien.
+               Kiu elegía el reconocedor de «Servicios de voz de Google» (com.google.android.tts), que
+               tiene sus propios paquetes de idioma y pide el español sin conexión aparte, aunque el
+               reconocedor del sistema (el del dictado del teclado) sí lo tuviera. Agotados los 4
+               idiomas, se prueba UNA vez con el reconocedor por defecto del sistema y se recuerda. */
+            if (!recForceDefault) {
+                recForceDefault = true;
+                try { getSharedPreferences("kiu_native", 0).edit().putBoolean("rec_default", true).apply(); } catch (Exception ignored) { }
+                scheduleSpeechRetry();
+                return true;
+            }
+            recForceDefault = false;
+            try { getSharedPreferences("kiu_native", 0).edit().putBoolean("rec_default", false).apply(); } catch (Exception ignored) { }
             return false;
         }
         if ((code == 5 || code == 11) && !recForceDefault) {
@@ -2450,7 +2483,7 @@ public class MainActivity extends Activity {
             KiuService.resumeSoon();
             return;
         }
-        ComponentName recPick = this.recForceDefault ? null : pickRecognizer();
+        ComponentName recPick = (this.recForceDefault || getSharedPreferences("kiu_native", 0).getBoolean("rec_default", false)) ? null : pickRecognizer();
         SpeechRecognizer createSpeechRecognizer = recPick != null
                 ? SpeechRecognizer.createSpeechRecognizer(this, recPick)
                 : SpeechRecognizer.createSpeechRecognizer(this);

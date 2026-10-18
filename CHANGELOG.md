@@ -2,6 +2,11 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.3] — Actualizar sin salir de la app + español de voz
+
+- **Actualización dentro de la app:** «Bajar el APK» ya no abre el navegador. La descarga usa la misma tarjeta que los modelos GGUF (anillo con %, tamaño, velocidad, Cancelar) y reanuda si se corta. Al terminar aparece **Instalar**, que entrega el APK al instalador de Android. Nuevo: `KiuUpdate`, `KiuApkProvider` (solo lectura, solo la carpeta `updates`), permiso `REQUEST_INSTALL_PACKAGES`, y los métodos `updStart` / `updInstall` en el puente. Solo se baja desde los Releases de este repo.
+- **Voz · «El servicio de voz no tiene el español instalado»:** Kiu elegía el reconocedor de «Servicios de voz de Google», que tiene sus propios paquetes de idioma, aunque el del sistema (el del dictado del teclado) sí tuviera el español. Si fallan los 4 idiomas, ahora prueba una vez con el reconocedor por defecto del sistema y lo recuerda. El aviso explica dónde bajar el español sin conexión.
+
 ## [2.11.2] — Voz: el servicio de micrófono ya no falla en silencio
 
 - **Bug real tras actualizar/reiniciar:** en Android 14 un servicio de micrófono no puede pasar a primer plano si se arrancó desde segundo plano (`MY_PACKAGE_REPLACED`, `BOOT_COMPLETED`, alarma de `onTaskRemoved`). `startForeground()` fallaba dentro de un `catch` vacío: ajustes decía «escuchando», nadie escuchaba y a veces se cerraba la app. Ahora no se intenta desde segundo plano en Android 14+, se desmarca `wake` y se avisa con una notificación; si `startForeground` falla, el servicio se apaga limpio.

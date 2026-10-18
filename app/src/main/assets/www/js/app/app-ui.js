@@ -3874,20 +3874,117 @@
           for (var i = 0; i < as.length; i++) if (/\.apk$/i.test(as[i].name) && /release/i.test(as[i].name)) { apk = as[i]; break; }
           if (!apk) for (var j = 0; j < as.length; j++) if (/\.apk$/i.test(as[j].name)) { apk = as[j]; break; }
           var notas = String(rel.body || '').replace(/[#*`>]/g, '').trim().slice(0, 500);
+          /* v2.11.3: la descarga se hace dentro de la app, con la misma tarjeta que los modelos */
           var html = '<p class="set-hint" style="margin:2px 0 8px">Tenés <b>' + esc(cur) + '</b> y está disponible <b>' + esc(tag) + '</b>.</p>' +
             (notas ? '<p class="set-hint small" style="white-space:pre-wrap;margin:0 0 10px">' + esc(notas) + '</p>' : '') +
-            (apk ? '<button class="btn-primary full" id="upd-apk">Bajar el APK</button>' : '') +
+            (apk ? '<div id="upd-card"></div>' : '<p class="set-hint small">Esta versión no trae el APK adjunto todavía.</p>') +
             '<button class="btn-ghost full" id="upd-gh" style="justify-content:center;margin-top:8px">Ver en GitHub</button>' +
-            '<p class="set-hint small" style="margin:10px 0 0">Al abrirlo, Android pide confirmar la instalación. Se actualiza sin borrar tus datos si el build está firmado con la misma clave.</p>';
+            '<p class="set-hint small" id="upd-hint" style="margin:10px 0 0">Se baja aquí mismo y Android te pide confirmar la instalación. Se actualiza sin borrar tus datos si el build está firmado con la misma clave.</p>';
           var body = self.modal('Hay una versión nueva', html);
           if (!body) return;
-          var ba = body.querySelector('#upd-apk');
-          if (ba) ba.addEventListener('click', function () { if (!self.openUrl(apk.browser_download_url)) self.copyText(apk.browser_download_url); });
+          if (apk) self.updCard(body, apk, tag);
           body.querySelector('#upd-gh').addEventListener('click', function () { if (!self.openUrl(rel.html_url)) self.copyText(rel.html_url); });
         })
         .catch(function (err) {
           if (manual) self.toast('No pude buscar: ' + (err && err.message ? err.message : 'sin conexión'));
         });
+    },
+
+    /* v2.11.3 · tarjeta de descarga de la actualización, con el diseño de «Modelos»: anillo con %,
+       tamaño y velocidad, y botones Cancelar / Instalar. Baja con el mismo motor que los GGUF
+       (updStart + dlStatus + dlCancel) y entrega el APK al instalador (updInstall). */
+    updCard: function (body, apk, tag) {
+      var self = this;
+      var card = body.querySelector('#upd-card');
+      var hint = body.querySelector('#upd-hint');
+      if (!card) return;
+      var C = 119.4, jid = '', timer = null, path = '', total = apk.size || 0, lastG = 0, lastT = 0, spd = 0;
+      var mb = function (b) { return b >= 1073741824 ? (b / 1073741824).toFixed(1).replace('.', ',') + ' GB' : Math.max(1, Math.round(b / 1048576)) + ' MB'; };
+      var ring = function (pct) {
+        return '<span class="k2-ringwrap"><svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="rgba(126,158,255,.16)" stroke-width="4"/><circle cx="23" cy="23" r="19" fill="none" stroke="#2DD4BF" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + C + '" stroke-dashoffset="' + (C - C * pct / 100).toFixed(1) + '" transform="rotate(-90 23 23)"/></svg><b>' + pct + '%</b></span>';
+      };
+      var sizeTxt = total ? mb(total) : 'APK';
+      var show = function (st, msg) {
+        var h;
+        if (st === 'run') {
+          h = '<div class="k2-model">' + ring(0) + '<div class="k2-mid"><p class="k2-name">0% · Kiu ' + esc(tag) + '</p><p class="k2-sub">Empezando…</p></div>' +
+            '<div class="k2-acts" style="flex-direction:row"><button class="k2-iconbtn danger" data-u="stop" aria-label="Cancelar">' + icon('xmark', 13) + '</button></div></div>';
+        } else if (st === 'done') {
+          h = '<div class="k2-model"><span class="k2-tile big tl-green">' + icon('check', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + ' · listo</p><p class="k2-sub">Descargado' + (total ? ' · ' + mb(total) : '') + ' ✓</p></div>' +
+            '<div class="k2-acts"><button class="k2-pill solid" data-u="inst">Instalar</button></div></div>';
+        } else {
+          h = '<div class="k2-model' + (st === 'err' ? ' err' : '') + '"><span class="k2-tile big tl-violet">' + icon('save', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + '</p><p class="k2-sub">' + (st === 'err' ? esc(msg || 'No se pudo bajar') : 'Actualización · ' + sizeTxt) + '</p></div>' +
+            '<div class="k2-acts"><button class="k2-pill solid" data-u="dl">' + (st === 'err' ? 'Reintentar' : 'Descargar') + '</button></div></div>';
+        }
+        card.innerHTML = h;
+        paintIcons(card);
+      };
+      /* progreso en sitio: no se reconstruye la tarjeta, así el toque en Cancelar no se pierde */
+      var paint = function (got, tot) {
+        var pct = tot ? Math.min(100, Math.round(got / tot * 100)) : 0;
+        var now = Date.now();
+        if (lastT && now > lastT && got >= lastG) { var sp = (got - lastG) / ((now - lastT) / 1000); if (sp > 10240) spd = sp; }
+        lastG = got; lastT = now;
+        var sTxt = spd ? ((spd / 1048576) >= 10 ? Math.round(spd / 1048576) + ' MB/s' : (spd / 1048576).toFixed(1).replace('.', ',') + ' MB/s') : '';
+        var rg = card.querySelector('.k2-ringwrap'), nm = card.querySelector('.k2-name'), sb = card.querySelector('.k2-sub');
+        if (!rg || !nm || !sb) return;
+        var arc = rg.querySelectorAll('circle')[1];
+        if (arc) arc.setAttribute('stroke-dashoffset', (C - C * pct / 100).toFixed(1));
+        var b = rg.querySelector('b'); if (b) b.textContent = pct + '%';
+        nm.textContent = pct + '% · Kiu ' + tag;
+        sb.innerHTML = mb(got) + (tot ? ' de ' + mb(tot) : '') + (sTxt ? ' · <span class="spd">' + sTxt + '</span>' : '');
+      };
+      var stop = function () { if (timer) { clearInterval(timer); timer = null; } };
+      var poll = function () {
+        stop();
+        timer = setInterval(function () {
+          var st = jparse(rawBridge('dlStatus', [jid]) || '{}', {});
+          var alive = document.body.contains(card);
+          if (st.st === 'downloading' || st.st === 'queued' || st.st === 'run') {
+            if (st.total) total = st.total;
+            if (alive) paint(st.got || 0, total);
+            return;
+          }
+          stop();
+          if (st.st === 'done' && total > 0 && (st.got || 0) > 0 && (st.got || 0) < total) st = { st: 'err', err: 'Se cortó al final: tocá Reintentar y sigue donde quedó' };
+          if (st.st === 'done') {
+            path = st.path || path;
+            if (alive) show('done'); else self.toast('Actualización descargada · abrí Buscar versión nueva para instalarla');
+          } else if (st.st === 'cancelled') {
+            if (alive) { show('idle'); if (hint) hint.textContent = 'Cancelado. Lo que bajó queda guardado y sigue desde ahí.'; }
+          } else if (alive) {
+            show('err', (st.err || 'sin conexión').slice(0, 80));
+          }
+        }, 900);
+      };
+      var start = function () {
+        var raw = rawBridge('updStart', [apk.browser_download_url, apk.name, String(apk.size || 0)]);
+        if (raw === null) {
+          /* sin el puente nativo (navegador): la descarga de siempre */
+          if (!self.openUrl(apk.browser_download_url)) self.copyText(apk.browser_download_url);
+          return;
+        }
+        var res = jparse(raw || '{}', {});
+        if (res.st === 'done') { path = res.path || ''; if (res.b) total = res.b; show('done'); return; }
+        if (!res.id) { show('err', res.err || 'No pude empezar la descarga'); return; }
+        jid = res.id; path = res.path || '';
+        show('run');
+        poll();
+      };
+      card.addEventListener('click', function (ev) {
+        var el = ev.target.closest('[data-u]');
+        if (!el) return;
+        var a = el.getAttribute('data-u');
+        if (a === 'dl') start();
+        else if (a === 'stop') rawBridge('dlCancel', [jid]);
+        else if (a === 'inst') {
+          var r = rawBridge('updInstall', [path]);
+          if (r === 'ok') self.toast('Android te pide confirmar la instalación');
+          else if (r === 'perm') { if (hint) hint.textContent = 'Activá «Permitir de esta fuente» para Kiu y volvé a tocar Instalar.'; self.toast('Permití instalar apps desde Kiu y volvé a tocar Instalar'); }
+          else self.toast('No pude abrir el instalador' + (r ? ': ' + String(r).replace(/^err:/, '').slice(0, 60) : ''));
+        }
+      });
+      show('idle');
     },
 
     /* v2.11.0 · «Recomendarme modelos para mi teléfono»: lee RAM, núcleos y espacio libre
@@ -4637,7 +4734,7 @@
         9: 'Falta un permiso de voz. Abrí Asistente de voz en Ajustes.',
         10: 'Demasiados pedidos seguidos al servicio de voz. Esperá un momento.',
         11: 'El servicio de voz se cortó. Probá de nuevo.',
-        12: 'El servicio de voz no tiene el español instalado. En Ajustes del teléfono: Idioma de voz, bajá el español.',
+        12: 'Falta el español en el servicio de voz. En Ajustes del teléfono: Idioma de voz → Reconocimiento sin conexión → bajá el español. Probé también con el reconocedor del sistema.',
         13: 'El idioma español no está disponible sin internet en el servicio de voz.'
       };
       return T[c] || ('Error de voz (código ' + c + ')');

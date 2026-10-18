@@ -168,6 +168,51 @@ public class KiuDownload {
         }
     }
 
+    /* v2.11.3: baja el APK de una actualización con el mismo motor que los modelos (progreso con
+       status(), cancelar con cancel(), y si se corta reanuda desde el .part). Solo acepta URLs de
+       los Releases de este repo. «size» es el tamaño esperado (del Release) para descartar un
+       archivo viejo o cortado con el mismo nombre. */
+    public static String startApk(Context context, String url, String name, String size) {
+        try {
+            if (url == null || !url.startsWith(KiuUpdate.RELEASES)) {
+                return "{\"id\":\"\",\"st\":\"error\",\"err\":\"URL no valida\"}";
+            }
+            String safe = safe(name);
+            if (!safe.toLowerCase().endsWith(".apk")) {
+                safe = safe + ".apk";
+            }
+            File dir = KiuUpdate.dir(context);
+            dir.mkdirs();
+            File[] old = dir.listFiles();
+            if (old != null) {
+                for (File f : old) {
+                    if (f.isFile() && !f.getName().equals(safe) && !f.getName().equals(safe + ".part")) {
+                        f.delete();
+                    }
+                }
+            }
+            long want = 0L;
+            try {
+                want = Long.parseLong(size == null ? "0" : size.trim());
+            } catch (Throwable ignored) {
+            }
+            File file = new File(dir, safe);
+            if (file.exists() && file.length() > 0) {
+                if (want <= 0 || file.length() == want) {
+                    return "{\"id\":\"\",\"st\":\"done\",\"name\":\"" + esc(safe) + "\",\"b\":" + file.length() + ",\"path\":\"" + esc(file.getAbsolutePath()) + "\"}";
+                }
+                file.delete();
+            }
+            String id = "u" + System.currentTimeMillis();
+            KiuDlTask task = new KiuDlTask(id, url, safe, dir.getAbsolutePath(), null, null);
+            jobs.put(id, task);
+            new Thread(task).start();
+            return "{\"id\":\"" + id + "\",\"st\":\"queued\",\"name\":\"" + esc(safe) + "\",\"path\":\"" + esc(file.getAbsolutePath()) + "\"}";
+        } catch (Throwable th) {
+            return "{\"id\":\"\",\"st\":\"error\",\"err\":\"" + esc(String.valueOf(th)) + "\"}";
+        }
+    }
+
     public static String status(String str) {
         try {
             KiuDlTask kiuDlTask = jobs.get(str);

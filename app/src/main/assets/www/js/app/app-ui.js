@@ -128,7 +128,7 @@
         if (err === 'unavailable') App.voiceError('El micrófono no está disponible ahora');
         else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
         else if (err === 'no_match') App.voiceError('No te entendí. Probá de nuevo, más cerca del micrófono.');
-        else if (/^err_\d+$/.test(String(err))) App.voiceError(App.vozErrTexto(parseInt(String(err).slice(4), 10)));
+        else if (/^err_\d+$/.test(String(err))) { var ec = parseInt(String(err).slice(4), 10); App.voiceError(App.vozErrTexto(ec) + ' [código ' + ec + ']'); }
         else App.voiceError(null);
       };
       /* v2.8.1: nexoListenStart marcaba la UI pero no App.voiceBusy, así que el JS

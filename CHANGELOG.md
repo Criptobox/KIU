@@ -2,6 +2,10 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.6] — Voz: los errores del micrófono ya no se esconden
+
+- En manos libres (tras el saludo, con la palabra de activación o en conversación) los errores del reconocedor se descartaban en silencio. Ahora se muestra el motivo con su **código** (salvo 6 y 7, que son normales), como máximo un aviso cada 8 s. Los avisos con botón de micrófono también llevan el código.
+
 ## [2.11.5] — Voz: se pide primero el español que el teléfono sí tiene
 
 - El teléfono de quien reportó el fallo solo tenía el paquete sin conexión **Español (EE.UU.)**. Kiu pedía es-AR, es-419, es-ES…, y sin Internet el reconocedor respondía error 12/13. Ahora el orden es `es-US`, `es-419`, `es-AR`, `es-MX`, `es-ES`, `es`, tanto en el comando de voz como en la palabra de activación, y el TTS también prueba `es-US`.

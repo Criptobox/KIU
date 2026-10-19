@@ -2468,6 +2468,23 @@ public class MainActivity extends Activity {
 
     /* v2.11.1: errores que se arreglan solos probando otra cosa: idioma no soportado (12/13) y
        servicio que no atiende (5/11). Acotado: cada salida se usa una sola vez. */
+    /* v2.11.6 · en modo manos libres (después del saludo, con «Kiu» o en conversación) los errores del
+       reconocedor se descartaban sin decir nada: Kiu «no escuchaba» y nadie sabía por qué. Ahora se
+       muestra el código, salvo 6/7 (nadie habló / no se entendió), que son normales. Máx. 1 aviso cada 8 s. */
+    private long lastErrToastMs = 0L;
+
+    private void surfaceVoiceError(int code) {
+        if (code == 6 || code == 7 || pendingListen) {
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastErrToastMs < 8000L) {
+            return;
+        }
+        lastErrToastMs = now;
+        js("nexoVoiceError('err_" + code + "')");
+    }
+
     private boolean retrySpeech(int code) {
         if (code == 12 || code == 13) {
             if (speechLangIdx < SPEECH_LANGS.length - 1) {
@@ -2586,6 +2603,7 @@ public class MainActivity extends Activity {
                 if (MainActivity.this.retrySpeech(i)) {
                     return;
                 }
+                MainActivity.this.surfaceVoiceError(i);
                 if (!MainActivity.this.convArmed || !MainActivity.this.handsFree || !MainActivity.this.resumed || !MainActivity.convWindowOpen(MainActivity.this.lastConvBeat)) {
                     MainActivity.this.convArmed = false;
                     KiuService.resumeSoon();

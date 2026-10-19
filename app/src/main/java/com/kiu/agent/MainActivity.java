@@ -82,6 +82,12 @@ public class MainActivity extends Activity {
        quien reportó el fallo) es «Español (EE.UU.)»; pedir es-AR/es-ES sin Internet daba error 12/13. */
     private static final String[] SPEECH_LANGS = {"es-US", "es-419", "es-AR", "es-MX", "es-ES", "es"};
     private int speechLangIdx = 0;
+    /* v2.11.12: lo que muestra la pantalla «Estado y diagnóstico» */
+    static volatile int LAST_ERR = 0;
+    static volatile long LAST_ERR_AT = 0L;
+    static volatile String LAST_REC = "";
+    static volatile long LAST_TTS_ERR_AT = 0L;
+    static volatile String LAST_OFFLINE = "";
     private boolean recForceDefault = false;
     /* v2.3.0 (sección 2 · seguridad): sirve la UI por https://appassets.androidplatform.net
        (origen seguro gestionado por androidx.webkit) en vez de file:// — así la WebView
@@ -490,6 +496,7 @@ public class MainActivity extends Activity {
 
                         @Override // android.speech.tts.UtteranceProgressListener
                         public void onError(String str) {
+                            MainActivity.LAST_TTS_ERR_AT = System.currentTimeMillis();
                             MainActivity.SPEAKING = false;
                             /* v2.11.4 · antes un fallo al hablar era silencioso. Primero se reintenta UNA vez
                                con una voz instalada en el teléfono; si tampoco, se avisa con el motivo. */
@@ -737,7 +744,8 @@ public class MainActivity extends Activity {
 
     /* JADX INFO: Access modifiers changed from: private */
     public static boolean convWindowOpen(long j) {
-        return SystemClock.elapsedRealtime() - j < 14000;
+        /* v2.11.11: 30 s (antes 14) para empezar a contestar; en 14 s la charla se cortaba sola */
+        return SystemClock.elapsedRealtime() - j < 30000;
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -1091,6 +1099,43 @@ public class MainActivity extends Activity {
 
         /* v2.11.3: actualizar la app sin salir de ella. updStart baja el APK (se consulta con
            dlStatus y se cancela con dlCancel); updInstall lo entrega al instalador de Android. */
+        /* v2.11.12 · pantalla «Estado y diagnóstico»: todo lo que importa de la voz, los permisos y las
+           claves en un solo JSON (sin claves ni datos personales) */
+        @JavascriptInterface
+        public String kiuStatus() {
+            try {
+                MainActivity a = MainActivity.this;
+                JSONObject o = new JSONObject();
+                android.content.pm.PackageInfo pi = a.getPackageManager().getPackageInfo(a.getPackageName(), 0);
+                o.put("version", pi.versionName);
+                o.put("android", Build.VERSION.SDK_INT);
+                o.put("device", Build.MANUFACTURER + " " + Build.MODEL);
+                o.put("mic", a.checkSelfPermission("android.permission.RECORD_AUDIO") == 0);
+                o.put("notif", Build.VERSION.SDK_INT < 33 || a.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == 0);
+                o.put("installOk", Build.VERSION.SDK_INT < 26 || a.getPackageManager().canRequestPackageInstalls());
+                o.put("sttAvail", SpeechRecognizer.isRecognitionAvailable(a));
+                o.put("rec", LAST_REC);
+                o.put("errCode", LAST_ERR);
+                o.put("errAgo", LAST_ERR_AT == 0L ? -1L : (System.currentTimeMillis() - LAST_ERR_AT) / 1000L);
+                String vn = "";
+                try {
+                    Voice v = a.tts == null ? null : a.tts.getVoice();
+                    vn = v == null ? "" : v.getName() + (v.isNetworkConnectionRequired() ? " (usa Internet)" : " (en el teléfono)");
+                } catch (Throwable ignored) { }
+                o.put("ttsVoice", vn);
+                o.put("ttsErrAgo", LAST_TTS_ERR_AT == 0L ? -1L : (System.currentTimeMillis() - LAST_TTS_ERR_AT) / 1000L);
+                o.put("wakeSvc", KiuService.ACTIVE);
+                o.put("voskModel", WakeWordEngine.modelPresent(a));
+                o.put("voskRun", WakeWordEngine.get().isRunning());
+                o.put("offline", LAST_OFFLINE);
+                o.put("bargeIn", bargeInOn(a));
+                o.put("crypto", KiuCrypto.selfTest());
+                return o.toString();
+            } catch (Throwable th) {
+                return "{\"err\":\"" + String.valueOf(th).replace("\"", "'") + "\"}";
+            }
+        }
+
         /* v2.11.8: aviso de versión nueva en la barra de notificaciones */
         @JavascriptInterface
         public void notifyUpdate(String str, String str2) {
@@ -1104,9 +1149,9 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String updStart(String str, String str2, String str3) {
+        public String updStart(String str, String str2, String str3, String str4) {
             try {
-                return KiuDownload.startApk(MainActivity.this, str, str2, str3);
+                return KiuDownload.startApk(MainActivity.this, str, str2, str3, str4);
             } catch (Throwable th) {
                 return "{\"id\":\"\",\"st\":\"error\",\"err\":\"no se pudo iniciar\"}";
             }
@@ -1535,6 +1580,7 @@ public class MainActivity extends Activity {
                 public void run() {
                     MainActivity.this.convArmed = false;
                     MainActivity.this.tHandler.removeCallbacks(MainActivity.this.convOpen);
+                    OfflineDictation.cancel();
                     MainActivity.this.stopSpeech();
                     KiuService.resumeSoon();
                     MainActivity.this.js("nexoListenEnd()");
@@ -2552,6 +2598,72 @@ public class MainActivity extends Activity {
         js("nexoVoiceError('err_" + code + "')");
     }
 
+    /* v2.11.12 · SIN GOOGLE: cuando el reconocedor de Google no puede (sin Internet, español sin bajar,
+       servicio caído) se escucha con el modelo Vosk del teléfono. Si anduvo, las próximas 10 min se usa
+       directo, sin volver a esperar los errores de Google en cada frase. */
+    private boolean offlineTried = false;
+    private long offlinePreferUntil = 0L;
+
+    private boolean offlineFallback(int code) {
+        boolean netOrLang = code == 1 || code == 2 || code == 5 || code == 11 || code == 12 || code == 13;
+        if (offlineTried || !netOrLang || OfflineDictation.busy() || !OfflineDictation.available(this)) {
+            return false;
+        }
+        offlineTried = true;
+        LAST_OFFLINE = "Google falló (código " + code + "): se usó el dictado sin conexión";
+        runOffline();
+        return true;
+    }
+
+    private void runOffline() {
+        COMMAND_BUSY = true;
+        try {
+            WakeWordEngine.get().pause();
+        } catch (Throwable ignored) {
+        }
+        KiuService.suspend();
+        js("nexoListenStart()");
+        OfflineDictation.listen(getApplicationContext(), new OfflineDictation.Cb() {
+            @Override
+            public void onText(final String text) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        offlinePreferUntil = SystemClock.elapsedRealtime() + 600000L;
+                        lastConvBeat = SystemClock.elapsedRealtime();
+                        pendingListen = false;
+                        commandMicFree();
+                        js("nexoListenEnd()");
+                        js("nexoOnVoice(" + jsStr(text) + ")");
+                    }
+                });
+            }
+
+            @Override
+            public void onFail(final String why) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        LAST_OFFLINE = "dictado sin conexión sin resultado: " + why;
+                        commandMicFree();
+                        KiuService.resumeSoon();
+                        js("nexoListenEnd()");
+                        if (convArmed && handsFree && resumed && convWindowOpen(lastConvBeat)) {
+                            tHandler.removeCallbacks(convOpen);
+                            tHandler.postDelayed(convOpen, 800L);
+                        } else {
+                            convArmed = false;
+                            if (pendingListen) {
+                                pendingListen = false;
+                                js("nexoVoiceError('no_match')");
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     private boolean retrySpeech(int code) {
         if (code == 12 || code == 13) {
             if (speechLangIdx < SPEECH_LANGS.length - 1) {
@@ -2607,7 +2719,19 @@ public class MainActivity extends Activity {
         }
         COMMAND_BUSY = true;
         this.convArmed = this.handsFree && this.resumed;
+        offlineTried = false;
+        if (SystemClock.elapsedRealtime() < offlinePreferUntil && !OfflineDictation.busy() && OfflineDictation.available(this)) {
+            offlineTried = true;
+            runOffline();
+            return;
+        }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            if (OfflineDictation.available(this) && !OfflineDictation.busy()) {
+                offlineTried = true;
+                LAST_OFFLINE = "el teléfono no tiene reconocimiento de Google: se usó el dictado sin conexión";
+                runOffline();
+                return;
+            }
             this.convArmed = false;
             commandMicFree();
             js("nexoVoiceError('unavailable')");
@@ -2617,6 +2741,7 @@ public class MainActivity extends Activity {
             return;
         }
         ComponentName recPick = (this.recForceDefault || getSharedPreferences("kiu_native", 0).getBoolean("rec_default", false)) ? null : pickRecognizer();
+        LAST_REC = (recPick == null ? "reconocedor del sistema" : recPick.getPackageName()) + " · " + SPEECH_LANGS[Math.min(speechLangIdx, SPEECH_LANGS.length - 1)];
         SpeechRecognizer createSpeechRecognizer = recPick != null
                 ? SpeechRecognizer.createSpeechRecognizer(this, recPick)
                 : SpeechRecognizer.createSpeechRecognizer(this);
@@ -2666,8 +2791,13 @@ public class MainActivity extends Activity {
 
             @Override // android.speech.RecognitionListener
             public void onError(int i) {
+                MainActivity.LAST_ERR = i;
+                MainActivity.LAST_ERR_AT = System.currentTimeMillis();
                 MainActivity.this.stopSpeech();
                 if (MainActivity.this.retrySpeech(i)) {
+                    return;
+                }
+                if (MainActivity.this.offlineFallback(i)) {
                     return;
                 }
                 MainActivity.this.surfaceVoiceError(i);

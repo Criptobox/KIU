@@ -137,6 +137,8 @@ la recurrencia, así que "todos los lunes" aparece todos los lunes.
 ## Copia completa y verificación v2.4 (sección 3 / pendientes de la 1)
 
 ### Descargas con SHA-256
+- `kiuStatus()` → JSON con el estado de voz, permisos, almacenamiento de claves y modelo sin conexión, para «Estado y diagnóstico» (v2.11.12). No incluye claves ni datos personales.
+- `updStart(url, nombre, tamaño, sha256)` → ahora también recibe la huella SHA-256 publicada por GitHub; si no coincide, el APK se borra y se avisa.
 - `notifyUpdate(titulo, texto)` → notificación «versión nueva disponible» (v2.11.8).
 - `setBargeIn(bool)` → permite interrumpir a Kiu con la voz mientras habla (v2.11.8).
 - `updStart(url, nombre, tamaño)` → baja el APK de una actualización (v2.11.3). Solo acepta URLs de

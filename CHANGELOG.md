@@ -2,6 +2,20 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.12] — Las seis mejoras: firma estable, salto de modelo, dictado sin Google, «chau», Estado y huella SHA-256
+
+1. **Firma estable del APK:** sin los secretos `KIU_KEYSTORE_*` cada build firmaba con una clave debug nueva y Android obligaba a desinstalar. El workflow ahora guarda y reutiliza `~/.android/debug.keystore` en la caché de Actions. (La solución definitiva sigue siendo cargar los secretos de firma.)
+2. **Salto automático de modelo:** si el modelo de un proveedor falla (no existe, límite, error del servidor, respuesta vacía) y ya lo probaste con «Buscar y probar modelos», Kiu pasa solo al siguiente que funcionaba (hasta 2 saltos).
+3. **Dictado sin Google:** si el reconocedor de Google falla (sin Internet, VPN, español sin bajar, servicio caído), Kiu escucha con el modelo Vosk instalado (`OfflineDictation`), 100 % en el teléfono. Si anduvo, las 10 min siguientes se usa directo. Requiere el modelo sin conexión instalado.
+4. **Terminar la charla hablando:** «gracias», «chau», «hasta luego», «eso es todo», «colgar»… dichos solos cierran esta conversación con un chau hablado, sin tocar el ajuste de modo conversación.
+5. **Estado y diagnóstico** (Ajustes): informe único de voz, permisos, claves (almacén seguro o respaldo), modelos por proveedor y actualización, con botón para copiarlo.
+6. **Huella SHA-256 de la actualización:** el Release publica `SHA256SUMS.txt` y la app compara la huella que da GitHub con la del APK bajado; si no coincide, lo borra. La tarjeta muestra «huella verificada ✓».
+
+## [2.11.11] — Modo conversación: no te saca de la pantalla y no se corta solo
+
+- **Te mandaba al Chat:** `handleVoice`, `sendMsg` y el comando por «Kiu» hacían `go('chat')` siempre. Ahora, en plena conversación (pantalla de llamada abierta o hablaste en los últimos 2 min), la charla sigue en la misma pantalla; las respuestas igual quedan en el historial. La respuesta de Kiu también se ve escrita en la pantalla de llamada.
+- **Se cortaba sola:** (1) la pantalla de llamada se cerraba a los 7 s sin actividad aunque Kiu siguiera pensando o hablando; (2) la ventana para empezar a contestar era de 14 s (ahora 30 s); (3) si Kiu contestaba con error o sin voz, nadie reabría el micrófono. Nuevo **guardián**: si seguís «en llamada» (hablaste o Kiu contestó en los últimos 45 s) y pasan 3 s sin escuchar, hablar ni pensar, vuelve a escuchar. Colgar o cortar el micrófono lo desactiva.
+
 ## [2.11.10] — Claves API: «ninguna clave funciona» (causa raíz)
 
 - **Causa raíz:** `KiuCrypto.dec()` llamaba a `cipher.init(12, …)`. Los modos válidos de `Cipher` son 1–4 (descifrar = 2); con 12 Java lanza `InvalidParameterException: Invalid operation mode`, el `catch` devolvía `""` y **toda clave guardada se leía como vacía**. El proxy mandaba entonces `Authorization: Bearer ` sin clave y cada proveedor respondía 401, con claves perfectamente buenas. Ahora usa `Cipher.DECRYPT_MODE` (2). Las claves ya guardadas (cifradas bien) vuelven a leerse sin volver a pegarlas.

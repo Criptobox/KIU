@@ -172,7 +172,7 @@ public class KiuDownload {
        status(), cancelar con cancel(), y si se corta reanuda desde el .part). Solo acepta URLs de
        los Releases de este repo. «size» es el tamaño esperado (del Release) para descartar un
        archivo viejo o cortado con el mismo nombre. */
-    public static String startApk(Context context, String url, String name, String size) {
+    public static String startApk(Context context, String url, String name, String size, String sha) {
         try {
             if (url == null || !url.startsWith(KiuUpdate.RELEASES)) {
                 return "{\"id\":\"\",\"st\":\"error\",\"err\":\"URL no valida\"}";
@@ -196,15 +196,27 @@ public class KiuDownload {
                 want = Long.parseLong(size == null ? "0" : size.trim());
             } catch (Throwable ignored) {
             }
+            /* v2.11.12: huella SHA-256 que publica GitHub para este archivo (64 hex) */
+            String want256 = "";
+            if (sha != null) {
+                String t = sha.trim().toLowerCase();
+                if (t.startsWith("sha256:")) {
+                    t = t.substring(7);
+                }
+                if (t.length() == 64) {
+                    want256 = t;
+                }
+            }
             File file = new File(dir, safe);
             if (file.exists() && file.length() > 0) {
-                if (want <= 0 || file.length() == want) {
+                boolean shaOk = want256.isEmpty() || want256.equals(KiuDlTask.hashOf(file));
+                if (shaOk && (want <= 0 || file.length() == want)) {
                     return "{\"id\":\"\",\"st\":\"done\",\"name\":\"" + esc(safe) + "\",\"b\":" + file.length() + ",\"path\":\"" + esc(file.getAbsolutePath()) + "\"}";
                 }
                 file.delete();
             }
             String id = "u" + System.currentTimeMillis();
-            KiuDlTask task = new KiuDlTask(id, url, safe, dir.getAbsolutePath(), null, null);
+            KiuDlTask task = new KiuDlTask(id, url, safe, dir.getAbsolutePath(), null, want256);
             jobs.put(id, task);
             new Thread(task).start();
             return "{\"id\":\"" + id + "\",\"st\":\"queued\",\"name\":\"" + esc(safe) + "\",\"path\":\"" + esc(file.getAbsolutePath()) + "\"}";

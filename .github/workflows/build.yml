@@ -40,6 +40,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # v2.11.12 · FIRMA ESTABLE. Sin los secretos KIU_KEYSTORE_*, cada corrida firmaba con una clave
+      # debug NUEVA (cada runner crea la suya) y Android obligaba a desinstalar para actualizar (y se
+      # perdían permisos y datos). Se guarda la clave debug en la caché de Actions y se reutiliza: la
+      # firma queda igual entre versiones. La solución definitiva sigue siendo cargar los secretos.
+      - name: Reusar la misma clave de firma entre corridas
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kiu-debug-keystore-v1
+
       # Herramientas de compilación (idempotente: el runner ya trae SDK, el
       # script completa platform 34, build-tools, NDK 27.0.12077973 y cmake).
       - name: Preparar herramientas de compilación (JDK/SDK/NDK/CMake)
@@ -221,6 +231,12 @@ jobs:
           name: Kiu-APK-release
           path: dist
 
+      - name: Huellas SHA-256 de los APK
+        run: |
+          cd dist
+          sha256sum *.apk | tee SHA256SUMS.txt
+          { echo '### SHA-256'; echo '```'; cat SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publicar Release
         uses: softprops/action-gh-release@v2
         with:
@@ -232,3 +248,4 @@ jobs:
           draft: false
           files: |
             dist/*.apk
+            dist/SHA256SUMS.txt

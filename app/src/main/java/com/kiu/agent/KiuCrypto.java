@@ -58,6 +58,20 @@ public class KiuCrypto {
         return "";
     }
 
+    /* v2.11.12: ¿con qué se guardan las claves en este teléfono? («keystore», «respaldo» o «falla») */
+    public static String selfTest() {
+        String probe = "kiu-prueba-123";
+        String k = keystoreEnc(probe);
+        if (k.length() > 0 && probe.equals(keystoreDec(k))) {
+            return "keystore";
+        }
+        String s = softEnc(probe);
+        if (s.length() > 0 && probe.equals(dec(s))) {
+            return "respaldo";
+        }
+        return "falla";
+    }
+
     /* ¿esto guardado se puede leer de verdad? */
     public static boolean readable(String stored) {
         return stored != null && !stored.isEmpty() && dec(stored).length() > 0;

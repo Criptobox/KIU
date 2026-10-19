@@ -160,7 +160,8 @@
       };
       window.nexoWakeCmd = function (text) {
         stSet('voz', 'Escuchando');
-        App.go('chat');
+        App._convLive = Date.now();
+        if (!App.inCall()) App.go('chat');
         App.sendMsg(text);
       };
       window.nexoWakeState = function (on) {
@@ -231,6 +232,8 @@
       /* v2.11.0: «Escribir» corta la escucha y deja el cursor en el chat */
       var bav = document.getElementById('btn-asist-voz');
       if (bav) bav.addEventListener('click', function () { self.asistenteVoz(); });
+      var best = document.getElementById('btn-estado');
+      if (best) best.addEventListener('click', function () { self.verEstado(); });
       var bup = document.getElementById('btn-upd');
       if (bup) bup.addEventListener('click', function () { self.buscarUpdate(true); });
       S.upd = S.upd || {};
@@ -246,6 +249,21 @@
           bridge('setBargeIn', [!!S.barge]);
         });
       }
+      /* v2.11.11 · GUARDIÁN DE LA CONVERSACIÓN. Si Kiu contestó sin voz, con error, o el micrófono no se
+         reabrió, el ciclo moría y había que volver a tocar el micro. Si seguimos «en llamada» (hablaste o
+         Kiu contestó en los últimos 45 s) y pasan 3 s sin escuchar, hablar ni pensar, se vuelve a escuchar.
+         El tiempo NO se renueva solo: si no decís nada, la conversación termina. */
+      setInterval(function () {
+        try {
+          if (S.conv === false || !self._convLive || document.hidden) return;
+          if (Date.now() - self._convLive > 45000) { self._convLive = 0; return; }
+          var kk = KS(), sv = (kk && kk.get) ? kk.get() : '';
+          var busy = self.voiceBusy || (window.Kiu && Kiu.pending) || sv === 'Hablando' || sv === 'Escuchando' || sv === 'Generando' || sv === 'Pensando';
+          if (busy) { self._kIdle = 0; return; }
+          self._kIdle = (self._kIdle || 0) + 1;
+          if (self._kIdle >= 3) { self._kIdle = 0; self.startVoice(); }
+        } catch (e) { }
+      }, 1000);
       /* tocar la pantalla de llamada mientras Kiu habla = callarlo y empezar a escuchar */
       var vpp = document.getElementById('voice-pulse');
       if (vpp) {
@@ -408,8 +426,62 @@
         } catch (e) { }
       }
     },
+    /* v2.11.12 · ESTADO Y DIAGNÓSTICO: un informe único de voz, permisos, claves y modelos, con botón para
+       copiarlo y mandármelo en vez de depender de capturas sueltas. */
+    verEstado: function () {
+      var self = this, J = {};
+      try { J = JSON.parse(rawBridge('kiuStatus', []) || '{}') || {}; } catch (e) { J = {}; }
+      var ok = function (b) { return b ? '✅' : '❌'; };
+      var ago = function (s) { return s < 0 ? 'nunca' : (s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h') + ' atrás'; };
+      var L = [];
+      L.push('KIU ' + (J.version || '?') + ' · Android ' + (J.android || '?') + ' · ' + (J.device || ''));
+      L.push('— VOZ —');
+      L.push(ok(J.mic) + ' Permiso de micrófono');
+      L.push(ok(J.sttAvail) + ' Servicio de reconocimiento de voz del teléfono');
+      L.push('Reconocedor en uso: ' + (J.rec || 'todavía no se usó'));
+      L.push('Último error de voz: ' + (J.errCode ? 'código ' + J.errCode + ' (' + self.vozErrTexto(J.errCode).slice(0, 70) + ') · ' + ago(J.errAgo) : 'ninguno'));
+      L.push('Voz que habla: ' + (J.ttsVoice || 'todavía no se eligió') + (J.ttsErrAgo >= 0 ? ' · último fallo ' + ago(J.ttsErrAgo) : ''));
+      L.push(ok(J.wakeSvc || J.voskRun) + ' Despertar por voz («Kiu») ' + ((J.wakeSvc || J.voskRun) ? 'activo' : 'apagado'));
+      L.push((J.voskModel ? '✅' : '➖') + ' Modelo de voz sin conexión ' + (J.voskModel ? 'instalado' : 'no instalado') + (J.offline ? ' · ' + J.offline : ''));
+      L.push(ok(J.bargeIn) + ' Poder interrumpir a Kiu');
+      L.push('— CLAVES Y RED —');
+      L.push((J.crypto === 'keystore' ? '✅ Claves en el almacén seguro de Android' : J.crypto === 'respaldo' ? '⚠️ Claves en el respaldo local de la app (el almacén de Android falla en este teléfono)' : '❌ No se pueden guardar claves en este teléfono'));
+      var ids = Object.keys(S.prov || {});
+      ids.forEach(function (id) {
+        var st = S.prov[id], d = null; try { d = provDef(id); } catch (e) { }
+        if (!d || (!hasKey(id) && !st.on)) return;
+        L.push((st.ok ? '✅ ' : hasKey(id) ? '⚠️ ' : '❌ ') + d.name + (hasKey(id) ? ' · clave ✓' : ' · sin clave') + (st.good && st.good.length ? ' · ' + st.good.length + ' modelos funcionan' : '') + (st.err ? ' · ' + st.err : '') + (st.on ? ' · activo' : ''));
+      });
+      L.push('— ACTUALIZACIÓN —');
+      L.push(ok(J.installOk) + ' Permiso para instalar actualizaciones' + (J.installOk ? '' : ' (se pide al instalar)'));
+      L.push(ok(J.notif) + ' Notificaciones');
+      var txt = L.join('\n');
+      var body = this.modal('Estado y diagnóstico',
+        '<pre id="est-txt" style="white-space:pre-wrap;font:12.5px/1.55 ui-monospace,Menlo,monospace;margin:0 0 10px;max-height:52vh;overflow:auto">' + esc(txt) + '</pre>' +
+        '<button class="btn-ghost full" id="est-copy" style="justify-content:center">Copiar informe</button>' +
+        '<p class="set-hint small" style="margin:8px 0 0">No incluye claves ni datos personales. Copialo y pegalo en el chat con quien te ayuda.</p>');
+      if (!body) return;
+      body.querySelector('#est-copy').addEventListener('click', function () { self.copyText(txt); self.toast('Informe copiado'); });
+    },
+    /* v2.11.12: cierra ESTA charla (sin apagar el modo conversación de Ajustes) con un chau hablado */
+    endCall: function () {
+      this._convLive = 0;
+      this.voiceBusy = false;
+      this._voiceDriven = false;
+      bridge('cancelListen');
+      this.showListening(false, true);
+      stClear('voz');
+      if (S.voiceOn) {
+        bridge('setHandsFree', [false]);               /* mientras dice chau, el micro no se reabre */
+        this.speak('¡Dale! Acá estoy cuando me necesites.');
+        setTimeout(function () { bridge('setHandsFree', [S.conv !== false]); }, 6000);
+      } else {
+        this.toast('Listo, hablamos 👋');
+      }
+    },
     /* ---------- v1.7.0: colgar (termina voz y conversación ya) ---------- */
     hangUp: function () {
+      this._convLive = 0;
       this.voiceBusy = false;
       this._voiceDriven = false;
       bridge('cancelListen');
@@ -1864,7 +1936,7 @@
     sendMsg: function (text, imgFull, imgThumb) {
       var self = this;
       bcrumb('enviando: ' + String(text || 'foto').slice(0, 40));
-      this.go('chat');
+      if (!this.inCall()) this.go('chat');
       /* v2.8.0: al mandar un mensaje Kiu todavía no sabe a quién le va a preguntar.
          Se pone 'Enrutando' y cada rama apaga la suya al terminar. Antes esto usaba
          KiuAvatar.pick(), que adivinaba 'RAG activo' al pedir un poema. */
@@ -2254,6 +2326,7 @@
         if (bb) bb.innerHTML = this.md(text);
         this.scrollBottom();
       }
+      if (this.inCall()) { this._convLive = Date.now(); this.vpSay(String(text).replace(/[#*`>_]/g, '').trim(), 'KIU'); }
       this.speak(text);
       if (!S.voiceOn) {
         /* sin voz no hay 'Hablando': el bot queda libre y muestra que terminó */
@@ -2423,11 +2496,29 @@
           return { ok: false, err: (e && e.name === 'AbortError') ? (timedOut ? 'tardó demasiado' : 'cancelado') : 'sin conexión', ms: Date.now() - t0ms };
         });
       }
-      return attempt(0).catch(function (e) {
-        if (self._cancelled) return { ok: false, cancelled: true, err: 'cancelado' };
-        if (full) return { ok: true, text: full.trim() };
-        return { ok: false, err: timedOut ? 'tardó demasiado' : 'sin conexión' };
-      }).then(function (o) { clearTimeout(to); if (!o.ms) o.ms = Date.now() - t0ms; self._abort = null; return o; });
+      /* v2.11.12 · SALTO AUTOMÁTICO DE MODELO: si el modelo falla (no existe, límite, error del servidor,
+         respuesta vacía) y ya probaste este proveedor con «Buscar y probar modelos», Kiu pasa solo al
+         siguiente que sí funcionaba (hasta 2 saltos), sin que tengas que tocar nada. */
+      var tried = [mdl];
+      function nextModel() {
+        var g = (pv.st && pv.st.good) || [];
+        for (var gi = 0; gi < g.length; gi++) if (tried.indexOf(g[gi].m) < 0) return g[gi].m;
+        return '';
+      }
+      function run() {
+        return attempt(0).catch(function (e) {
+          if (self._cancelled) return { ok: false, cancelled: true, err: 'cancelado' };
+          if (full) return { ok: true, text: full.trim() };
+          return { ok: false, err: timedOut ? 'tardó demasiado' : 'sin conexión' };
+        }).then(function (o) {
+          if (o && !o.ok && !o.cancelled && !full && !timedOut && tried.length < 3 && /modelo|límite|error [45]|vacía/.test(String(o.err || ''))) {
+            var nm = nextModel();
+            if (nm) { var prev = mdl; tried.push(nm); mdl = nm; self.toast(prev + ' no respondió · pruebo con ' + nm); return run(); }
+          }
+          return o;
+        });
+      }
+      return run().then(function (o) { clearTimeout(to); if (!o.ms) o.ms = Date.now() - t0ms; self._abort = null; return o; });
       };
       if (msgsOverride) return launch(msgsOverride);
       if (!(window.RAG && RAG.on && typeof text === 'string') || imgFull) return launch(this.apiMsgs(text, true, imgFull, null));
@@ -4046,7 +4137,7 @@
       var card = body.querySelector('#upd-card');
       var hint = body.querySelector('#upd-hint');
       if (!card) return;
-      var C = 119.4, jid = '', timer = null, path = '', total = apk.size || 0, lastG = 0, lastT = 0, spd = 0;
+      var C = 119.4, jid = '', timer = null, path = '', total = apk.size || 0, lastG = 0, lastT = 0, spd = 0, verif = false;
       var mb = function (b) { return b >= 1073741824 ? (b / 1073741824).toFixed(1).replace('.', ',') + ' GB' : Math.max(1, Math.round(b / 1048576)) + ' MB'; };
       var ring = function (pct) {
         return '<span class="k2-ringwrap"><svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="rgba(126,158,255,.16)" stroke-width="4"/><circle cx="23" cy="23" r="19" fill="none" stroke="#2DD4BF" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + C + '" stroke-dashoffset="' + (C - C * pct / 100).toFixed(1) + '" transform="rotate(-90 23 23)"/></svg><b>' + pct + '%</b></span>';
@@ -4058,7 +4149,7 @@
           h = '<div class="k2-model">' + ring(0) + '<div class="k2-mid"><p class="k2-name">0% · Kiu ' + esc(tag) + '</p><p class="k2-sub">Empezando…</p></div>' +
             '<div class="k2-acts" style="flex-direction:row"><button class="k2-iconbtn danger" data-u="stop" aria-label="Cancelar">' + icon('xmark', 13) + '</button></div></div>';
         } else if (st === 'done') {
-          h = '<div class="k2-model"><span class="k2-tile big tl-green">' + icon('check', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + ' · listo</p><p class="k2-sub">Descargado' + (total ? ' · ' + mb(total) : '') + ' ✓</p></div>' +
+          h = '<div class="k2-model"><span class="k2-tile big tl-green">' + icon('check', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + ' · listo</p><p class="k2-sub">Descargado' + (total ? ' · ' + mb(total) : '') + (verif ? ' · huella SHA-256 verificada ✓' : (apk.digest ? '' : ' · sin huella para comparar')) + '</p></div>' +
             '<div class="k2-acts"><button class="k2-pill solid" data-u="inst">Instalar</button></div></div>';
         } else {
           h = '<div class="k2-model' + (st === 'err' ? ' err' : '') + '"><span class="k2-tile big tl-violet">' + icon('save', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + '</p><p class="k2-sub">' + (st === 'err' ? esc(msg || 'No se pudo bajar') : 'Actualización · ' + sizeTxt) + '</p></div>' +
@@ -4097,6 +4188,7 @@
           if (st.st === 'done' && total > 0 && (st.got || 0) > 0 && (st.got || 0) < total) st = { st: 'err', err: 'Se cortó al final: tocá Reintentar y sigue donde quedó' };
           if (st.st === 'done') {
             path = st.path || path;
+            verif = !!st.verified;
             if (alive) show('done'); else self.toast('Actualización descargada · abrí Buscar versión nueva para instalarla');
           } else if (st.st === 'cancelled') {
             if (alive) { show('idle'); if (hint) hint.textContent = 'Cancelado. Lo que bajó queda guardado y sigue desde ahí.'; }
@@ -4106,14 +4198,14 @@
         }, 900);
       };
       var start = function () {
-        var raw = rawBridge('updStart', [apk.browser_download_url, apk.name, String(apk.size || 0)]);
+        var raw = rawBridge('updStart', [apk.browser_download_url, apk.name, String(apk.size || 0), String(apk.digest || '')]);
         if (raw === null) {
           /* sin el puente nativo (navegador): la descarga de siempre */
           if (!self.openUrl(apk.browser_download_url)) self.copyText(apk.browser_download_url);
           return;
         }
         var res = jparse(raw || '{}', {});
-        if (res.st === 'done') { path = res.path || ''; if (res.b) total = res.b; show('done'); return; }
+        if (res.st === 'done') { path = res.path || ''; if (res.b) total = res.b; verif = !!apk.digest; show('done'); return; }
         if (!res.id) { show('err', res.err || 'No pude empezar la descarga'); return; }
         jid = res.id; path = res.path || '';
         show('run');
@@ -4853,6 +4945,7 @@
       this.voiceError('Este teléfono no tiene reconocimiento de voz disponible');
     },
     stopVoice: function () {
+      this._convLive = 0; /* v2.11.11: si lo cortás vos, el guardián de la conversación no lo reabre */
       this.voiceBusy = false;
       this._voiceDriven = false;
       bridge('cancelListen');
@@ -4864,7 +4957,14 @@
       if (text) this.vpSay(text, 'ENTENDÍ');
       this.showListening(false);
       if (!text) return;
-      this.go('chat');
+      /* v2.11.12 · «gracias», «chau»… dichos solos terminan la charla sin molestar al motor ni abrir el chat */
+      var nrm = text.toLowerCase().normalize ? text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zñ0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+      if (nrm && nrm.split(' ').length <= 4 && this.inCall() && /^(muchas )?(gracias|chau|chao|adios|hasta luego|nos vemos|eso es todo|nada mas|terminamos|colgar|cortar|corta)( kiu| listo| nada mas)?$/.test(nrm)) {
+        this.endCall();
+        return;
+      }
+      this._convLive = Date.now();
+      if (!this.inCall()) this.go('chat');
       this.sendMsg(text);
       /* v2.11.8 · si el motor se queda «pensando» más de 90 s (frase mal entendida, modelo trabado) se corta
          solo y Kiu vuelve a estar libre, en vez de quedar mareado para siempre */
@@ -4948,7 +5048,7 @@
       var card = document.getElementById('vp-card');
       var say = document.getElementById('vp-say'), lbl = document.getElementById('vp-lbl');
       if (!card || !say || !text) return;
-      say.textContent = String(text).slice(0, 160);
+      say.textContent = String(text).slice(0, 240);
       if (lbl) lbl.textContent = label || '';
       card.classList.remove('empty');
     },
@@ -4965,8 +5065,16 @@
         var next = st === 'Escuchando' ? 'listen' : (st === 'Generando' || st === 'Pensando') ? 'think' : st === 'Hablando' ? 'speak' : '';
         if (next) { self._vpIdle = Date.now(); if (next !== m) self.vpMode(next); }
         else if (m === 'listen') { self._vpIdle = Date.now(); }
-        else if (Date.now() - self._vpIdle > 7000) { self.showListening(false, true); }
+        else if ((window.Kiu && Kiu.pending) || st === 'Hablando') { self._vpIdle = Date.now(); }  /* v2.11.11: no cerrar mientras Kiu piensa o habla */
+        else if (Date.now() - self._vpIdle > 12000) { self.showListening(false, true); }
       }, 400);
+    },
+    /* v2.11.11 · ¿estamos en plena conversación por voz? Si sí, NO se salta a la pantalla de Chat: la
+       charla sigue en la misma pantalla (la de llamada) y las respuestas igual quedan en el historial. */
+    inCall: function () {
+      var pulse = document.getElementById('voice-pulse');
+      var vis = !!(pulse && !pulse.classList.contains('hidden'));
+      return !!(S.conv !== false && (vis || (this._convLive && Date.now() - this._convLive < 120000)));
     },
     showListening: function (on, force) {
       var pulse = document.getElementById('voice-pulse');

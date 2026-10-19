@@ -818,6 +818,53 @@ public class MainActivity extends Activity {
         MainActivity mainActivity = inst;
         if (mainActivity != null) {
             mainActivity.js("nexoWakeHit()");
+            /* v2.11.8 · decir solo «Kiu» sonaba el pitido y no abría nada: el servicio se quedaba esperando
+               el comando él mismo, sin pantalla ni conversación. Con Kiu abierto, ahora abre el micrófono
+               de la app (igual que el motor local) y el servicio no entrega el mismo comando dos veces. */
+            if (mainActivity.resumed && !SPEAKING && !COMMAND_BUSY) {
+                KiuService.AWAKE = false;
+                wakeHitAndListen(context);
+            }
+        }
+    }
+
+    /* v2.11.8 · poder cortar a Kiu mientras habla (con la voz, con «Kiu» o una palabra de parada) */
+    static String lastSpokenText() {
+        MainActivity m = inst;
+        return m == null ? "" : String.valueOf(m.lastSpoken);
+    }
+
+    static boolean bargeInOn(Context context) {
+        try {
+            return context.getSharedPreferences("kiu_native", 0).getBoolean("bargein", true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    static void interruptSpeech(Context context, boolean thenListen) {
+        final MainActivity m = inst;
+        if (m == null) {
+            return;
+        }
+        SPEAKING = false;
+        try {
+            if (m.tts != null) {
+                m.tts.stop();
+            }
+        } catch (Throwable ignored) {
+        }
+        m.js("nexoTtsDone()");
+        m.js("nexoWakeHit()");
+        if (thenListen && m.resumed) {
+            m.tHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (!COMMAND_BUSY) {
+                        m.startSpeech();
+                    }
+                }
+            }, 350L);
         }
     }
 
@@ -1043,6 +1090,18 @@ public class MainActivity extends Activity {
 
         /* v2.11.3: actualizar la app sin salir de ella. updStart baja el APK (se consulta con
            dlStatus y se cancela con dlCancel); updInstall lo entrega al instalador de Android. */
+        /* v2.11.8: aviso de versión nueva en la barra de notificaciones */
+        @JavascriptInterface
+        public void notifyUpdate(String str, String str2) {
+            KiuUpdate.notifyAvailable(MainActivity.this.getApplicationContext(), str, str2);
+        }
+
+        /* v2.11.8: interrumpir a Kiu con la voz mientras habla (interruptor en Ajustes) */
+        @JavascriptInterface
+        public void setBargeIn(boolean z) {
+            MainActivity.this.getSharedPreferences("kiu_native", 0).edit().putBoolean("bargein", z).apply();
+        }
+
         @JavascriptInterface
         public String updStart(String str, String str2, String str3) {
             try {

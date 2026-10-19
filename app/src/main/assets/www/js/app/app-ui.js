@@ -111,6 +111,10 @@
     biblioCat: 'todas',
     provFilter: 'todos',
     srvModels: {},
+    /* v2.11.9 · PROBADOR DE MODELOS EN LA NUBE: estado de cada escaneo en curso */
+    scan: {},
+    /* ids que no son de chat (embeddings, audio, imagen, seguridad…): no se prueban */
+    NOCHAT: /embed|rerank|whisper|tts|speech|audio|transcri|guard|moderat|safety|dall-e|imagen|diffusion|flux|sdxl|stable-|clip|reward|retriev|bge-|riva|cosmos|genmol|molmim|fourcast|deplot|paddleocr|parakeet|canary|\bocr\b|video|sora|veo|aqa|-tts|-asr/i,
     sysCache: null,
     _apiOpen: false,
 
@@ -229,6 +233,27 @@
       if (bav) bav.addEventListener('click', function () { self.asistenteVoz(); });
       var bup = document.getElementById('btn-upd');
       if (bup) bup.addEventListener('click', function () { self.buscarUpdate(true); });
+      S.upd = S.upd || {};
+      if (S.upd.auto === undefined) { S.upd.auto = true; saveS(); } /* v2.11.8: antes nacía apagado y nunca avisaba */
+      var tgb = document.getElementById('tg-barge');
+      if (tgb) {
+        if (S.barge === undefined) S.barge = true;
+        tgb.classList.toggle('on', !!S.barge);
+        bridge('setBargeIn', [!!S.barge]);
+        tgb.addEventListener('click', function () {
+          S.barge = !S.barge; saveS();
+          tgb.classList.toggle('on', !!S.barge);
+          bridge('setBargeIn', [!!S.barge]);
+        });
+      }
+      /* tocar la pantalla de llamada mientras Kiu habla = callarlo y empezar a escuchar */
+      var vpp = document.getElementById('voice-pulse');
+      if (vpp) {
+        vpp.addEventListener('click', function (e) {
+          if (e.target.closest && e.target.closest('button')) return;
+          if (vpp.getAttribute('data-st') === 'speak') { bridge('stopSpeak'); setTimeout(function () { bridge('listen'); }, 250); }
+        });
+      }
       var tgu = document.getElementById('tg-upd');
       if (tgu) {
         tgu.classList.toggle('on', !!(S.upd && S.upd.auto));
@@ -2750,9 +2775,10 @@
           '<div class="prov-actions">' +
           (def.keyUrl ? '<button class="chip-btn" data-act="getkey">Obtener clave</button>' : '<button class="chip-btn" data-act="getkey" disabled>Sin clave</button>') +
           '<button class="chip-btn" data-act="test">Probar</button>' +
-          (def.local ? '<button class="chip-btn" data-act="models">Cargar modelos</button>' : '') +
+          (def.local ? '<button class="chip-btn" data-act="models">Cargar modelos</button>'
+            : '<button class="chip-btn" data-act="scan">' + (self.scan[def.id] && self.scan[def.id].run ? 'Detener' : 'Buscar y probar modelos') + '</button>') +
           '</div>' +
-          (def.local ? '<div class="prov-models" data-pmods>' + self.srvChips(def.id, st) + '</div>' : '') + statusTxt +
+          '<div class="prov-models" data-pmods>' + (def.local ? self.srvChips(def.id, st) : self.cloudChips(def.id, st)) + '</div>' + statusTxt +
           '</div></div></div>';
       }).join('');
       if (!any) {
@@ -2811,6 +2837,7 @@
           }
           if (a === 'test') { self.testProvider(id, card); return; }
           if (a === 'models') { self.loadServerModels(id, card); return; }
+          if (a === 'scan') { self.scanProvider(id, false); return; }
           if (a === 'toggle') {
             card.classList.toggle('open');
             st.open = card.classList.contains('open');
@@ -2833,7 +2860,127 @@
         st.ok = false; st.err = '';
         saveS();
         self.renderStatus();
+        /* v2.11.9: al cargar una clave, Kiu pide la lista de modelos y prueba uno por uno */
+        if (fld === 'key' && v && !provDef(id).local) setTimeout(function () { self.scanProvider(id, true); }, 300);
       });
+    },
+    /* ---------- v2.11.9: modelos de la nube — listar, probar y dejar solo los que funcionan ---------- */
+    cloudChips: function (id, st) {
+      var sc = this.scan[id];
+      var P = 'style="width:100%;margin:0"';
+      var list = (sc && sc.run) ? (sc.good || []) : (st.good || []);
+      var h = '';
+      if (sc && sc.run) {
+        var pct = sc.total ? Math.max(3, Math.round(sc.done / sc.total * 100)) : 5;
+        h += '<div class="scan-bar"><i style="width:' + pct + '%"></i></div><p class="set-hint small" ' + P + '>' + esc(sc.msg || '') + '</p>';
+      } else if (sc && sc.err) {
+        h += '<p class="set-hint small" ' + P + '>' + esc(sc.err) + '</p>';
+      } else if (st.good && st.good.length) {
+        h += '<p class="set-hint small" ' + P + '>' + st.good.length + ' de ' + (st.nTot || st.good.length) + ' modelos funcionan con tu clave' + (st.tested ? ' · probado ' + timeAgo(st.tested) : '') + '. Tocá uno para usarlo.</p>';
+      } else if (st.tested) {
+        h += '<p class="set-hint small" ' + P + '>Probé los modelos y ninguno respondió con esta clave.</p>';
+      }
+      return h + list.map(function (g) {
+        return '<button class="chip-btn' + (st.model === g.m ? ' sel' : '') + '" data-pick="' + esc(g.m) + '">' + esc(g.m) + (g.ms ? ' · ' + g.ms + ' ms' : '') + (g.lim ? ' ⏳' : '') + '</button>';
+      }).join('');
+    },
+    paintScan: function (id, force) {
+      var sc = this.scan[id]; if (!sc) return;
+      var now = Date.now();
+      if (!force && now - (sc.lastPaint || 0) < 350) return;
+      sc.lastPaint = now;
+      var box = document.querySelector('#prov-list [data-prov="' + id + '"] [data-pmods]');
+      if (box) box.innerHTML = this.cloudChips(id, pstate(id));
+    },
+    scanProvider: function (id, auto) {
+      var self = this, st = pstate(id), def = provDef(id);
+      var cur = this.scan[id];
+      if (cur && cur.run) {                       /* segundo toque = detener */
+        cur.stop = true;
+        for (var c = 0; c < cur.ctrls.length; c++) { try { cur.ctrls[c].abort(); } catch (e) { } }
+        return;
+      }
+      if (!st.url) { if (!auto) this.toast('Poné la URL base primero'); return; }
+      if (!hasKey(id)) { if (!auto) this.toast('Falta la clave API'); return; }
+      var sc = this.scan[id] = { run: true, stop: false, total: 0, done: 0, ok: 0, good: [], ctrls: [], msg: 'Pidiendo la lista de modelos…' };
+      this.renderProviders();
+      var base = st.url.replace(/\/+$/, '');
+      var hdr = this.provHeaders({ def: def, st: st });
+      var authFail = false, bad = 0;
+      function mkCtrl(ms) {
+        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var to = setTimeout(function () { if (ctrl) ctrl.abort(); }, ms);
+        if (ctrl) sc.ctrls.push(ctrl);
+        return { ctrl: ctrl, done: function () { clearTimeout(to); } };
+      }
+      function testOne(m) {
+        var k = mkCtrl(20000), t0 = performance.now();
+        return fetch(base + '/chat/completions', {
+          method: 'POST', headers: hdr, signal: k.ctrl ? k.ctrl.signal : undefined,
+          body: JSON.stringify({ model: m, messages: [{ role: 'user', content: 'Respondé solo: ok' }], max_tokens: 16, temperature: 0, stream: false })
+        }).then(function (r) {
+          k.done();
+          var ms = Math.round(performance.now() - t0);
+          if (r.status === 429) return { ok: true, ms: ms, lim: true };   /* existe y la clave lo deja usar; solo está saturado */
+          if (!r.ok) return { ok: false, auth: r.status === 401 };
+          return r.json().then(function (j) { return { ok: !!(j && j.choices && j.choices.length), ms: ms }; }, function () { return { ok: false }; });
+        }).catch(function () { k.done(); return { ok: false }; });
+      }
+      var kl = mkCtrl(15000);
+      fetch(base + '/models', { headers: hdr, signal: kl.ctrl ? kl.ctrl.signal : undefined })
+        .then(function (r) { kl.done(); if (!r.ok) throw new Error(self.apiErr(r.status)); return r.json(); })
+        .then(function (j) {
+          var arr = (j && (j.data || j.models)) || [], names = [], seen = {};
+          for (var i = 0; i < arr.length; i++) {
+            var n = String(arr[i].id || arr[i].name || arr[i].model || '').replace(/^models\//, '');
+            if (n && !seen[n]) { seen[n] = 1; names.push(n); }
+          }
+          var chat = names.filter(function (n) { return !self.NOCHAT.test(n); });
+          if (st.model) chat.sort(function (a, b) { return (b === st.model) - (a === st.model); });  /* el actual se prueba primero */
+          chat = chat.slice(0, 150);
+          if (!chat.length) throw new Error('la lista de modelos vino vacía');
+          sc.total = chat.length; sc.names = names.length;
+          sc.msg = 'Probando ' + chat.length + ' modelos…';
+          self.paintScan(id, true);
+          var idx = 0, active = 0;
+          return new Promise(function (resolve) {
+            function next() {
+              if (sc.stop || authFail || idx >= chat.length) { if (active === 0) resolve(); return; }
+              var m = chat[idx++]; active++;
+              testOne(m).then(function (res) {
+                active--; sc.done++;
+                if (res.ok) { sc.ok++; sc.good.push({ m: m, ms: res.ms, lim: !!res.lim }); } else { bad++; if (res.auth) authFail = true; }
+                sc.msg = 'Probando ' + sc.done + ' de ' + sc.total + ' · ' + sc.ok + ' funcionan';
+                self.paintScan(id);
+                next();
+              });
+            }
+            for (var w = 0; w < 3; w++) next();
+          });
+        })
+        .then(function () {
+          sc.run = false;
+          if (authFail) {
+            sc.err = 'La clave no fue aceptada (401). Revisala y volvé a probar.';
+            st.ok = false; st.err = 'clave inválida'; saveS();
+            self.renderProviders(); self.renderStatus(); return;
+          }
+          var good = sc.good.slice().sort(function (a, b) { return a.ms - b.ms; });
+          st.good = good; st.nTot = sc.done; st.tested = Date.now();
+          st.ok = good.length > 0; st.err = good.length ? '' : 'ningún modelo respondió'; st.latency = good.length ? good[0].ms : 0;
+          var cambio = '';
+          if (good.length && !good.some(function (g) { return g.m === st.model; })) { st.model = good[0].m; cambio = ' · usaré ' + st.model; }
+          sc.err = sc.stop ? 'Detenido: probé ' + sc.done + ' de ' + sc.total + '.' : '';
+          saveS();
+          self.renderProviders(); self.renderStatus();
+          self.toast(def.name + ': ' + good.length + ' de ' + sc.done + ' modelos funcionan' + cambio);
+        })
+        .catch(function (e) {
+          sc.run = false;
+          sc.err = 'No pude leer los modelos: ' + ((e && e.message) ? e.message : 'sin conexión') + '. Revisá la URL base y la clave.';
+          st.ok = false; saveS();
+          self.renderProviders();
+        });
     },
     /* ---------- v1.7.2: modelos disponibles en el servidor (Ollama / LM Studio) ---------- */
     srvChips: function (id, st) {
@@ -3850,7 +3997,8 @@
       var self = this;
       if (!manual) {
         var u = (S.upd = S.upd || {});
-        if (!u.auto || Date.now() - (u.last || 0) < 86400000) return;
+        if (u.auto === undefined) u.auto = true;
+        if (!u.auto || Date.now() - (u.last || 0) < 21600000) return; /* cada 6 h */
         u.last = Date.now(); saveS();
       }
       var cur = '';
@@ -3868,7 +4016,7 @@
           var nueva = !!(a && b && (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) > 0);
           if (!b) { if (manual) self.toast('No pude leer tu versión instalada; la última publicada es ' + tag); return; }
           if (!nueva) { if (manual) self.toast('Ya tenés la última versión (' + cur + ')'); return; }
-          if (!manual && store('kiu_upd_visto') === tag) return;
+          if (!manual) rawBridge('notifyUpdate', ['Kiu ' + tag + ' disponible', 'Tenés ' + cur + '. Tocá para descargarla e instalarla.']);
           store('kiu_upd_visto', tag);
           var apk = null, as = rel.assets || [];
           for (var i = 0; i < as.length; i++) if (/\.apk$/i.test(as[i].name) && /release/i.test(as[i].name)) { apk = as[i]; break; }
@@ -4718,6 +4866,18 @@
       if (!text) return;
       this.go('chat');
       this.sendMsg(text);
+      /* v2.11.8 · si el motor se queda «pensando» más de 90 s (frase mal entendida, modelo trabado) se corta
+         solo y Kiu vuelve a estar libre, en vez de quedar mareado para siempre */
+      clearTimeout(this._thinkWd);
+      var selfW = this;
+      this._thinkWd = setTimeout(function () {
+        try {
+          if (window.Kiu && Kiu.pending) {
+            selfW.cancelApi();
+            selfW.toast('Se trabó pensando. Probá con una frase más corta.');
+          }
+        } catch (e) { }
+      }, 90000);
     },
     /* v2.11.1: códigos de SpeechRecognizer.ERROR_* en palabras. Antes se descartaban y Kiu
        «no entendía» sin decir por qué. */

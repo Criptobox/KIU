@@ -1,5 +1,9 @@
 package com.kiu.agent;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -25,6 +29,30 @@ public class KiuUpdate {
             base = c.getFilesDir();
         }
         return new File(base, "updates");
+    }
+
+    /* v2.11.8: aviso de versión nueva como notificación del sistema (antes solo salía una ventana
+       si Kiu estaba abierta y el aviso automático venía apagado por defecto). Toca → abre Kiu. */
+    public static void notifyAvailable(Context c, String title, String text) {
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != 0) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(new NotificationChannel("kiu_update", "Actualizaciones de Kiu", NotificationManager.IMPORTANCE_DEFAULT));
+            }
+            Intent open = new Intent(c, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(c, 7001, open, PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0));
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, "kiu_update") : new Notification.Builder(c);
+            b.setSmallIcon(R.drawable.ic_notif).setContentTitle(title).setContentText(text).setContentIntent(pi).setAutoCancel(true);
+            nm.notify(7001, b.build());
+        } catch (Throwable ignored) {
+        }
     }
 
     /* devuelve «ok», «perm» (falta permitir instalar desde Kiu) o «err:motivo» */

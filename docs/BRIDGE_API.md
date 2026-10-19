@@ -137,6 +137,8 @@ la recurrencia, así que "todos los lunes" aparece todos los lunes.
 ## Copia completa y verificación v2.4 (sección 3 / pendientes de la 1)
 
 ### Descargas con SHA-256
+- `notifyUpdate(titulo, texto)` → notificación «versión nueva disponible» (v2.11.8).
+- `setBargeIn(bool)` → permite interrumpir a Kiu con la voz mientras habla (v2.11.8).
 - `updStart(url, nombre, tamaño)` → baja el APK de una actualización (v2.11.3). Solo acepta URLs de
   `https://github.com/Criptobox/KIU/releases/download/`. Devuelve `{id, st, name, path}`; el progreso se
   consulta con `dlStatus(id)` y se cancela con `dlCancel(id)`. Si ya está bajado completo, devuelve `st:"done"`.

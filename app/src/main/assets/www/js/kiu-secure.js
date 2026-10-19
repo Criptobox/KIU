@@ -39,7 +39,7 @@
   window.KiuVault = Vault;
 
   /* ---------- ¿esta URL va por el proxy de Java? ---------- */
-  var CLOUD = /(^|\.)(openai\.com|groq\.com|deepseek\.com|anthropic\.com|mistral\.ai|together\.xyz|cohere\.com|openrouter\.ai|generativelanguage\.googleapis\.com|duckduckgo\.com|wikipedia\.org|jina\.ai)$/;
+  var CLOUD = /(^|\.)(openai\.com|groq\.com|deepseek\.com|anthropic\.com|mistral\.ai|together\.xyz|cohere\.com|openrouter\.ai|nvidia\.com|generativelanguage\.googleapis\.com|duckduckgo\.com|wikipedia\.org|jina\.ai)$/;
   /* tanda 8 (KNOWN_ISSUES · hosts de nube): heurística general de API — un
    * proveedor nuevo ya NO exige editar esta lista. HTTPS distinto del origen
    * de la app con ruta con pinta de API (/v1, /v1beta, /api, /chat/completions,

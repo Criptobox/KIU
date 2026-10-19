@@ -42,11 +42,13 @@ test('el nivel de voz se apaga si dejan de llegar avisos o se sale de escucha', 
   assert.match(ui, /if \(m !== 'listen'\) this\.vpLive\(false\)/);
 });
 
-test('actualizaciones: apagadas por defecto, una vez al día, solo abre la descarga', () => {
+test('actualizaciones: prendidas por defecto (v2.11.8), cada 6 h, con notificación', () => {
   assert.match(html, /id="btn-upd"/);
   assert.match(html, /id="tg-upd"/);
   assert.match(ui, /releases\/latest/);
-  assert.match(ui, /if \(!u\.auto \|\| Date\.now\(\) - \(u\.last \|\| 0\) < 86400000\) return;/);
+  assert.match(ui, /Date\.now\(\) - \(u\.last \|\| 0\) < 21600000\) return;/);
+  assert.match(ui, /u\.auto === undefined/);
+  assert.match(ui, /rawBridge\('notifyUpdate'/);
   assert.match(ui, /openUrl\(apk\.browser_download_url\)/);
   assert.doesNotMatch(ui, /REQUEST_INSTALL_PACKAGES/);
 });
@@ -78,8 +80,8 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.11\.7"/);
-  assert.match(gradle, /val kiuVersionCode = 57/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.9"/);
+  assert.match(gradle, /val kiuVersionCode = 59/);
 });
 
 /* ---- v2.11.1: el modelo estaba instalado y el diagnóstico decía SIN MODELO ---- */

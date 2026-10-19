@@ -2,6 +2,19 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.9] — Modelos en la nube: lista automática y probador (+ NVIDIA)
+
+- **NVIDIA (NIM)** como proveedor: `https://integrate.api.nvidia.com/v1`, clave `nvapi-…` desde build.nvidia.com. Su host queda atado a su propia clave en el proxy.
+- **Buscar y probar modelos:** cada proveedor de la nube pide ahora `/models` (todo lo que da tu clave), descarta lo que no es de chat (embeddings, audio, imagen, seguridad), prueba los demás con una mini-conversación (3 a la vez, máx. 150) y **deja solo los que responden**, con su latencia. Un 429 cuenta como «funciona, saturado» (⏳); 401 corta todo y avisa que la clave no sirve.
+- Arranca **solo al guardar una clave**. Si el modelo que tenías no sirve, se cambia por el más rápido que sí. Toque en un modelo = usarlo. El botón pasa a «Detener» mientras prueba.
+
+## [2.11.8] — «Kiu» abre la conversación, interrumpir a Kiu, aviso de actualización
+
+- **Decir solo «Kiu»:** el servicio con Google sonaba el pitido pero no abría nada. Con la app abierta ahora abre el micrófono y la conversación (igual que el motor local).
+- **Interrumpir a Kiu mientras habla:** el servicio sigue oyendo mientras habla Kiu y lo corta con «Kiu» suelto o con «basta / para / silencio / detente / alto» dichos SOLOS (el eco de su propia voz llega como frases, no como una palabra, y se ignora cualquier palabra que Kiu esté diciendo en ese momento). También se corta tocando la pantalla de llamada. Interruptor «Poder interrumpir a Kiu» en Ajustes.
+- **Aviso de versión nueva:** el aviso automático nacía APAGADO, por eso nunca avisaba. Ahora nace prendido, consulta cada 6 h (antes 24 h y una consulta fallida gastaba el día) y manda una **notificación** del sistema.
+- **«Pensando» sin fin:** si el motor se queda pensando más de 90 s, se corta solo y avisa.
+
 ## [2.11.7] — Voz: el micrófono se suelta de verdad al dar un comando
 
 - **«No te entendí [código 7]» / Kiu no escuchaba:** `WakeWordEngine.pause()` solo levantaba una bandera y su `AudioRecord` seguía grabando mientras el reconocedor de Google intentaba oír el comando. Con dos clientes de micrófono Android silencia al segundo, así que el reconocedor recibía silencio. Ahora `pause()` detiene la grabación al instante, el bucle la mantiene suelta mientras haya un comando en curso y la reabre al terminar.

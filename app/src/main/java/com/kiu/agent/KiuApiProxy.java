@@ -59,6 +59,7 @@ public final class KiuApiProxy {
             {"deepseek", "api.deepseek.com"},
             {"openrouter", "openrouter.ai"},
             {"kimi", "api.moonshot.ai"},
+            {"nvidia", "integrate.api.nvidia.com"},
     };
 
     private static final class Job {

@@ -220,7 +220,7 @@ public class KiuService extends Service {
                 schedule(700L);
                 return;
             }
-            if (MainActivity.SPEAKING) {
+            if (MainActivity.SPEAKING && !MainActivity.bargeInOn(this)) {
                 schedule(700L);
                 return;
             }
@@ -288,12 +288,45 @@ public class KiuService extends Service {
     /* JADX INFO: Access modifiers changed from: private */
     public boolean check(Bundle bundle, boolean fin) {
         ArrayList<String> stringArrayList;
-        if (!ACTIVE || SUSPENDED || MainActivity.SPEAKING || (stringArrayList = bundle.getStringArrayList("results_recognition")) == null) {
+        if (!ACTIVE || SUSPENDED || (stringArrayList = bundle.getStringArrayList("results_recognition")) == null) {
             return false;
+        }
+        if (MainActivity.SPEAKING) {
+            return bargeIn(stringArrayList);
         }
         for (int i = 0; i < stringArrayList.size() && i < 3; i++) {
             String str = stringArrayList.get(i);
             if (str != null && !str.trim().isEmpty() && process(str, fin)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /* v2.11.8 · INTERRUMPIR A KIU: mientras habla, el servicio sigue oyendo. Solo se corta con «Kiu»
+       suelto o con una palabra de parada dicha SOLA (el eco de la voz de Kiu llega como frases enteras,
+       no como una palabra), y nunca si esa palabra está en lo que Kiu está diciendo ahora. */
+    private static final Pattern STOP = Pattern.compile("^(para|basta|silencio|detente|callate|alto|stop|espera|ya basta|ya esta)$");
+
+    private boolean bargeIn(ArrayList<String> list) {
+        if (!MainActivity.bargeInOn(this)) {
+            return false;
+        }
+        String said = norm(MainActivity.lastSpokenText());
+        for (int i = 0; i < list.size() && i < 3; i++) {
+            String n = norm(list.get(i)).trim();
+            if (n.isEmpty()) {
+                continue;
+            }
+            Matcher m = WAKE.matcher(n);
+            boolean wakeOnly = false;
+            if (m.find()) {
+                wakeOnly = n.substring(m.end()).trim().length() <= 2 && !WAKE.matcher(said).find();
+            }
+            boolean stopWord = STOP.matcher(n).find() && !Pattern.compile("\\b" + Pattern.quote(n) + "\\b").matcher(said).find();
+            if (wakeOnly || stopWord) {
+                beepWake();
+                MainActivity.interruptSpeech(getApplicationContext(), wakeOnly);
                 return true;
             }
         }

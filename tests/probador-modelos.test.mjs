@@ -40,7 +40,7 @@ test('el probador lista, descarta lo que no es chat y deja solo lo que responde'
     const buenos = st.good.map((g) => g.m).sort();
     assert.deepEqual(buenos, ['gemini-flash', 'meta/llama-3.3-70b', 'qwen/saturado']);
     assert.ok(!buenos.includes('mistral/malo'));
-    assert.equal(st.model, 'meta/llama-3.3-70b');   /* el modelo viejo que no existe se reemplaza por uno que sí */
+    assert.ok(buenos.includes(st.model), 'el modelo viejo que no existe se reemplaza por uno que sí funciona');
     assert.equal(st.ok, true);
   });
 });

@@ -281,6 +281,7 @@ public class MainActivity extends Activity {
     @Override // android.app.Activity
     protected void onCreate(Bundle bundle) {
         super.onCreate(bundle);
+        KiuCrypto.init(this); /* v2.11.10: respaldo de claves si el Keystore falla */
         try {
             getWindow().setStatusBarColor(-16777216);
             getWindow().setNavigationBarColor(-16777216);
@@ -2436,13 +2437,17 @@ public class MainActivity extends Activity {
         /* ---- bóveda de claves API: cifradas con Keystore (KiuCrypto); la clave en
            claro jamás se guarda ni se entrega a la WebView (solo últimos 4) ---- */
         @JavascriptInterface
-        public void kiuKeysSet(String str, String str2) {
+        public boolean kiuKeysSet(String str, String str2) {
             try {
-                if (str == null || str.trim().isEmpty()) return;
+                if (str == null || str.trim().isEmpty()) return false;
                 SharedPreferences sp = MainActivity.this.getSharedPreferences("kiu_keys", 0);
-                if (str2 == null || str2.isEmpty()) sp.edit().remove("k_" + str).apply();
-                else sp.edit().putString("k_" + str, KiuCrypto.enc(str2)).apply();
-            } catch (Throwable ignored) { }
+                if (str2 == null || str2.isEmpty()) { sp.edit().remove("k_" + str).apply(); return true; }
+                /* v2.11.10: si no se pudo cifrar NO se guarda un valor vacío; se avisa al JS (false) */
+                String enc = KiuCrypto.enc(str2);
+                if (enc == null || enc.isEmpty()) return false;
+                sp.edit().putString("k_" + str, enc).commit();
+                return true;
+            } catch (Throwable ignored) { return false; }
         }
 
         @JavascriptInterface
@@ -2458,7 +2463,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean kiuKeysHas(String str) {
             try {
-                return MainActivity.this.getSharedPreferences("kiu_keys", 0).contains("k_" + str);
+                /* v2.11.10: «hay clave» solo si se puede LEER (antes bastaba que existiera la entrada,
+                   aunque estuviera vacía o ilegible, y se mandaba «Bearer » sin clave) */
+                String e = MainActivity.this.getSharedPreferences("kiu_keys", 0).getString("k_" + str, null);
+                return KiuCrypto.readable(e);
             } catch (Throwable th) {
                 return false;
             }

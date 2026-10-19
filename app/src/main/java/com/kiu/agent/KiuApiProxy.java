@@ -211,7 +211,7 @@ public final class KiuApiProxy {
        v2.8.0: solo si `host` pertenece a ese proveedor. Provider_id sin lista propia
        (el personalizado del usuario) se inyecta, salvo que el host de destino sea de
        un proveedor conocido: en ese caso la clave se descarta. */
-    private static String injectKeys(Context ctx, String val, String host) {
+    private static String injectKeys(Context ctx, String val, String host) throws java.io.IOException {
         if (val == null || val.indexOf("{{key:") < 0) return val;
         String h = host == null ? "" : host.toLowerCase();
         Matcher m = KEY_PH.matcher(val);
@@ -219,7 +219,8 @@ public final class KiuApiProxy {
         while (m.find()) {
             String name = m.group(1);
             String key = "";
-            if (mayInject(name, h)) {
+            boolean may = mayInject(name, h);
+            if (may) {
                 try {
                     if (ctx != null) {
                         SharedPreferences sp = ctx.getSharedPreferences("kiu_keys", 0);
@@ -228,7 +229,16 @@ public final class KiuApiProxy {
                     }
                 } catch (Throwable ignored) { }
             }
-            m.appendReplacement(sb, Matcher.quoteReplacement(key == null ? "" : key));
+            /* v2.11.10 · antes una clave que no se podía leer (o un host que no es el del proveedor) se
+               reemplazaba por "" y salía «Authorization: Bearer » vacío: el proveedor respondía 401 y la
+               app decía «clave inválida» con una clave buena. Ahora se corta con el motivo real. */
+            if (key == null || key.isEmpty()) {
+                if (!may) {
+                    throw new java.io.IOException("La clave de «" + name + "» no se manda a " + host + ": esa dirección no es la del proveedor. Revisá la URL base.");
+                }
+                throw new java.io.IOException("No pude leer la clave de «" + name + "» en este teléfono. Volvé a pegarla en Modelos.");
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(key));
         }
         m.appendTail(sb);
         return sb.toString();

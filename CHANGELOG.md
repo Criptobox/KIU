@@ -2,6 +2,12 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.10] — Claves API: «ninguna clave funciona» (causa raíz)
+
+- **Causa raíz:** `KiuCrypto.dec()` llamaba a `cipher.init(12, …)`. Los modos válidos de `Cipher` son 1–4 (descifrar = 2); con 12 Java lanza `InvalidParameterException: Invalid operation mode`, el `catch` devolvía `""` y **toda clave guardada se leía como vacía**. El proxy mandaba entonces `Authorization: Bearer ` sin clave y cada proveedor respondía 401, con claves perfectamente buenas. Ahora usa `Cipher.DECRYPT_MODE` (2). Las claves ya guardadas (cifradas bien) vuelven a leerse sin volver a pegarlas.
+- **Nunca más en silencio:** `enc()` verifica que lo cifrado se pueda descifrar; si el Keystore falla (pasa en Xiaomi/HyperOS) cae a una clave AES local de la app (`S1:`) en vez de guardar vacío; `kiuKeysSet` devuelve false si no pudo guardar y la clave ya no se borra de la memoria; `kiuKeysHas` solo dice «hay clave» si se puede leer.
+- **Errores con motivo:** si una clave no se puede leer, o la URL base no es la del proveedor, el proxy corta con un mensaje claro en vez de mandar «Bearer » vacío y fingir «clave inválida».
+
 ## [2.11.9] — Modelos en la nube: lista automática y probador (+ NVIDIA)
 
 - **NVIDIA (NIM)** como proveedor: `https://integrate.api.nvidia.com/v1`, clave `nvapi-…` desde build.nvidia.com. Su host queda atado a su propia clave en el proxy.

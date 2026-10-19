@@ -29,7 +29,8 @@
     ok: !!(B && B.kiuKeysSet && B.kiuKeysGet && B.kiuKeysHas),
     has: function (n) { try { return !!B.kiuKeysHas(String(n)); } catch (e) { return false; } },
     get: function (n) { try { return B.kiuKeysGet(String(n)) || ''; } catch (e) { return ''; } },
-    set: function (n, v) { try { B.kiuKeysSet(String(n), String(v || '')); } catch (e) { } },
+    /* v2.11.10: devuelve false si el teléfono no pudo guardar la clave (antes se perdía en silencio) */
+    set: function (n, v) { try { var r = B.kiuKeysSet(String(n), String(v || '')); return r === undefined ? true : !!r; } catch (e) { return false; } },
     del: function (n) { try { B.kiuKeysDel(String(n)); } catch (e) { } },
     list: function () {
       try { var r = B.kiuKeysList(); return (typeof r === 'string') ? JSON.parse(r) : (r || {}); }

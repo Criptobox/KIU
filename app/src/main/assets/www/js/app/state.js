@@ -314,13 +314,21 @@
       return;
     }
     if (window.KiuVault && KiuVault.ok) {
-      try { KiuVault.set(pid, val); } catch (e7) { }
-      st.key = '';
+      var okV = false;
+      try { okV = KiuVault.set(pid, val) !== false; } catch (e7) { okV = false; }
+      if (okV) {
+        st.key = '';
+        st.last4 = val.slice(-4);
+        lastKeys[pid] = null;
+        keyOK = true;
+        saveS();
+        if (App && (App.current === 'models' || App.current === 'api')) App.renderProviders();
+        return;
+      }
+      /* v2.11.10: la bóveda no la pudo guardar: la clave NO se borra de la memoria (antes se perdía) */
       st.last4 = val.slice(-4);
-      lastKeys[pid] = null;
-      keyOK = true;
       saveS();
-      if (App && (App.current === 'models' || App.current === 'api')) App.renderProviders();
+      if (App && App.toast) App.toast('No pude guardarla en el almacén seguro; queda solo mientras Kiu esté abierto');
       return;
     }
     if (!Sec.ok) { st.last4 = val.slice(-4); saveS(); return; }

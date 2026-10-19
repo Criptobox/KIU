@@ -2,6 +2,10 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.7] — Voz: el micrófono se suelta de verdad al dar un comando
+
+- **«No te entendí [código 7]» / Kiu no escuchaba:** `WakeWordEngine.pause()` solo levantaba una bandera y su `AudioRecord` seguía grabando mientras el reconocedor de Google intentaba oír el comando. Con dos clientes de micrófono Android silencia al segundo, así que el reconocedor recibía silencio. Ahora `pause()` detiene la grabación al instante, el bucle la mantiene suelta mientras haya un comando en curso y la reabre al terminar.
+
 ## [2.11.6] — Voz: los errores del micrófono ya no se esconden
 
 - En manos libres (tras el saludo, con la palabra de activación o en conversación) los errores del reconocedor se descartaban en silencio. Ahora se muestra el motivo con su **código** (salvo 6 y 7, que son normales), como máximo un aviso cada 8 s. Los avisos con botón de micrófono también llevan el código.

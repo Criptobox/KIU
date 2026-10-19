@@ -237,8 +237,36 @@ public class WakeWordEngine {
 
             boolean limpio = true;
             while (running.get()) {
+                /* v2.11.6 · BUG REAL «código 7 / no me escucha»: pause() solo levantaba una bandera y este
+                   AudioRecord seguía GRABANDO mientras el reconocedor de Google intentaba oírte. Con dos
+                   clientes de micrófono, Android (10+ / HyperOS) silencia al segundo: el reconocedor recibía
+                   silencio y devolvía «no te entendí». Ahora, mientras hay un comando en curso, el micrófono
+                   se SUELTA de verdad (stop) y se vuelve a abrir al terminar. */
+                if (paused.get() || MainActivity.COMMAND_BUSY) {
+                    try { a.stop(); } catch (Throwable ignored) { }
+                    while (running.get() && (paused.get() || MainActivity.COMMAND_BUSY)) {
+                        if (!dormir(60L)) {
+                            return LECHO_PARADO;
+                        }
+                    }
+                    if (!running.get()) {
+                        return LECHO_PARADO;
+                    }
+                    try {
+                        a.startRecording();
+                    } catch (Throwable t) {
+                        err = "microfono: " + t;
+                        return LECHO_MIC_MUERTO;
+                    }
+                    reseteaRecon();
+                    limpio = true;
+                    continue;
+                }
                 int n = a.read(buf, 0, buf.length);
                 if (n <= 0) {
+                    if (paused.get() || MainActivity.COMMAND_BUSY) {
+                        continue; /* lo paró pause() desde otro hilo: lo atiende el bloque de arriba */
+                    }
                     if (n == AudioRecord.ERROR_INVALID_OPERATION || n == AudioRecord.ERROR_BAD_VALUE
                             || n == AudioRecord.ERROR_DEAD_OBJECT) {
                         /* El mic murió. NO se sigue leyendo: hay que liberar y
@@ -371,6 +399,14 @@ public class WakeWordEngine {
     /** Cede el micrófono mientras otro reconocedor (el del comando) está activo. */
     public void pause() {
         paused.set(true);
+        /* v2.11.6: soltar el micrófono YA, no esperar a que el bucle de lectura lo note */
+        try {
+            AudioRecord a = mic;
+            if (a != null) {
+                a.stop();
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public void resume() {

@@ -2,6 +2,16 @@
 
 Formato basado en Keep a Changelog. Fechas en 2026.
 
+## [2.11.13] — «Kiu» y «chao» en serio + compilación 4× más liviana
+
+**Voz**
+- **«Kiu» no activaba:** con el modelo Vosk instalado, `startWakeNow` pasaba SOLO al motor local, que depende de que «kiu» exista en el vocabulario del modelo y que además ignora todo mientras Kiu habla. Ahora el motor por defecto es el servicio de Google (el que entiende «Kiu» y variantes y puede interrumpir); Vosk queda de respaldo si Google no está.
+- **«Chao / cuelga» mientras habla no hacía nada:** la lista de palabras de parada no las tenía. Ahora «chau, chao, adiós, cuelga, colgar, cortar, termina, hasta luego, nos vemos, eso es todo» dichas solas callan a Kiu Y cuelgan la charla.
+- **Suspendido para siempre:** si tras un comando nadie llamaba a `resumeSoon()` (respuesta sin voz, dictado sin conexión, error), `SUSPENDED` quedaba en true y «Kiu» dejaba de oírse hasta reiniciar. Red de seguridad: a los 20 s sin comando ni voz en curso, se reanuda solo.
+
+**Compilación**
+- Antes: `assembleDebug assembleRelease` con `arm64-v8a` y `x86_64` → llama.cpp (C++) se compilaba **4 veces**; además se repetían los tests de Node y se corría lint y JUnit vacío. Ahora: solo `assembleRelease` con `-PkiuAbis=arm64-v8a` (1 compilación), cachés de Gradle / llama.cpp / CMake, y UN solo APK por versión (`Kiu-vX.Y.Z-release.apk`) en el Release. Los debug y x86_64 se pueden volver a pedir sacando la propiedad.
+
 ## [2.11.12] — Las seis mejoras: firma estable, salto de modelo, dictado sin Google, «chau», Estado y huella SHA-256
 
 1. **Firma estable del APK:** sin los secretos `KIU_KEYSTORE_*` cada build firmaba con una clave debug nueva y Android obligaba a desinstalar. El workflow ahora guarda y reutiliza `~/.android/debug.keystore` en la caché de Actions. (La solución definitiva sigue siendo cargar los secretos de firma.)

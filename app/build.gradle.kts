@@ -27,8 +27,8 @@ plugins {
    lugares donde poner un número aparece el que se queda viejo. Si alguno de los
    dos se desactualiza, el sello miente sobre el APK que estás por instalar —
    que es peor que no tener sello. Las dos cosas leen de acá. */
-val kiuVersionName = "2.11.12"
-val kiuVersionCode = 62
+val kiuVersionName = "2.11.13"
+val kiuVersionCode = 63
 
 val llamaDir = File(rootDir, "vendor/llama.cpp")
 val buildNative = llamaDir.exists()
@@ -55,7 +55,10 @@ android {
         if (buildNative) {
             ndk {
                 // x86_64 permite probar el motor en emulador
-                abiFilters += listOf("arm64-v8a", "x86_64")
+                // v2.11.13: el CI pasa -PkiuAbis=arm64-v8a (los celulares son arm64: x86_64 solo sirve para
+                // emulador y duplicaba la compilación de C++). Sin la propiedad, todo como antes.
+                val abis = (project.findProperty("kiuAbis") as String?)?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                abiFilters += (abis ?: listOf("arm64-v8a", "x86_64"))
             }
         } else if (prebuiltAbis.isNotEmpty()) {
             ndk {

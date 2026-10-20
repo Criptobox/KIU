@@ -57,6 +57,15 @@ jobs:
         env:
           KIU_SKIP_JDK: '1'
 
+      - name: Caché de llama.cpp y de la compilación nativa
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/llama.cpp
+            app/.cxx
+          key: native-${{ runner.os }}-${{ hashFiles('scripts/vendor_llama.sh', 'app/src/main/cpp/**', 'app/build.gradle.kts') }}
+          restore-keys: native-${{ runner.os }}-
+
       # Motor nativo: deja vendor/llama.cpp en el commit FIJADO de
       # scripts/vendor_llama.sh y Gradle lo compila con NDK + CMake inyectando
       # las .so en app/src/main/jniLibs/<ABI>.
@@ -135,33 +144,29 @@ jobs:
             echo "Si es la misma que en el build anterior, la app se actualiza sin desinstalar."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Tests Node (incluye el Java que se ejecuta de verdad)
-        shell: bash
-        run: |
-          # El runner de GitHub ya trae un JDK, así que tests/java.test.mjs
-          # EJECUTA Backoff en vez de solo leerlo con regex. Acá corre siempre.
-          java -version
-          node --test tests/*.test.mjs
+      # v2.11.13: aquí antes se repetían los tests de Node (ya corren en el job «tests», del que este
+      # depende) y se lanzaba testDebugUnitTest (sin fuentes en app/src/test: solo configuraba Gradle).
+      # Ambos eran minutos de CI sin aportar nada.
 
-      - name: Tests de la app (JUnit, si hay)
-        shell: bash
-        run: |
-          # v2.9.5: la capa Java no tenia NI UN test — 4.900 lineas sin cobertura, y
-          # ahi viven los tres bugs de audio que se reportaban. Todavia no hay
-          # fuentes en app/src/test, asi que esto es un no-op que pasa; queda el
-          # cableado listo para cuando se agreguen, y el CI no arranca el build
-          # de un APK con tests rojos.
-          ./gradlew :app:testDebugUnitTest --no-daemon --console=plain || {
-            echo "::error::Los tests de app/src/test fallaron: no se publica el APK"
-            exit 1
-          }
-
-      - name: Compilar (debug + release firmado)
+      # v2.11.13 · CACHÉS: Gradle, el clon de llama.cpp y la compilación nativa (CMake). Sin esto cada
+      # corrida bajaba y compilaba TODO desde cero.
+      - name: Caché de Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Compilar (solo release firmado, solo arm64)
         shell: bash
         run: |
           # Reintenta la descarga del wrapper de Gradle (fallo puntual de DNS en el runner)
           for i in 1 2 3; do ./gradlew --version --no-daemon && break || sleep 15; done
-          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          # v2.11.13: antes «assembleDebug assembleRelease» compilaba llama.cpp (C++) 4 veces: debug y
+          # release × arm64 y x86_64. Los celulares son arm64 (x86_64 es solo para emulador) y el APK de
+          # prueba no hace falta. Ahora 1 sola compilación nativa y UN solo APK por versión.
+          ./gradlew :app:assembleRelease -PkiuAbis=arm64-v8a --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
 
       # Si falla: saca el error REAL (compilador C++/Gradle) al resumen del run,
       # para no tener que buscarlo entre cientos de líneas de stack trace.
@@ -183,16 +188,6 @@ jobs:
           name: build-log
           path: build.log
           if-no-files-found: ignore
-
-      - name: Chequeo rápido de lint interno
-        run: ./gradlew :app:lintDebug --no-daemon || true
-
-      - name: Subir APK debug
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kiu-APK-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
 
       - name: Subir APK release
         uses: actions/upload-artifact@v4
@@ -219,21 +214,17 @@ jobs:
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
           echo "Versión: $v"
 
-      - name: Bajar APK debug
-        uses: actions/download-artifact@v4
-        with:
-          name: Kiu-APK-debug
-          path: dist
-
       - name: Bajar APK release
         uses: actions/download-artifact@v4
         with:
           name: Kiu-APK-release
           path: dist
 
-      - name: Huellas SHA-256 de los APK
+      - name: Huellas SHA-256 del APK
         run: |
           cd dist
+          # un solo APK por versión, con nombre claro (la app lo reconoce por «release» en el nombre)
+          mv ./*.apk "Kiu-${{ steps.ver.outputs.tag }}-release.apk"
           sha256sum *.apk | tee SHA256SUMS.txt
           { echo '### SHA-256'; echo '```'; cat SHA256SUMS.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 

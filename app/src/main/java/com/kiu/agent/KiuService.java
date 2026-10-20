@@ -192,8 +192,12 @@ public class KiuService extends Service {
         super.onTaskRemoved(intent);
     }
 
+    /* v2.11.13: desde cuándo está suspendido (ver la red de seguridad en cycle()) */
+    private static volatile long suspendedAt = 0L;
+
     public static void suspend() {
         SUSPENDED = true;
+        suspendedAt = SystemClock.elapsedRealtime();
         KiuService kiuService = SELF;
         if (kiuService != null) {
             kiuService.destroy();
@@ -216,6 +220,14 @@ public class KiuService extends Service {
     /* JADX INFO: Access modifiers changed from: private */
     public void cycle() {
         if (ACTIVE) {
+            /* v2.11.13 · BUG: si después de un comando NADIE llamaba a resumeSoon() (respuesta sin voz, voz
+               apagada, dictado sin conexión, error), SUSPENDED quedaba en true PARA SIEMPRE y «Kiu» dejaba
+               de oírse hasta reiniciar la app. Si lleva más de 20 s suspendido y no hay comando ni voz
+               en curso, se reanuda solo. */
+            if (SUSPENDED && !MainActivity.COMMAND_BUSY && !MainActivity.SPEAKING
+                    && SystemClock.elapsedRealtime() - suspendedAt > 20000L) {
+                SUSPENDED = false;
+            }
             if (SUSPENDED) {
                 schedule(700L);
                 return;
@@ -307,6 +319,8 @@ public class KiuService extends Service {
        suelto o con una palabra de parada dicha SOLA (el eco de la voz de Kiu llega como frases enteras,
        no como una palabra), y nunca si esa palabra está en lo que Kiu está diciendo ahora. */
     private static final Pattern STOP = Pattern.compile("^(para|basta|silencio|detente|callate|alto|stop|espera|ya basta|ya esta)$");
+    /* v2.11.13: despedidas: callan a Kiu Y cuelgan (antes «chao» / «cuelga» no estaban en la lista) */
+    private static final Pattern END = Pattern.compile("^(chau|chao|adios|cuelga|cuelgue|colgar|cuelgalo|cortar|corta|termina|terminar|terminemos|hasta luego|nos vemos|eso es todo|listo kiu|gracias kiu)( kiu| ya| por favor)?$");
 
     private boolean bargeIn(ArrayList<String> list) {
         if (!MainActivity.bargeInOn(this)) {
@@ -323,7 +337,14 @@ public class KiuService extends Service {
             if (m.find()) {
                 wakeOnly = n.substring(m.end()).trim().length() <= 2 && !WAKE.matcher(said).find();
             }
-            boolean stopWord = STOP.matcher(n).find() && !Pattern.compile("\\b" + Pattern.quote(n) + "\\b").matcher(said).find();
+            boolean inSaid = Pattern.compile("\\b" + Pattern.quote(n) + "\\b").matcher(said).find();
+            boolean stopWord = STOP.matcher(n).find() && !inSaid;
+            boolean endWord = END.matcher(n).find() && !inSaid;
+            if (endWord) {
+                beepWake();
+                MainActivity.endCallByVoice(getApplicationContext());
+                return true;
+            }
             if (wakeOnly || stopWord) {
                 beepWake();
                 MainActivity.interruptSpeech(getApplicationContext(), wakeOnly);

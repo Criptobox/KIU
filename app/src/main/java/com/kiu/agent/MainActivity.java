@@ -851,6 +851,15 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* v2.11.13: «chao», «cuelga»… dichos mientras Kiu habla: lo callan Y terminan la charla */
+    static void endCallByVoice(Context context) {
+        MainActivity m = inst;
+        interruptSpeech(context, false);
+        if (m != null) {
+            m.js("nexoEndCall()");
+        }
+    }
+
     static void interruptSpeech(Context context, boolean thenListen) {
         final MainActivity m = inst;
         if (m == null) {
@@ -919,7 +928,13 @@ public class MainActivity extends Activity {
                    nunca llamaba: el motor local era código muerto. Ahora que el modelo
                    esté en la carpeta alcanza, y se recuerda que ya se eligió local. */
                 SharedPreferences sp = MainActivity.this.getSharedPreferences("kiu_native", 0);
-                boolean wwLocal = sp.getBoolean("wwLocal", false) || WakeWordEngine.modelPresent(MainActivity.this);
+                /* v2.11.13 · EL MOTOR POR DEFECTO ES EL DE GOOGLE (servicio), no Vosk. Con el modelo Vosk
+                   instalado, Kiu pasaba SOLO al motor local, que (1) depende de que «kiu» exista en el
+                   vocabulario del modelo (no es una palabra del español), y (2) NO puede oír «chao» /
+                   «basta» mientras Kiu habla. Resultado: «Kiu» no activaba y no se lo podía cortar.
+                   Vosk queda como respaldo si Google no está, o si se elige a propósito (wwLocalPref). */
+                boolean googleOk = SpeechRecognizer.isRecognitionAvailable(MainActivity.this);
+                boolean wwLocal = sp.getBoolean("wwLocalPref", false) || !googleOk;
                 if (wwLocal && WakeWordEngine.modelPresent(MainActivity.this)) {
                     boolean ok = WakeWordEngine.get().start(MainActivity.this);
                     MainActivity.this.getSharedPreferences("kiu_native", 0)
@@ -945,6 +960,8 @@ public class MainActivity extends Activity {
                     return;
                 }
                 try {
+                    try { WakeWordEngine.get().stop(); } catch (Throwable ignored) { } /* un solo micrófono */
+                    sp.edit().putBoolean("wwLocal", false).apply();
                     Intent intent = new Intent(MainActivity.this, (Class<?>) KiuService.class);
                     if (Build.VERSION.SDK_INT >= 26) {
                         MainActivity.this.startForegroundService(intent);

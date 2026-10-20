@@ -150,6 +150,8 @@
          calculaba la duración por el largo del texto (Math.min(45000, 3500 + len*70))
          y el bot cortaba o se Pasaba. Ahora manda el evento. */
       window.nexoTtsStart = function () { clearTimeout(App._avT); stSet('voz', 'Hablando'); };
+      /* v2.11.13: «chao» / «cuelga» dichos mientras Kiu habla (los detecta el servicio) */
+      window.nexoEndCall = function () { try { App.endCall(); } catch (e) { } };
       window.nexoTtsDone = function () {
         clearTimeout(App._avT);
         var kk = KS(); if (kk && kk.layer('voz') === 'Hablando') kk.clear('voz');
@@ -441,7 +443,7 @@
       L.push('Reconocedor en uso: ' + (J.rec || 'todavía no se usó'));
       L.push('Último error de voz: ' + (J.errCode ? 'código ' + J.errCode + ' (' + self.vozErrTexto(J.errCode).slice(0, 70) + ') · ' + ago(J.errAgo) : 'ninguno'));
       L.push('Voz que habla: ' + (J.ttsVoice || 'todavía no se eligió') + (J.ttsErrAgo >= 0 ? ' · último fallo ' + ago(J.ttsErrAgo) : ''));
-      L.push(ok(J.wakeSvc || J.voskRun) + ' Despertar por voz («Kiu») ' + ((J.wakeSvc || J.voskRun) ? 'activo' : 'apagado'));
+      L.push(ok(J.wakeSvc || J.voskRun) + ' Despertar por voz («Kiu») ' + (J.wakeSvc ? 'activo · motor de Google' : J.voskRun ? 'activo · motor local Vosk (no puede oír «chao» mientras habla)' : 'apagado'));
       L.push((J.voskModel ? '✅' : '➖') + ' Modelo de voz sin conexión ' + (J.voskModel ? 'instalado' : 'no instalado') + (J.offline ? ' · ' + J.offline : ''));
       L.push(ok(J.bargeIn) + ' Poder interrumpir a Kiu');
       L.push('— CLAVES Y RED —');

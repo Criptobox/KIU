@@ -7,8 +7,8 @@ const gradle = fs.readFileSync('app/build.gradle.kts', 'utf8');
 const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 
 test('versión Android se incrementa para esta actualización', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.11\.20"/);
-  assert.match(gradle, /val kiuVersionCode = 70/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.21"/);
+  assert.match(gradle, /val kiuVersionCode = 71/);
 });
 
 test('modelo local se libera tras diez minutos de inactividad', () => {
@@ -24,6 +24,6 @@ test('la siguiente generación puede recargar el último modelo', () => {
 });
 
 test('changelog documenta versión y limitación de APK no compilada', () => {
-  assert.match(changelog, /## \[2\.11\.20\]/);
+  assert.match(changelog, /## \[2\.11\.21\]/);
   assert.match(changelog, /No se incluye una APK compilada/);
 });

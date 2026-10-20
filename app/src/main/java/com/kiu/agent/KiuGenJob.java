@@ -20,7 +20,9 @@ public class KiuGenJob implements Runnable {
     public static int a2;
     public static float a3;
     public static int a4;
-    public static boolean busy;
+    /* v2.11.21: leído/escrito desde el hilo WebView y el worker nativo. Sin volatile,
+       la UI podía ver busy=true obsoleto y rechazar todas las preguntas como "motor ocupado". */
+    public static volatile boolean busy;
     public static int jt;
 
     public static String esc(String str) {

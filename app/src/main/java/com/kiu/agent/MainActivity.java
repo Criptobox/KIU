@@ -1360,16 +1360,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean kiuGen(String str, int i, float f) {
             try {
-                if (KiuGenJob.busy) {
-                    return false;
+                /* v2.11.21: la comprobación y la reserva deben ser atómicas si
+                   llegan a la vez una pregunta de chat y una solicitud del agente. */
+                synchronized (KiuGenJob.class) {
+                    if (KiuGenJob.busy) return false;
+                    KiuGenJob.busy = true;
+                    KiuGenJob.jt = 2;
+                    KiuGenJob.a1 = str;
+                    KiuGenJob.a2 = i;
+                    KiuGenJob.a3 = f;
+                    new Thread(new KiuGenJob(), "kiu-generate").start();
+                    return true;
                 }
-                KiuGenJob.busy = true;
-                KiuGenJob.jt = 2;
-                KiuGenJob.a1 = str;
-                KiuGenJob.a2 = i;
-                KiuGenJob.a3 = f;
-                new Thread(new KiuGenJob()).start();
-                return true;
             } catch (Throwable th) {
                 KiuGenJob.busy = false;
                 return false;

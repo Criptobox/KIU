@@ -317,10 +317,10 @@
         genTemp = 0;
         try { rawBridge('kiuGenSetGrammar', [String(gbnf)]); } catch (eG) { }
       }
-      /* v2.1.1: si el job nativo anterior murió mal, KiuGenJob.busy quedaba pegado,
-         kiuGen devolvía false y fallábamos AL INSTANTE con "motor ocupado" para
-         siempre (el lado nativo jamás se recuperaba solo). Ahora: stop + reset
-         del busy + reintento hasta 4 veces cada 900 ms. */
+      /* v2.11.21: no interrumpir una generación real para intentar iniciar otra.
+         KiuGenJob.busy ahora es volatile (la UI y el worker comparten el estado).
+         Si el puente todavía rechaza el inicio, esperamos hasta 8 intentos; no
+         llamamos stop/reset a ciegas porque eso podía cortar el modelo anterior. */
       var attempt = 0;
       var startGen = function () {
         if (!self.pending || self.pending.op !== 'gen') return;
@@ -328,17 +328,15 @@
         try { launched = rawBridge('kiuGen', [genPrompt, genMaxT, genTemp]); } catch (eG) { launched = false; }
         if (launched) { afterGen(); return; }
         attempt++;
-        if (attempt <= 4) {
-          try { rawBridge('kiuGenStop'); } catch (e1) { }
-          try { rawBridge('kiuResetBusy'); } catch (e2) { }
-          setTimeout(startGen, 900);
+        if (attempt <= 8) {
+          setTimeout(startGen, 700);
           return;
         }
         self.busyG = false;
         self.pending = null;
         if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
         jobErr('Error', 2600);
-        cb({ ok: false, err: 'motor ocupado' });
+        cb({ ok: false, err: 'el motor sigue ocupado; no interrumpí la tarea anterior. Esperá unos segundos y reintentá' });
       };
       var afterGen = function () {
       /* v1.9.0: STREAMING — consulta el buffer nativo cada 130 ms y va pintando

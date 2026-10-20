@@ -1,3 +1,11 @@
+## [2.11.21] — reparación del estado «motor ocupado»
+
+- Corrige la visibilidad entre hilos de `KiuGenJob.busy`: ahora es `volatile`, para que la WebView no lea un valor obsoleto después de terminar una generación local.
+- El puente JS ya no llama `stopGen()`/`resetBusy()` en cada reintento fallido de arranque, evitando interrumpir a ciegas una generación que todavía está activa.
+- Amplía la ventana de reintento y devuelve un mensaje explícito si el puente sigue ocupado, en lugar de ocultar la causa tras el genérico «motor ocupado».
+- Versión Android: `versionName 2.11.21`, `versionCode 71`.
+- Pendiente: compilar el APK y probar la generación real en dispositivo; las pruebas estructurales no sustituyen esa comprobación.
+
 ## [2.11.20] — embeddings neuronales experimentales desde el modelo local
 
 - Añade `KiuNative.embedText()` en JNI: obtiene los estados ocultos tokenizados del modelo GGUF ya cargado, aplica pooling medio y normalización L2, con límite de 96 tokens por entrada.

@@ -21,6 +21,9 @@ public class KiuNative {
 
     public static native String genStatus();
 
+    /** v2.11.20: vector neuronal del modelo local cargado (pooling medio normalizado). */
+    public static native float[] embedText(String text);
+
     public static native String generate(String str, int i, float f);
 
     public static native boolean isLoaded();

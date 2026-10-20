@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const motor = fs.readFileSync('app/src/main/assets/www/js/app/motor.js', 'utf8');
+const ui = fs.readFileSync('app/src/main/assets/www/js/app/app-ui.js', 'utf8');
+const gradle = fs.readFileSync('app/build.gradle.kts', 'utf8');
+const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+
+test('KIU incrementa versión visible y código Android', () => {
+  assert.match(gradle, /val kiuVersionName = "2\.11\.20"/);
+  assert.match(gradle, /val kiuVersionCode = 70/);
+  assert.match(changelog, /## \[2\.11\.20\]/);
+});
+
+test('resumen se identifica por contenido y limita la caché', () => {
+  assert.match(motor, /_key: function \(msgs\)/);
+  assert.match(motor, /maxCache: 40/);
+  assert.match(motor, /store\('nexo_comp_v2', this\.cache\)/);
+});
+
+test('el resumen no elimina historial si todavía no está listo', () => {
+  assert.match(motor, /if \(!sum\) \{ this\.summarize\(old, key\); return msgs; \}/);
+});
+
+test('el prompt local conserva el resumen junto con mensajes recientes', () => {
+  assert.match(ui, /h\[0\]\._kiuSummary/);
+  assert.match(ui, /rec = \[h\[0\]\]\.concat\(h\.slice\(-4\)\)/);
+});

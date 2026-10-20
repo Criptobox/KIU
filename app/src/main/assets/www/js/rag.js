@@ -200,7 +200,7 @@
     hits: function (q, k) {
       try {
         if (!this.on || !this.docs.length || !CORE || !this._N) return [];
-        var top = CORE.score(q, this._rows, this._df, this._N, this._len, k || 3);
+        var top = (CORE.scoreHybrid || CORE.score)(q, this._rows, this._df, this._N, this._len, k || 3);
         if (!top.length) return [];
         var byKey = {};
         for (var i = 0; i < this._rows.length; i++) byKey[this._rows[i].key] = this._rows[i];
@@ -221,6 +221,25 @@
      * se cuelga: 2 s y contesta con el índice local. */
     searchAsync: function (q, k, cb) {
       var self = this;
+      // Si hay un proveedor de embeddings locales real instalado, se usa para
+      // reranking semántico. Sin modelo/proveedor, se conserva exactamente la
+      // ruta híbrida anterior (sin red ni dependencia adicional).
+      var localEmb = (typeof window !== 'undefined' && window.KiuLocalEmbeddings) || null;
+      if (localEmb && localEmb.isReady && localEmb.isReady() && typeof Promise !== 'undefined') {
+        localEmb.rank(q, this._rows, CORE, k || 3).then(function (hits) {
+          var byKey = {};
+          for (var i = 0; i < self._rows.length; i++) byKey[self._rows[i].key] = self._rows[i];
+          var out = [];
+          for (var j = 0; j < hits.length; j++) {
+            var row = byKey[hits[j].key];
+            if (!row) continue;
+            var doc = self.docById(row.doc);
+            if (doc) out.push('[' + doc.name + ' · parte ' + (row.ci + 1) + ']\n' + row.text.slice(0, 420));
+          }
+          cb(out.length ? out.join('\n\n---\n\n') : self.search(q, k));
+        }).catch(function () { cb(self.search(q, k)); });
+        return;
+      }
       if (!this._wk || this._wkDead) { cb(this.search(q, k)); return; }
       var done = false;
       var finish = function (v) { if (!done) { done = true; cb(v); } };

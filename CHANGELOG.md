@@ -1,4 +1,61 @@
+## [2.11.20] — embeddings neuronales experimentales desde el modelo local
+
+- Añade `KiuNative.embedText()` en JNI: obtiene los estados ocultos tokenizados del modelo GGUF ya cargado, aplica pooling medio y normalización L2, con límite de 96 tokens por entrada.
+- Expone el vector a la capa WebView mediante `KiuBridge.embedLocalText()` y conecta el proveedor nativo al adaptador RAG, sin tráfico de red ni segundo modelo cargado en memoria.
+- El reranking neuronal se limita a los 24 mejores candidatos BM25 para evitar ejecutar inferencia sobre todos los documentos en la primera búsqueda.
+- El contexto KV compartido se limpia antes y después de extraer el vector para no contaminar la siguiente generación.
+- **Límite importante:** estos son embeddings derivados de estados ocultos de un modelo de chat, no un modelo de embeddings entrenado específicamente para recuperación. La calidad semántica es experimental y requiere medirla con un corpus real; si el motor local no está cargado o falla, se usa el RAG híbrido anterior.
+- Versión Android: `versionName 2.11.20`, `versionCode 70`.
+- Pruebas estructurales y JavaScript: 380 aprobadas. La compilación Android y la ejecución nativa real siguen pendientes porque este entorno no dispone del vendor llama.cpp/SDK de Android completo.
+
+## [2.11.19] — base de integración para embeddings locales
+
+- Añade un adaptador de embeddings locales con validación de vectores, similitud coseno, caché temporal por fila y fusión RRF con BM25.
+- El RAG utiliza el adaptador únicamente cuando hay un proveedor real registrado; ante ausencia o error, vuelve a la búsqueda híbrida existente.
+- **Límite explícito:** esta versión no incluye todavía el modelo neuronal ni el runtime de inferencia. No se presenta como embeddings neuronales activos; deja lista la interfaz y las pruebas para integrarlos sin romper la búsqueda actual.
+- Versión Android: `versionName 2.11.19`, `versionCode 69`.
+- Pruebas automatizadas del proyecto: verificación pendiente de cierre antes de empaquetar; la compilación Android y prueba física requieren SDK/dependencias y dispositivo.
+
+## [2.11.18] — caché vectorial RAG y consultas repetidas más ligeras
+
+- Reutiliza en memoria los vectores semánticos de las filas ya indexadas mediante `WeakMap`.
+- Evita recalcular los vectores de cada fragmento en cada consulta; no añade campos al índice persistido.
+- Versión Android: `versionName 2.11.18`, `versionCode 68`.
+- Limitación: aún no incorpora embeddings neuronales reales ni se ha validado en un dispositivo Android.
+
+## [2.11.17] — recuperación RAG híbrida local
+
+- Se combina BM25 con una similitud vectorial dispersa de bajo coste y grupos de sinónimos frecuentes; RRF fusiona ambos rankings.
+- La búsqueda sigue funcionando sin red, sin API y sin descargar un modelo adicional. Esta técnica es una aproximación semántica ligera, no embeddings neuronales.
+- Se conserva la búsqueda BM25 original como respaldo compatible.
+- Se incrementan `versionName` a `2.11.17` y `versionCode` a `67`.
+
+## [2.11.16] — recuperación RAG consciente de encabezados
+
+**RAG local**
+- La fragmentación reconoce encabezados Markdown y conserva el tema de la sección dentro de sus fragmentos, de modo que una búsqueda por el título pueda recuperar el texto asociado aunque el cuerpo no repita esas palabras.
+- Los fragmentos largos intentan cortar en límites de frase antes de usar un corte fijo, conservando solapamiento para reducir pérdida de contexto.
+- El índice sigue siendo local y mantiene el formato de almacenamiento existente; no se añaden APIs de embeddings ni tráfico externo.
+- Se incrementan `versionName` a `2.11.16` y `versionCode` a `66`.
+
+**Verificación y límites**
+- Las pruebas automatizadas verifican fragmentación temática, ranking, versión y regresiones del RAG. No sustituyen la compilación Android ni una prueba en dispositivo.
+- No se incluye una APK compilada en este paquete; es el código fuente actualizado.
+
 # Changelog
+
+## [2.11.15] — memoria de conversación más fiable
+
+**Memoria y contexto**
+- El resumen histórico usa una huella del contenido y el rol de cada mensaje, evitando reutilizar resúmenes por coincidencias de cantidad/fecha.
+- Si todavía no existe un resumen, conserva el historial original mientras se genera; si la generación falla o el motor está ocupado, no descarta silenciosamente los mensajes antiguos.
+- El prompt del motor local incluye el resumen junto con los cuatro mensajes recientes; antes el recorte podía dejar fuera el resumen.
+- La memoria se limita a 40 resúmenes y cada resumen recoge hechos, preferencias, decisiones y pendientes, tratando el historial como contenido no confiable.
+- Se incrementan `versionName` a `2.11.15` y `versionCode` a `65`.
+
+**Verificación y límites**
+- Las pruebas automatizadas verifican la lógica de resumen y la numeración de versión. No sustituyen la compilación Android ni la prueba en dispositivo.
+- No se incluye una APK compilada en este paquete; es el código fuente actualizado.
 
 ## [2.11.14] — liberación automática de RAM del modelo local
 

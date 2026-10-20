@@ -1310,6 +1310,31 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** v2.11.20: devuelve embedding del modelo local como JSON; nunca usa red. */
+        @JavascriptInterface
+        public String embedLocalText(String text) {
+            try {
+                float[] vector = KiuNative.embedText(text == null ? "" : text);
+                if (vector == null || vector.length == 0) return "";
+                StringBuilder json = new StringBuilder(vector.length * 10 + 2);
+                json.append('[');
+                for (int i = 0; i < vector.length; i++) {
+                    if (i > 0) json.append(',');
+                    if (Float.isNaN(vector[i]) || Float.isInfinite(vector[i])) return "";
+                    json.append(Float.toString(vector[i]));
+                }
+                json.append(']');
+                return json.toString();
+            } catch (Throwable t) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public boolean kiuLoaded() {
+            try { return KiuNative.isLoaded(); } catch (Throwable t) { return false; }
+        }
+
         @JavascriptInterface
         public boolean kiuAvailable() {
             try {

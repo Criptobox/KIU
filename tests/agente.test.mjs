@@ -697,7 +697,8 @@ test('la gramática se CONSUME: no queda pegada a la generación siguiente', () 
 
 test('la gramática va al FINAL de la cadena de samplers', () => {
   const cpp = readFileSync(path.join(here, '..', 'app', 'src', 'main', 'cpp', 'kiullama_jni.cpp'), 'utf8');
-  const bloque = cpp.slice(cpp.indexOf('// sampler: greedy'), cpp.indexOf('llama_batch_ext_init(g_ctx)'));
+  const start = cpp.indexOf('// sampler: greedy');
+  const bloque = cpp.slice(start, cpp.indexOf('llama_batch_ext_init(g_ctx)', start));
   const iUltimo = bloque.lastIndexOf('llama_sampler_chain_add(smpl, gs)');
   assert.ok(iUltimo > -1, 'no agrega el sampler de gramática a la cadena');
   const iAnteriores = bloque.lastIndexOf('llama_sampler_chain_add(smpl, llama_sampler_init_dist');

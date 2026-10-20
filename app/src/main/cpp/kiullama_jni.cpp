@@ -269,6 +269,9 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
     cp.n_threads = th;
     cp.n_threads_batch = th;
     cp.no_perf = false;
+    // v2.11.20: conservar salidas de embeddings para extraer vectores del
+    // modelo local ya cargado, sin cargar un segundo modelo en RAM.
+    cp.embeddings = true;
     // v2.11: cache KV cuantizada Q8_0 reduce aproximadamente a la mitad la
     // memoria del contexto. Si esta combinación de backend/modelo no se admite,
     // reintentamos con FP16 para conservar compatibilidad.
@@ -299,6 +302,64 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
     g_load_pct = 100;
     set_err("");
     return JNI_TRUE;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_kiu_agent_KiuNative_embedText(JNIEnv* env, jclass, jstring text) {
+    std::string input = j2s(env, text);
+    if (input.empty()) return nullptr;
+    std::lock_guard<std::mutex> lk(g_mtx);
+    if (g_model == nullptr || g_ctx == nullptr || g_running.load()) return nullptr;
+
+    const llama_vocab* vocab = llama_model_get_vocab(g_model);
+    int32_t n_tokens = -llama_tokenize(vocab, input.c_str(), (int32_t)input.size(), nullptr, 0, true, true);
+    if (n_tokens <= 0) return nullptr;
+    std::vector<llama_token> tokens((size_t)n_tokens);
+    int32_t got = llama_tokenize(vocab, input.c_str(), (int32_t)input.size(), tokens.data(), n_tokens, true, true);
+    if (got <= 0) return nullptr;
+    n_tokens = got;
+    // Limitar coste por documento/consulta en móviles: solo los primeros 96 tokens.
+    if (n_tokens > 96) { n_tokens = 96; tokens.resize(96); }
+
+    llama_batch_ext* batch = llama_batch_ext_init(g_ctx);
+    if (!batch) return nullptr;
+    llama_batch_ext_clear(batch);
+    for (int32_t i = 0; i < n_tokens; ++i) {
+        int32_t idx = llama_batch_ext_add_token(batch, 0, tokens[(size_t)i]);
+        llama_pos pos = i;
+        llama_batch_ext_set_pos(batch, idx, &pos);
+        llama_batch_ext_set_output_logits(batch, idx, true);
+    }
+    // El contexto es compartido con generación: limpiamos antes y después para
+    // que la consulta de embeddings no contamine el historial de generación.
+    llama_memory_clear(llama_get_memory(g_ctx), true);
+    int rc = llama_process(g_ctx, LLAMA_PROCESS_TYPE_DECODE, batch);
+    int n_embd = llama_model_n_embd(g_model);
+    std::vector<float> pooled((size_t)n_embd, 0.0f);
+    bool valid = rc == 0 && n_embd > 0;
+    if (valid) {
+        int used = 0;
+        for (int32_t i = 0; i < n_tokens; ++i) {
+            const float* emb = llama_get_embeddings_ith(g_ctx, i);
+            if (!emb) continue;
+            for (int j = 0; j < n_embd; ++j) pooled[(size_t)j] += emb[j];
+            ++used;
+        }
+        valid = used > 0;
+        if (valid) {
+            double norm = 0.0;
+            for (int j = 0; j < n_embd; ++j) { pooled[(size_t)j] /= (float)used; norm += (double)pooled[(size_t)j] * pooled[(size_t)j]; }
+            norm = std::sqrt(norm);
+            if (norm > 1e-12) for (int j = 0; j < n_embd; ++j) pooled[(size_t)j] /= (float)norm;
+            else valid = false;
+        }
+    }
+    llama_memory_clear(llama_get_memory(g_ctx), true);
+    llama_batch_ext_free(batch);
+    if (!valid) return nullptr;
+    jfloatArray result = env->NewFloatArray(n_embd);
+    if (result) env->SetFloatArrayRegion(result, 0, n_embd, pooled.data());
+    return result;
 }
 
 JNIEXPORT jstring JNICALL

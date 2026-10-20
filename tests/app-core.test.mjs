@@ -295,14 +295,33 @@ test('motor: kiuPush (streaming) filtra <think> y solo avanza con cambios', () =
   sb.Kiu.pending = null; sb.Kiu.busyG = false;
 });
 
-test('motor: Comp.apply solo comprime historiales largos', () => {
+test('motor: Comp conserva el historial si aún no existe resumen', () => {
   const sb = boot();
   const corto = [{ role: 'user', text: 'hola' }, { role: 'bot', text: 'chau' }];
   assert.equal(sb.Comp.apply(corto), corto, 'historial corto intacto');
   const largo = [];
   for (let i = 0; i < 40; i++) largo.push({ role: i % 2 ? 'bot' : 'user', text: 'mensaje numero ' + i + ' con bastante texto para superar con comodidad el limite de compresion del contexto del motor local de kiu.' });
   const out = sb.Comp.apply(largo);
-  assert.ok(out.length <= 6, 'comprime a los últimos 6 (sin resumen aún): ' + out.length);
+  assert.equal(out.length, largo.length, 'no pierde mensajes mientras el resumen se genera');
+});
+
+test('motor: Comp aplica resumen cacheado y conserva seis mensajes recientes', () => {
+  const sb = boot();
+  const largo = [];
+  for (let i = 0; i < 40; i++) largo.push({ role: i % 2 ? 'bot' : 'user', text: 'mensaje numero ' + i + ' con bastante texto para superar con comodidad el limite de compresion del contexto local.' });
+  const old = largo.slice(0, -sb.Comp.keep);
+  const key = sb.Comp._key(old);
+  sb.Comp.cache[key] = 'El usuario prefiere respuestas en español.';
+  const out = sb.Comp.apply(largo);
+  assert.equal(out.length, 7, 'resumen más seis mensajes');
+  assert.equal(out[0]._kiuSummary, true);
+  assert.match(out[0].text, /respuestas en español/);
+  assert.equal(out[1].text, largo[largo.length - 6].text);
+});
+
+test('motor: la clave de resumen cambia si cambia el contenido histórico', () => {
+  const sb = boot();
+  assert.notEqual(sb.Comp._key([{ role: 'user', text: 'A' }]), sb.Comp._key([{ role: 'user', text: 'B' }]));
 });
 
 /* ---------- v2.7.4: inyeccion de tokens especiales ---------- */

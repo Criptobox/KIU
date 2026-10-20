@@ -44,22 +44,61 @@
     return out;
   }
 
-  /* ---------- texto → fragmentos (igual que v1) ---------- */
+  /* ---------- texto → fragmentos semánticos ---------- */
   function chunk(text) {
     var t = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-    if (t.length < 12) return []; /* v2.7.4: antes 40: una nota corta se descartaba */
-    var parts = [];
-    var paras = t.split(/\n\n+/);
-    var buf = '';
-    for (var i = 0; i < paras.length; i++) {
-      if ((buf + '\n\n' + paras[i]).length > CHUNK && buf) { parts.push(buf); buf = paras[i]; }
-      else buf = buf ? (buf + '\n\n' + paras[i]) : paras[i];
-      while (buf.length > CHUNK * 1.8) {
-        parts.push(buf.slice(0, CHUNK));
-        buf = buf.slice(CHUNK - OVER);
+    if (t.length < 12) return [];
+    var lines = t.split('\n'), sections = [], heading = '', body = [];
+    function flushBody() {
+      var joined = body.join('\n').trim();
+      if (joined) sections.push({ heading: heading, text: joined });
+      body = [];
+    }
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li].trim();
+      var hm = line.match(/^#{1,6}\s+(.+)$/);
+      if (hm) {
+        flushBody();
+        heading = hm[1].replace(/\s+#+\s*$/, '').trim();
+      } else {
+        body.push(line);
       }
     }
-    if (buf.trim()) parts.push(buf);
+    flushBody();
+    if (!sections.length) sections.push({ heading: '', text: t });
+
+    var parts = [];
+    function addLong(section) {
+      var prefix = section.heading ? section.heading + '\n' : '';
+      var remaining = section.text;
+      while (remaining.length > CHUNK * 1.8) {
+        var cut = remaining.lastIndexOf('. ', CHUNK);
+        if (cut < CHUNK * 0.55) cut = remaining.lastIndexOf('! ', CHUNK);
+        if (cut < CHUNK * 0.55) cut = remaining.lastIndexOf('? ', CHUNK);
+        if (cut < CHUNK * 0.55) cut = CHUNK;
+        else cut += 1;
+        var piece = remaining.slice(0, cut).trim();
+        if (piece) parts.push((prefix + piece).trim());
+        remaining = remaining.slice(Math.max(0, cut - OVER)).trim();
+      }
+      if (remaining) parts.push((prefix + remaining).trim());
+    }
+    var buf = '', bufHeading = '';
+    for (var i = 0; i < sections.length; i++) {
+      var sec = sections[i];
+      var addition = (sec.heading ? sec.heading + '\n' : '') + sec.text;
+      if (buf && (sec.heading !== bufHeading || (buf + '\n\n' + addition).length > CHUNK)) {
+        parts.push(buf.trim()); buf = ''; bufHeading = '';
+      }
+      if (sec.text.length > CHUNK * 1.8) {
+        if (buf) { parts.push(buf.trim()); buf = ''; bufHeading = ''; }
+        addLong(sec);
+      } else {
+        buf = buf ? buf + '\n\n' + addition : addition;
+        bufHeading = sec.heading;
+      }
+    }
+    if (buf.trim()) parts.push(buf.trim());
     return parts.slice(0, MAXC);
   }
 
@@ -110,8 +149,99 @@
     return out.slice(0, k || 3);
   }
 
+  /* ---------- recuperación híbrida local: BM25 + similitud vectorial ligera ----------
+   * No descarga modelos ni llama a APIs. Agrupa sinónimos frecuentes en conceptos
+   * compartidos y calcula coseno sobre vectores dispersos; RRF combina los rankings.
+   * Es una aproximación semántica compacta, no un modelo neuronal de embeddings. */
+  var CONCEPTS = [
+    'comprar adquirir comprar pedido compra',
+    'borrar eliminar quitar suprimir',
+    'error fallo problema averia defecto',
+    'rapido velocidad rendimiento optimizar acelerar',
+    'memoria ram contexto cache almacenamiento',
+    'instalar configurar preparar setup',
+    'buscar encontrar recuperar localizar',
+    'documento archivo fichero nota texto',
+    'crear generar construir desarrollar',
+    'voz audio hablar escuchar sonido',
+    'modelo ia inteligencia artificial asistente',
+    'seguridad proteger permiso privacidad',
+    'actualizar version mejora upgrade',
+    'lento demora tardanza',
+    'guardar conservar persistir salvar'
+  ];
+  var CONCEPT_OF = {};
+  for (var ci = 0; ci < CONCEPTS.length; ci++) {
+    var cw = CONCEPTS[ci].split(' ');
+    for (var cj = 0; cj < cw.length; cj++) CONCEPT_OF[cw[cj]] = 'concept_' + ci;
+  }
+  function vectorize(tf) {
+    var v = {}, norm2 = 0;
+    for (var w in tf) if (Object.prototype.hasOwnProperty.call(tf, w)) {
+      var weight = Math.sqrt(Math.max(0, tf[w] || 0));
+      if (!weight) continue;
+      v['t:' + w] = (v['t:' + w] || 0) + weight;
+      var concept = CONCEPT_OF[w];
+      if (concept) v['c:' + concept] = (v['c:' + concept] || 0) + weight * 0.65;
+    }
+    for (var key in v) if (Object.prototype.hasOwnProperty.call(v, key)) norm2 += v[key] * v[key];
+    return { v: v, norm: Math.sqrt(norm2) || 1 };
+  }
+  // La representación vectorial de cada fila no cambia entre consultas.
+  // WeakMap la mantiene en memoria sin añadir campos al índice persistido.
+  // Así evitamos recalcular todos los vectores en cada búsqueda y el caché
+  // se libera automáticamente cuando se reemplazan/descartan filas.
+  var ROW_VECTOR_CACHE = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var vectorCacheHits = 0, vectorCacheMisses = 0;
+  function vectorForRow(row) {
+    if (ROW_VECTOR_CACHE && ROW_VECTOR_CACHE.has(row)) {
+      vectorCacheHits++;
+      return ROW_VECTOR_CACHE.get(row);
+    }
+    vectorCacheMisses++;
+    var v = vectorize(row.tf || {});
+    if (ROW_VECTOR_CACHE) ROW_VECTOR_CACHE.set(row, v);
+    return v;
+  }
+  function semanticScore(q, rows) {
+    var qTokens = tok(q), qtf = {};
+    for (var i = 0; i < qTokens.length; i++) qtf[qTokens[i]] = (qtf[qTokens[i]] || 0) + 1;
+    var qv = vectorize(qtf), out = [];
+    if (!qTokens.length) return out;
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r], rv = vectorForRow(row), dot = 0;
+      for (var key in qv.v) if (Object.prototype.hasOwnProperty.call(qv.v, key) && rv.v[key]) dot += qv.v[key] * rv.v[key];
+      var sim = dot / (qv.norm * rv.norm);
+      if (sim > 0) out.push({ key: row.key, s: sim });
+    }
+    out.sort(function (a, b) { return b.s - a.s; });
+    return out;
+  }
+  function getVectorCacheStats() {
+    return { hits: vectorCacheHits, misses: vectorCacheMisses, enabled: !!ROW_VECTOR_CACHE };
+  }
+  function scoreHybrid(q, rows, df, N, lenSum, k) {
+    var lexical = score(q, rows, df, N, lenSum, rows.length || 1);
+    var semantic = semanticScore(q, rows);
+    var rank = {}, scores = {}, i;
+    for (i = 0; i < lexical.length; i++) {
+      rank[lexical[i].key] = (rank[lexical[i].key] || 0) + 1 / (60 + i + 1);
+      scores[lexical[i].key] = lexical[i].s;
+    }
+    for (i = 0; i < semantic.length; i++) {
+      rank[semantic[i].key] = (rank[semantic[i].key] || 0) + 1 / (60 + i + 1);
+      if (scores[semantic[i].key] === undefined) scores[semantic[i].key] = semantic[i].s;
+    }
+    var out = [];
+    for (var key in rank) if (Object.prototype.hasOwnProperty.call(rank, key)) out.push({ key: key, s: rank[key], raw: scores[key] });
+    out.sort(function (a, b) { return b.s - a.s; });
+    return out.slice(0, k || 3);
+  }
+
   var api = {
     tok: tok, chunk: chunk, mkRows: mkRows, dfOf: dfOf, score: score,
+    semanticScore: semanticScore, scoreHybrid: scoreHybrid,
+    getVectorCacheStats: getVectorCacheStats,
     CHUNK: CHUNK, OVER: OVER, MAXC: MAXC, K1: K1, B: B
   };
 
@@ -157,7 +287,7 @@
           for (var b = 0; b < rows.length; b++) bytes += rows[b].text.length;
           answer(m, { rows: rows, chunks: chunks, bytes: bytes });
         } else if (m.op === 'search') {
-          var hits = score(m.q || '', idx.rows, idx.df, idx.N, idx.len, m.k || 3);
+          var hits = scoreHybrid(m.q || '', idx.rows, idx.df, idx.N, idx.len, m.k || 3);
           answer(m, { hits: hits });
         } else {
           self.postMessage({ id: m.id, ok: false, err: 'op desconocida: ' + m.op });

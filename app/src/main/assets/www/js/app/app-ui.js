@@ -2389,7 +2389,9 @@
       if (!tiny) {
         var h = chatHist();
         try { if (window.Comp) h = Comp.apply(h); } catch (eC) { }
-        var rec = h.slice(-4);
+        var rec;
+        if (h.length && h[0] && h[0]._kiuSummary) rec = [h[0]].concat(h.slice(-4));
+        else rec = h.slice(-4);
         for (var i = 0; i < rec.length; i++) msgs.push({ role: rec[i].role === 'user' ? 'user' : 'assistant', content: String(rec[i].text || '').slice(0, 400) });
       } else {
         msgs.push({ role: 'user', content: text });

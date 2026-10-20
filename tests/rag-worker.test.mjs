@@ -110,6 +110,20 @@ test('núcleo: chunk parte por párrafos, con solapamiento y tope', () => {
   assert.equal(empty.length, 0, 'texto muy corto → sin fragmentos');
 });
 
+test('núcleo: chunk semántico conserva el encabezado para recuperar el tema', () => {
+  const sb = newSb();
+  loadCore(sb);
+  const input = '# Instalación de Ollama\n\nDescarga el binario, configura el servicio y comprueba que el servidor responde correctamente.\n\n# Copias de seguridad\n\nGuarda una copia en una ubicación externa y verifica que se pueda restaurar.';
+  const chunks = vm.runInContext('KiuRagCore.chunk(' + JSON.stringify(input) + ')', sb);
+  assert.ok(chunks.length >= 2, 'separar secciones temáticas');
+  assert.match(chunks[0], /Instalación de Ollama/, 'el encabezado se conserva dentro del fragmento');
+  assert.match(chunks[1], /Copias de seguridad/, 'la segunda sección mantiene su propio encabezado');
+  const rows = vm.runInContext('KiuRagCore.mkRows("doc", ' + JSON.stringify(chunks) + ')', sb);
+  const d = JSON.parse(vm.runInContext('JSON.stringify(KiuRagCore.dfOf(' + JSON.stringify(rows) + '))', sb));
+  const ranked = vm.runInContext('KiuRagCore.score("copias de seguridad", ' + JSON.stringify(rows) + ', ' + JSON.stringify(d.df) + ', ' + d.N + ', ' + d.len + ', 1)', sb);
+  assert.equal(ranked[0].key, rows[1].key, 'una consulta por el encabezado recupera la sección correcta');
+});
+
 test('núcleo: mkRows precalcula tf y len por fragmento', () => {
   const sb = newSb();
   loadCore(sb);

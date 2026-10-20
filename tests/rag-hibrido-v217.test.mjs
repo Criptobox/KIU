@@ -29,10 +29,10 @@ test('RAG híbrido: preserva coincidencias exactas y orden determinista', () => 
   assert.equal(JSON.stringify(a), JSON.stringify(b));
 });
 
-test('versión Android incrementada a 2.11.21 / código 71', () => {
+test('versión Android incrementada a 2.11.23 / código 73', () => {
   const gradle = fs.readFileSync(new URL('../app/build.gradle.kts', import.meta.url), 'utf8');
-  assert.match(gradle, /val kiuVersionName = "2\.11\.21"/);
-  assert.match(gradle, /val kiuVersionCode = 71/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.23"/);
+  assert.match(gradle, /val kiuVersionCode = 73/);
 });
 
 

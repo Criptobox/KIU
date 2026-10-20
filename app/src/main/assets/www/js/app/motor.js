@@ -298,13 +298,27 @@
       this._pushT = 0;
       this._pushLen = -1;
       this._thermArm();
-      /* v2.1: si un generate anterior murió sin callback, busyG quedaba pegado y el
-         motor "cargado" nunca respondía. Sin pending = estado huérfano: se libera. */
+      /* v2.11.22: recuperar solicitudes huérfanas después de una pausa de WebView.
+         Android puede suspender los temporizadores mientras la app está en segundo
+         plano; al volver, pending/busyG podían seguir ocupados aunque ya no hubiese
+         generación activa. Solo se recupera si no hubo progreso durante 180 s. */
+      if (this.busyG && this.pending && this.pending.op === 'gen') {
+        var staleAt = this.pending.lastActivityAt || this.pending.startedAt || 0;
+        if (staleAt && Date.now() - staleAt > 180000) {
+          if (this._genPoll) { clearInterval(this._genPoll); this._genPoll = null; }
+          try { rawBridge('kiuGenStop'); } catch (e0) { }
+          try { rawBridge('kiuResetBusy'); } catch (e1) { }
+          this.pending = null;
+          this.busyG = false;
+          jobOff();
+        }
+      }
+      /* Si busy quedó sin solicitud asociada, es un estado huérfano recuperable. */
       if (this.busyG && !this.pending) { this.busyG = false; try { rawBridge('kiuResetBusy'); } catch (e) { } }
       if (!S.kiu.ok) { jobOff(); cb({ ok: false, err: 'sin modelo cargado' }); return; }
-      if (this.busyG) { jobOff(); cb({ ok: false, err: 'motor ocupado' }); return; }
+      if (this.busyG) { jobOff(); cb({ ok: false, err: 'el motor sigue ocupado con una solicitud anterior; esperá a que termine o usá Liberar motor' }); return; }
       this.busyG = true;
-      this.pending = { op: 'gen', cb: cb };
+      this.pending = { op: 'gen', cb: cb, startedAt: Date.now(), lastActivityAt: Date.now() };
       jobOn('Generando');
       var genPrompt = this.fmt(msgs);
       var genMaxT = Math.min(maxT || 350, 512);
@@ -358,7 +372,10 @@
         if (!st) return;
         var partial = String(st.text || '');
         var nTok = (typeof st.toks === 'number') ? st.toks : -1;
-        if (partial.length !== lastLen || nTok !== lastTokN) { lastProg = Date.now(); }
+        if (partial.length !== lastLen || nTok !== lastTokN) {
+          lastProg = Date.now();
+          if (self.pending && self.pending.op === 'gen') self.pending.lastActivityAt = lastProg;
+        }
         if (onTok && partial.length !== lastLen) {
           lastLen = partial.length;
           var vis = partial.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').replace(/<\/?think>/gi, '').replace(/^\s+/, '');
@@ -512,6 +529,7 @@
       if (ev !== 'gen' || !o || typeof o.so !== 'string') return;
       if (!Kiu.pending || Kiu.pending.op !== 'gen') return;
       Kiu._pushT = Date.now();
+      if (Kiu.pending && Kiu.pending.op === 'gen') Kiu.pending.lastActivityAt = Kiu._pushT;
       var so = String(o.so);
       if (so.length === Kiu._pushLen) return; /* sin novedades */
       Kiu._pushLen = so.length;
@@ -587,7 +605,13 @@
       var t = (text || '').toLowerCase();
       if (/(```|\bfunction\b|\bclass\b|\bimport\b|\bhtml\b|\bcss\b|javascript|python|\bjava\b|\bsql\b|regex|program|c[oó]digo|script|api\b|\bbug\b)/.test(t)) return 'code';
       if (/(razona|paso a paso|por qu[eé]|explic[aá]|analiz|compar|deduce|matem[áa]|demostrar|l[oó]gica|escrib|redact|ensayo|cuento|resum|traduc|carta)/.test(t) || t.length > 240) return 'reason';
-      if (/(busca|busc[áa]|averigu|noticias|[uú]ltima hora|qu[eé] es |qui[eé]n es|precio de|clima|hoja|investig)/.test(t)) return 'search';
+      /* v2.11.23 · No mandar preguntas generales al buscador por defecto.
+         Antes «qué es…» y «quién es…» acababan en búsqueda web (a menudo Wikipedia),
+         impidiendo que el modelo local contestara con sus propios conocimientos.
+         Solo se deriva a web si el usuario lo pide explícitamente o si necesita datos
+         que cambian con el tiempo. */
+      if (/^(busca|buscar|buscá|googlea|google|investiga|averigua|consulta en internet|busca en la web)(?:\s|$)/.test(t) ||
+          /\b(noticias de hoy|noticias recientes|ultima hora|ultimas noticias|actualmente|ahora mismo|hoy|esta semana|este mes|version actual|ultima version|precio de|precio actual|cotizacion|tipo de cambio|clima de hoy|tiempo ahora|resultados en vivo|marcador en vivo|quien gano hoy)\b/.test(t)) return 'search';
       if (fromVoice) return 'voice';
       return 'chat';
     },

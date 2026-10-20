@@ -83,8 +83,9 @@ test('fallback: sin proveedor nube sugiere comandos locales', () => {
   const b = loadBrain();
   const msg = b.fallback();
   assert.ok(msg, 'sin KiuApp (API apagada) el fallback debe devolver texto');
-  assert.ok(msg.includes('linterna'));
-  assert.ok(msg.includes('Proveedores'));
+  assert.ok(msg.includes('motor local'));
+  assert.ok(msg.includes('modelo no esté cargado'));
+  assert.ok(!msg.includes('activá un proveedor'));
 });
 
 test('tip: devuelve una pista no vacía', () => {

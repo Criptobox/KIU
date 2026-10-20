@@ -220,6 +220,9 @@ test('motor: Rtr.classify enruta code/reason/search/chat/vision', () => {
   assert.equal(sb.Rtr.classify('escribí una function de javascript'), 'code');
   assert.equal(sb.Rtr.classify('explícame por qué el cielo es azul'), 'reason');
   assert.equal(sb.Rtr.classify('buscá el precio del dólar'), 'search');
+  assert.equal(sb.Rtr.classify('qué es la fotosíntesis'), 'chat', 'conocimiento general → modelo, no Wikipedia');
+  assert.equal(sb.Rtr.classify('quién es Marie Curie'), 'chat', 'pregunta biográfica general → modelo');
+  assert.equal(sb.Rtr.classify('cuáles son las noticias de hoy'), 'search', 'datos actuales → web');
   assert.equal(sb.Rtr.classify('hola, ¿cómo andás?'), 'chat');
   assert.equal(sb.Rtr.classify('mirá esto', true), 'vision', 'con imagen → vision');
   assert.equal(sb.Orch.roleOf('code'), 'brain');

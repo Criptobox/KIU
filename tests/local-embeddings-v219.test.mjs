@@ -15,8 +15,8 @@ function makeAdapter() {
 }
 
 test('KIU incrementa versionName y versionCode para la integración RAG', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.11\.21"/);
-  assert.match(gradle, /val kiuVersionCode = 71/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.23"/);
+  assert.match(gradle, /val kiuVersionCode = 73/);
 });
 
 test('el adaptador no afirma que hay modelo cuando no se ha registrado ninguno', () => {

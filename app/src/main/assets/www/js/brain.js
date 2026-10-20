@@ -863,7 +863,7 @@ window.KiuBrain = (function () {
   function fallback() {
     var apiOn = window.KiuApp && KiuApp.apiReady();
     if (apiOn) return null;
-    return 'Esa me pasé en local. Manejo de verdad: "enciende la linterna", "pon alarma a las 7", "llama a Juan", "manda un whatsapp a Ana diciendo voy", "temporizador de 5 minutos", "¿cuánta batería queda?", "abre Spotify". Y para charlar de cualquier tema, activá un proveedor en Ajustes → Proveedores: con el modo híbrido te completo la respuesta con tu API.';
+    return 'No pude generar la respuesta con el motor local. Esto no significa que tu pregunta sea demasiado difícil: puede que el modelo no esté cargado o que el motor se haya quedado bloqueado. Revisá Modelos para confirmar que el GGUF esté cargado. Para datos recientes sí necesito consultar Internet; para preguntas generales debo intentar responder con el modelo local.';
   }
 
   function tip() { return pick(TIPS); }

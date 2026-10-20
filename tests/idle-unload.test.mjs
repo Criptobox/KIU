@@ -7,8 +7,8 @@ const gradle = fs.readFileSync('app/build.gradle.kts', 'utf8');
 const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 
 test('versión Android se incrementa para esta actualización', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.11\.21"/);
-  assert.match(gradle, /val kiuVersionCode = 71/);
+  assert.match(gradle, /val kiuVersionName = "2\.11\.23"/);
+  assert.match(gradle, /val kiuVersionCode = 73/);
 });
 
 test('modelo local se libera tras diez minutos de inactividad', () => {

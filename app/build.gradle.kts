@@ -27,8 +27,8 @@ plugins {
    lugares donde poner un número aparece el que se queda viejo. Si alguno de los
    dos se desactualiza, el sello miente sobre el APK que estás por instalar —
    que es peor que no tener sello. Las dos cosas leen de acá. */
-val kiuVersionName = "2.11.21"
-val kiuVersionCode = 71
+val kiuVersionName = "2.11.23"
+val kiuVersionCode = 73
 
 val llamaDir = File(rootDir, "vendor/llama.cpp")
 val buildNative = llamaDir.exists()

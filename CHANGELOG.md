@@ -1,3 +1,9 @@
+## [2.11.22] - 2026-10-20
+
+- Recupera estados de generación local huérfanos cuando la WebView vuelve de suspensión y no hubo progreso durante 180 segundos.
+- Actualiza la actividad de la generación al recibir tokens por sondeo o streaming.
+- Incrementa versionName a 2.11.22 y versionCode a 72.
+
 ## [2.11.21] — reparación del estado «motor ocupado»
 
 - Corrige la visibilidad entre hilos de `KiuGenJob.busy`: ahora es `volatile`, para que la WebView no lea un valor obsoleto después de terminar una generación local.

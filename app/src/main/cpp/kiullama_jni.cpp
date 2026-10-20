@@ -188,7 +188,7 @@ long long mem_available_bytes() {
     return kb * 1024LL;
 }
 
-long long kv_bytes_estimate(const llama_model* m, int ctx) {
+long long kv_bytes_estimate(const llama_model* m, int ctx, bool q8_cache = true) {
     long long n_layer = llama_model_n_layer(m);
     long long n_embd  = llama_model_n_embd(m);
     long long n_head  = llama_model_n_head(m);
@@ -196,7 +196,10 @@ long long kv_bytes_estimate(const llama_model* m, int ctx) {
     if (n_layer <= 0 || n_embd <= 0 || n_head <= 0) return 0;
     if (n_kv <= 0) n_kv = n_head;
     long long kv_dim = n_embd / n_head * n_kv;
-    return 2LL * n_layer * (long long)ctx * kv_dim * 2LL;   // K + V en f16
+    // Q8_0 usa ~1.0625 bytes/valor (bloques de 32); reservamos 1.125
+    // para metadatos/alineación. FP16 usa 2 bytes/valor.
+    const long long bytes_per_value_x8 = q8_cache ? 9 : 16;
+    return 2LL * n_layer * (long long)ctx * kv_dim * bytes_per_value_x8 / 8LL;
 }
 
 void set_err(const std::string& e) {
@@ -255,7 +258,7 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
     {   // v2.7.4: bajar el contexto si el KV cache no entra en la RAM libre (en vez de morir por OOM)
         long long avail = mem_available_bytes();
         if (avail > 0) {
-            while (ctx > 512 && kv_bytes_estimate(g_model, ctx) / 100 * 125 > avail / 100 * 70) ctx /= 2;
+            while (ctx > 512 && kv_bytes_estimate(g_model, ctx, true) / 100 * 125 > avail / 100 * 70) ctx /= 2;
         }
         g_ctx_used = ctx;
     }
@@ -266,9 +269,26 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
     cp.n_threads = th;
     cp.n_threads_batch = th;
     cp.no_perf = false;
+    // v2.11: cache KV cuantizada Q8_0 reduce aproximadamente a la mitad la
+    // memoria del contexto. Si esta combinación de backend/modelo no se admite,
+    // reintentamos con FP16 para conservar compatibilidad.
+    cp.type_k = GGML_TYPE_Q8_0;
+    cp.type_v = GGML_TYPE_Q8_0;
     g_ctx = llama_init_from_model(g_model, cp);
     if (!g_ctx) {
-        set_err("no pude crear el contexto de inferencia (poca RAM)");
+        cp.type_k = GGML_TYPE_F16;
+        cp.type_v = GGML_TYPE_F16;
+        // FP16 necesita más RAM. Si el contexto original no entra, reducirlo
+        // gradualmente en lugar de fallar inmediatamente.
+        while (!g_ctx && ctx > 512) {
+            ctx /= 2;
+            cp.n_ctx = (uint32_t)ctx;
+            g_ctx_used = ctx;
+            g_ctx = llama_init_from_model(g_model, cp);
+        }
+    }
+    if (!g_ctx) {
+        set_err("no pude crear el contexto de inferencia (poca RAM o cache KV no compatible)");
         g_loading = false;
         g_load_pct = 0;
         free_locked();

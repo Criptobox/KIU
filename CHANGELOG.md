@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.11.14] — liberación automática de RAM del modelo local
+
+**Motor local y memoria**
+- Si el modelo nativo permanece sin uso durante 10 minutos, KIU libera el contexto y el modelo para devolver memoria al sistema.
+- Si después se solicita otra generación, KIU vuelve a cargar el último modelo y conserva el contexto/hilos configurados.
+- Las operaciones de carga, generación y descarga se serializan para evitar liberar el motor mientras genera. La descarga manual y el cierre de la actividad siguen disponibles.
+- Se incrementan `versionName` a `2.11.14` y `versionCode` a `64`, para que Android identifique esta actualización como versión nueva.
+
+**Verificación y límites**
+- Las pruebas de código comprueban la versión y los caminos de descarga/recarga; no sustituyen compilación Android ni prueba en el Xiaomi 15.
+- No se incluye una APK compilada en este paquete; es el código fuente actualizado.
+
 Formato basado en Keep a Changelog. Fechas en 2026.
 
 ## [2.11.13] — «Kiu» y «chao» en serio + compilación 4× más liviana

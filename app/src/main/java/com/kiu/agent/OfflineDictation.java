@@ -2,6 +2,7 @@ package com.kiu.agent;
 
 import android.content.Context;
 import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import org.json.JSONObject;
 import org.vosk.Model;
 import org.vosk.Recognizer;
@@ -45,6 +46,7 @@ public class OfflineDictation {
                 Model model = null;
                 Recognizer rec = null;
                 AudioRecord ar = null;
+                KiuAudioEffects audioEffects = null;
                 String result = "";
                 String why = "no te escuché";
                 try {
@@ -52,10 +54,11 @@ public class OfflineDictation {
                     rec = new Recognizer(model, 16000.0f);
                     int min = AudioRecord.getMinBufferSize(16000, 16, 2);
                     int size = Math.max(min, 8000) * 2;
-                    ar = new AudioRecord(6, 16000, 16, 2, size);
-                    if (ar.getState() != 1) {
+                    ar = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, 16, 2, size);
+                    if (ar.getState() != AudioRecord.STATE_INITIALIZED) {
                         throw new IllegalStateException("micrófono ocupado");
                     }
+                    audioEffects = KiuAudioEffects.attach(ar);
                     ar.startRecording();
                     short[] buf = new short[4000];
                     long t0 = System.currentTimeMillis();
@@ -99,6 +102,7 @@ public class OfflineDictation {
                 } catch (Throwable th) {
                     why = String.valueOf(th.getMessage() == null ? th.toString() : th.getMessage());
                 } finally {
+                    try { if (audioEffects != null) audioEffects.close(); } catch (Throwable ignored) { }
                     try { if (ar != null) { ar.stop(); } } catch (Throwable ignored) { }
                     try { if (ar != null) { ar.release(); } } catch (Throwable ignored) { }
                     try { if (rec != null) { rec.close(); } } catch (Throwable ignored) { }

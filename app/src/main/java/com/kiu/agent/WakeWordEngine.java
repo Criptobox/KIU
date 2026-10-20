@@ -213,14 +213,16 @@ public class WakeWordEngine {
     /** Crea un AudioRecord, escucha hasta que algo pare, y devuelve el estado. */
     private int escucharUnaVez(int bufSize, short[] buf, Backoff espera) {
         AudioRecord a = null;
+        KiuAudioEffects audioEffects = null;
         try {
-            a = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
+            a = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize);
             if (a.getState() != AudioRecord.STATE_INITIALIZED) {
                 err = "microfono ocupado por otra app";
                 return LECHO_MIC_MUERTO;
             }
             mic = a;
+            audioEffects = KiuAudioEffects.attach(a);
             a.startRecording();
             /* el mic abrió de verdad: el error anterior (si hubo) ya no dice
                nada. Sin esto el mensaje quedaba pegado para toda la sesión
@@ -312,6 +314,7 @@ public class WakeWordEngine {
             return LECHO_MIC_MUERTO;
         } finally {
             mic = null;
+            try { if (audioEffects != null) audioEffects.close(); } catch (Throwable ignored) { }
             try {
                 if (a != null) {
                     a.stop();

@@ -3831,8 +3831,13 @@
       var ram = document.getElementById('loc-ram');
       if (ram) {
         var d = (Sys && Sys.d) || {};
-        if (d.ramAvail) ram.textContent = fmtGB(d.ramAvail) + ' GB libres de ' + fmtGB(d.ramTotal) + ' GB';
-        else ram.textContent = 'Datos reales en la app del teléfono';
+        if (d.ramAvail) {
+          ram.textContent = fmtGB(d.ramAvail) + ' GB libres de ' + fmtGB(d.ramTotal) + ' GB';
+          if (d.appPssKb != null && isFinite(Number(d.appPssKb))) {
+            ram.textContent += ' · KIU usa ' + (Number(d.appPssKb) / 1024).toFixed(0) + ' MB';
+          }
+          if (d.nativeLoaded) ram.textContent += ' · motor local activo';
+        } else ram.textContent = 'Datos reales en la app del teléfono';
       }
     },
     locProfSub: function () {

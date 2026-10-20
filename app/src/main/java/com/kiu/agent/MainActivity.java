@@ -16,6 +16,7 @@ import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Debug;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -1420,6 +1421,21 @@ public class MainActivity extends Activity {
                 sb.append(memoryInfo.totalMem);
                 sb.append(",\"ramAvail\":");
                 sb.append(memoryInfo.availMem);
+                // v2.11.13 · telemetría real del proceso KIU (PSS, memoria física proporcional).
+                // No sustituye a la RAM libre del sistema: permite distinguir ambas métricas.
+                try {
+                    int pid = android.os.Process.myPid();
+                    Debug.MemoryInfo[] procMem = activityManager.getProcessMemoryInfo(new int[]{pid});
+                    if (procMem != null && procMem.length > 0) {
+                        sb.append(",\"appPssKb\":");
+                        sb.append(Math.max(0, procMem[0].getTotalPss()));
+                    }
+                } catch (Throwable ignored) { }
+                sb.append(",\"nativeLoaded\":");
+                sb.append(KiuNative.isLoaded() ? "true" : "false");
+                sb.append(",\"nativeTps\":");
+                try { sb.append(Math.max(0f, KiuNative.tokensPerSec())); }
+                catch (Throwable ignored) { sb.append("0"); }
                 StatFs statFs = new StatFs(Environment.getDataDirectory().getPath());
                 sb.append(",\"diskTotal\":");
                 sb.append(statFs.getTotalBytes());

@@ -28,6 +28,6 @@ test('embeddings se limitan a 96 tokens y normalizan el vector', () => {
 });
 
 test('versión Android incrementada a 2.12.4 / 79', () => {
-  assert.match(gradle, /kiuVersionName = "2\.12\.5"/);
+  assert.match(gradle, /kiuVersionName = "2\.12\.6"/);
   assert.match(gradle, /kiuVersionCode = 79/);
 });

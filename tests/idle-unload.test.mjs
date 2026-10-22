@@ -7,7 +7,7 @@ const gradle = fs.readFileSync('app/build.gradle.kts', 'utf8');
 const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 
 test('versión Android se incrementa para esta actualización', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.12\.5"/);
+  assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
   assert.match(gradle, /val kiuVersionCode = 79/);
 });
 
@@ -24,6 +24,6 @@ test('la siguiente generación puede recargar el último modelo', () => {
 });
 
 test('changelog documenta versión y limitación de APK no compilada', () => {
-  assert.match(changelog, /## \[2\.12\.5\]/);
+  assert.match(changelog, /## \[2\.12\.6\]/);
   assert.match(changelog, /No se incluye una APK compilada/);
 });

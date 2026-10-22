@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const source = fs.readFileSync('KIU-2.12.6-motor-fix/assets/www/js/app/motor.js', 'utf8');
+const source = fs.readFileSync('app/src/main/assets/www/js/app/motor.js', 'utf8');
 
 test('agotamiento de reintentos sincroniza el estado nativo', () => {
   const start = source.indexOf('if (attempt <= 8)');

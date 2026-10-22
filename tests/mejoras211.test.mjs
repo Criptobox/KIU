@@ -80,7 +80,7 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.12\.5"/);
+  assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
   assert.match(gradle, /val kiuVersionCode = 79/);
 });
 

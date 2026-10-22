@@ -352,6 +352,11 @@
           setTimeout(startGen, 700);
           return;
         }
+        /* v2.12.6 · FIX: si el puente rechazó los 9 intentos, el estado nativo
+           podía quedarse ocupado aunque JS ya hubiese liberado busyG. Resetear
+           SOLO después de agotar los reintentos evita dejar bloqueadas las
+           siguientes preguntas; no se toca una generación aceptada. */
+        try { rawBridge('kiuResetBusy'); } catch (eReset) { }
         self.busyG = false;
         self.pending = null;
         if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
@@ -422,10 +427,13 @@
       setTimeout(function () {
         if (self.pending && self.pending.op === 'gen') {
           if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
-          self.busyG = false;
           var cbf2 = self.pending.cb;
           self.pending = null;
-          rawBridge('kiuGenStop');
+          /* El timeout de seguridad también debe sincronizar el estado nativo;
+             de lo contrario, el siguiente mensaje puede heredar 'busy'. */
+          try { rawBridge('kiuGenStop'); } catch (eStop) { }
+          try { rawBridge('kiuResetBusy'); } catch (eReset) { }
+          self.busyG = false;
           jobErr('Error', 2600);
           cbf2({ ok: false, err: 'tardó demasiado', stuck: true });
         }

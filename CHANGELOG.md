@@ -1,3 +1,9 @@
+## [2.12.6] - 2026-10-22
+- Fix: tras agotar los reintentos de inicio de generación, intenta sincronizar el estado ocupado del motor nativo.
+- Fix: en el timeout de seguridad, intenta detener la generación y restablecer el estado nativo antes de limpiar el estado JavaScript.
+- Añadidas pruebas de regresión para el parche de recuperación del motor.
+- Verificación de APK instalada en Android pendiente; esta entrega es código fuente.
+
 ## [2.12.5] - 2026-10-22
 
 - Añade una comparación A/B reproducible del detector de peticiones web con fórmulas de cortesía frente a la expresión anterior.

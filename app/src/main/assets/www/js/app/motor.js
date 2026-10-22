@@ -606,11 +606,23 @@
   /* ================= v1.7.0: ROUTER POR TAREA (modelo según lo que pidas) ================= */
   var Rtr = {
     cool: {},
+    /* v2.12.1 · Traza local de enrutamiento: registra solo metadatos, nunca el texto
+       del usuario. Sirve para diagnosticar decisiones sin guardar conversaciones. */
+    trace: [],
+    _decision: function (task, reason, text, fromVoice, hasImg) {
+      this.lastDecision = { task: task, reason: reason, length: String(text || '').length,
+        fromVoice: !!fromVoice, hasImage: !!hasImg, at: Date.now() };
+      this.trace.push(this.lastDecision);
+      if (this.trace.length > 40) this.trace.shift();
+      return task;
+    },
+    getTrace: function () { return this.trace.slice(); },
+    clearTrace: function () { this.trace = []; this.lastDecision = null; },
     classify: function (text, hasImg, fromVoice) {
-      if (hasImg) return 'vision';
+      if (hasImg) return this._decision('vision', 'imagen adjunta', text, fromVoice, true);
       var t = (text || '').toLowerCase();
-      if (/(```|\bfunction\b|\bclass\b|\bimport\b|\bhtml\b|\bcss\b|javascript|python|\bjava\b|\bsql\b|regex|program|c[oó]digo|script|api\b|\bbug\b)/.test(t)) return 'code';
-      if (/(razona|paso a paso|por qu[eé]|explic[aá]|analiz|compar|deduce|matem[áa]|demostrar|l[oó]gica|escrib|redact|ensayo|cuento|resum|traduc|carta)/.test(t) || t.length > 240) return 'reason';
+      if (/(```|\bfunction\b|\bclass\b|\bimport\b|\bhtml\b|\bcss\b|javascript|python|\bjava\b|\bsql\b|regex|program|c[oó]digo|script|api\b|\bbug\b)/.test(t)) return this._decision('code', 'indicadores de programación', text, fromVoice, false);
+      if (/(razona|paso a paso|por qu[eé]|explic[aá]|analiz|compar|deduce|matem[áa]|demostrar|l[oó]gica|escrib|redact|ensayo|cuento|resum|traduc|carta)/.test(t) || t.length > 240) return this._decision('reason', t.length > 240 ? 'mensaje largo' : 'razonamiento o redacción', text, fromVoice, false);
       /* v2.11.23 · No mandar preguntas generales al buscador por defecto.
          Antes «qué es…» y «quién es…» acababan en búsqueda web (a menudo Wikipedia),
          impidiendo que el modelo local contestara con sus propios conocimientos.
@@ -626,9 +638,9 @@
       var frasesVivas = /\b(noticias de hoy|noticias recientes|ultima hora|ultimas noticias|version actual|ultima version|precio de|precio actual|cotizacion|tipo de cambio|clima de hoy|tiempo ahora|resultados en vivo|marcador en vivo|quien gano hoy)\b/.test(tn);
       var marcaTiempo = /\b(hoy|ahora mismo|actualmente|esta semana|este mes|en vivo)\b/.test(tn);
       var datoVivo = /\b(noticias?|precio|cotizacion|dolar|euro|bitcoin|clima|pronostico|temperatura|resultados?|marcador|partido|cartelera|horarios?)\b/.test(tn);
-      if (pideWeb || frasesVivas || (marcaTiempo && datoVivo)) return 'search';
-      if (fromVoice) return 'voice';
-      return 'chat';
+      if (pideWeb || frasesVivas || (marcaTiempo && datoVivo)) return this._decision('search', pideWeb ? 'petición explícita de web' : 'información cambiante', text, fromVoice, false);
+      if (fromVoice) return this._decision('voice', 'entrada por voz sin ruta especializada', text, true, false);
+      return this._decision('chat', 'conversación general por defecto', text, false, false);
     },
     score: function (def, st, task) {
       var cap = def.cap || [];

@@ -135,3 +135,20 @@ test('kiuMsgs en reintento liviano sigue siendo mínimo', () => {
   assert.equal(msgs[1].content, 'hola');
   assert.ok(msgs[0].content.length < 700, 'prompt liviano');
 });
+
+
+/* v2.12.1 · trazabilidad de rutas sin almacenar el texto del usuario. */
+test('Rtr: traza la decisión con motivo y metadatos, nunca el contenido del mensaje', () => {
+  const { Rtr } = boot();
+  Rtr.clearTrace();
+  assert.equal(Rtr.classify('precio del dólar hoy'), 'search');
+  assert.equal(Rtr.lastDecision.task, 'search');
+  assert.match(Rtr.lastDecision.reason, /información cambiante/);
+  assert.equal(Rtr.lastDecision.length, 'precio del dólar hoy'.length);
+  assert.equal(Object.prototype.hasOwnProperty.call(Rtr.lastDecision, 'text'), false);
+  assert.equal(Rtr.getTrace().length, 1);
+  Rtr.classify('qué es la fotosíntesis');
+  assert.equal(Rtr.getTrace().length, 2);
+  Rtr.clearTrace();
+  assert.equal(Rtr.getTrace().length, 0);
+});

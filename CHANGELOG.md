@@ -1,3 +1,19 @@
+## [2.12.2] - 2026-10-22
+
+- Añade `tests/harness2-probe.test.mjs`, una matriz de 12 rutas esperadas para probar de forma reproducible el enrutador.
+- Añade score de aprobación y diagnóstico por caso fallido; no modifica automáticamente el agente.
+- Comprueba que la traza de enrutamiento incluye motivos y metadatos sin almacenar el texto de la consulta.
+- Versión Android: `versionName 2.12.2`, `versionCode 76`.
+- Pendiente: compilación APK y validación de generación en dispositivo.
+
+## [2.12.1] - 2026-10-22
+
+- Añade una traza en memoria de las decisiones del enrutador: tarea elegida, motivo, longitud del mensaje, entrada por voz/imagen y hora. No almacena el texto del usuario y conserva como máximo 40 decisiones.
+- Expone `Rtr.lastDecision`, `Rtr.getTrace()` y `Rtr.clearTrace()` para diagnóstico local y pruebas.
+- Mantiene la migración segura de `agentOn` y los cambios de respuesta local de 2.12.0.
+- Actualiza la versión Android a `2.12.1` (`versionCode 75`).
+- Suite Node.js: validación pendiente de ejecución tras estos cambios; compilación Android y prueba en dispositivo siguen pendientes.
+
 ## [2.12.0] - 2026-10-21
 
 - Actualiza la versión Android a `2.12.0` (`versionCode 74`).

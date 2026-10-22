@@ -27,7 +27,7 @@ test('embeddings se limitan a 96 tokens y normalizan el vector', () => {
   assert.match(cpp, /pooled\[\(size_t\)j\] \/= \(float\)norm/);
 });
 
-test('versión Android incrementada a 2.12.0 / 74', () => {
-  assert.match(gradle, /kiuVersionName = "2\.12\.0"/);
-  assert.match(gradle, /kiuVersionCode = 74/);
+test('versión Android incrementada a 2.12.2 / 76', () => {
+  assert.match(gradle, /kiuVersionName = "2\.12\.2"/);
+  assert.match(gradle, /kiuVersionCode = 76/);
 });

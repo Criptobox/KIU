@@ -1,3 +1,10 @@
+## [2.12.0] - 2026-10-21
+
+- Actualiza la versión Android a `2.12.0` (`versionCode 74`).
+- Corrige la migración del interruptor del agente: conserva `agentOn: false` si el usuario lo había desactivado; las instalaciones nuevas mantienen el valor predeterminado activado.
+- Añade una prueba de regresión para la preferencia del usuario.
+- Verificación de JavaScript automatizada; compilación Android e instalación en dispositivo pendientes de validar.
+
 ## [2.11.22] - 2026-10-20
 
 - Recupera estados de generación local huérfanos cuando la WebView vuelve de suspensión y no hubo progreso durante 180 segundos.

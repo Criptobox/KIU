@@ -351,6 +351,8 @@ test('el agente viene encendido pero con compuerta: no gasta una generación por
      (no con preguntas ni pedidos de texto). El comportamiento de la compuerta se
      prueba en respuesta-local-v212.test.mjs. */
   assert.match(stateSrc, /agentOn:\s*true/);
+  assert.match(stateSrc, /if \(!S\._agentGateV2\) \{ S\._agentGateV2 = 1; \}/,
+    'la migración marca la versión sin pisar agentOn guardado');
   assert.match(uiSrc, /S\.agentOn && this\.agentGate\(text\)/,
     'el agente solo se invoca si pasa la compuerta');
 });

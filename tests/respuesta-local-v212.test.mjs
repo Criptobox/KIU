@@ -73,9 +73,17 @@ test('agentGate: órdenes sí; preguntas, textos y mensajes largos no', () => {
   assert.equal(App.agentGate(''), false);
 });
 
-test('el agente viene encendido por defecto (y migra a quien nunca lo tocó)', () => {
+test('el agente viene encendido por defecto en una instalación nueva', () => {
   const sb = boot();
   assert.equal(sb.S.agentOn, true);
+});
+
+test('la migración no reactiva el agente si el usuario lo había desactivado', () => {
+  const sb = newSandbox();
+  sb.localStorage.setItem('nexo_settings', JSON.stringify({ agentOn: false }));
+  loadAll(sb, SCRIPTS);
+  assert.equal(sb.S.agentOn, false, 'se conserva la preferencia explícita');
+  assert.equal(sb.S._agentGateV2, 1, 'la migración queda marcada');
 });
 
 /* ---------- 4 · el prompt del modelo local ---------- */

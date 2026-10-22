@@ -197,8 +197,9 @@
   if (typeof S.personaX !== 'string') S.personaX = '';
   if (typeof S.acc !== 'string') S.acc = '';
   if (['s', 'm', 'l'].indexOf(S.chatFs) < 0) S.chatFs = 'm';
-  /* v2.12.0: migración única — quien nunca tocó el interruptor tenía false por el default viejo */
-  if (!S._agentGateV2) { S._agentGateV2 = 1; S.agentOn = true; }
+  /* v2.12.0: migración segura. El valor predeterminado para instalaciones nuevas
+     ya está definido arriba; no sobrescribir un false guardado por el usuario. */
+  if (!S._agentGateV2) { S._agentGateV2 = 1; }
   if (S.mode === 'api' && !S.prov) S.mode = 'hybrid';
   if (!S.prov) S.prov = {};
   /* Motor local v1.6.3: servidor estilo OpenAI en la red (LM Studio / Ollama / llama.cpp) */

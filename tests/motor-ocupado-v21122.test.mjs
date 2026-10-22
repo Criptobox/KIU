@@ -13,5 +13,5 @@ test('recupera generación local huérfana solo tras 180 segundos sin progreso',
 });
 test('actualiza versionName y versionCode de Android', () => {
   assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
-  assert.match(gradle, /val kiuVersionCode = 79/);
+  assert.match(gradle, /val kiuVersionCode = 80/);
 });

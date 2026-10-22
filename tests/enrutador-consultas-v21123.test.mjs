@@ -24,5 +24,5 @@ test('fallback explica el problema del motor sin exigir una API para conversar',
 });
 test('versión Android incrementada', () => {
   assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
-  assert.match(gradle, /val kiuVersionCode = 79/);
+  assert.match(gradle, /val kiuVersionCode = 80/);
 });

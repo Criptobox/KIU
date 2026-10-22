@@ -9,7 +9,7 @@ const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 
 test('KIU incrementa versión visible y código Android', () => {
   assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
-  assert.match(gradle, /val kiuVersionCode = 79/);
+  assert.match(gradle, /val kiuVersionCode = 80/);
   assert.match(changelog, /## \[2\.12\.6\]/);
 });
 

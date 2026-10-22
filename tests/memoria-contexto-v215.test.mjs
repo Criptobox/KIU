@@ -25,5 +25,6 @@ test('el resumen no elimina historial si todavía no está listo', () => {
 
 test('el prompt local conserva el resumen junto con mensajes recientes', () => {
   assert.match(ui, /h\[0\]\._kiuSummary/);
-  assert.match(ui, /rec = \[h\[0\]\]\.concat\(h\.slice\(-4\)\)/);
+  /* v2.12.0: 6 turnos recientes (antes 4) ahora que el contexto del motor es de 2048+ tokens */
+  assert.match(ui, /rec = \[h\[0\]\]\.concat\(h\.slice\(-6\)\)/);
 });

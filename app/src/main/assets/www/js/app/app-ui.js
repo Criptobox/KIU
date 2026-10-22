@@ -2034,7 +2034,7 @@
          Va ANTES de la generación normal porque si el agente ejecutó algo, esa ES
          la respuesta: generar un párrafo encima sería tirar el trabajo. Si no
          ejecutó nada, se sigue como si nada. */
-      if (S.kiu.ok && window.KiuAgente && S.agentOn) {
+      if (S.kiu.ok && window.KiuAgente && S.agentOn && this.agentGate(text)) {
         try {
           this.showTyping(true);
           stSet('ruta', 'Enrutando', 30000);
@@ -2056,6 +2056,21 @@
         } catch (eAg) { /* si el agente explota, el flujo normal continúa */ }
       }
       this.tryAfterAgent(text, task);
+    },
+    /* v2.12.0 · compuerta del agente: ¿vale la pena gastar una generación para que el
+       modelo elija una herramienta? Solo si el mensaje parece una ORDEN. Una pregunta,
+       un pedido de texto (explicá, escribí, resumí…) o un mensaje largo se responden
+       directo con el modelo: ahí el agente solo agregaba segundos de espera. */
+    agentGate: function (text) {
+      var t = String(text || '').trim();
+      if (!t || t.length > 140) return false;
+      if (/[?¿]/.test(t)) return false;
+      if (t.split(/\s+/).length > 14) return false;
+      var n = t.toLowerCase().normalize ? t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t.toLowerCase();
+      /* interrogativos (palabra entera) y raíces de verbos de «dame un texto» (tuteo y voseo) */
+      if (/^(que|quien|quienes|como|cual|cuales|cuando|donde|por que|porque|cuanto|cuantos)\b/.test(n)) return false;
+      if (/^(explic|escrib|reescrib|redact|resum|traduc|compar|analiz|gener|invent|defin|describ|ensen|sugier|suger|recomend|corrig|parafras|cuentame|contame|dime|decime|crea un (cuento|poema|texto))/.test(n)) return false;
+      return true;
     },
     /* lo que venía después del punto donde se inserta el agente */
     tryAfterAgent: function (text, task) {
@@ -2161,7 +2176,7 @@
       /* v2.7.0: el contexto de documentos se calcula en el Web Worker
          (RAG.ctxFor → searchAsync); sin worker responde al toque, igual que
          siempre. Todo el resto de la respuesta corre adentro del callback. */
-      window.RAG.ctxFor(text, 1, function (preCtx) {
+      window.RAG.ctxFor(text, 3, function (preCtx) {
       var msgs = self.kiuMsgs(text, !!tinyRetry, preCtx).filter(function (m) { return typeof m.content === 'string'; });
       /* v2.1: foto con el motor local — el GGUF no ve imágenes todavía; se lo decimos
          al modelo y al usuario, pero la tarea igual se responde con el texto */
@@ -2179,7 +2194,7 @@
         var sp = document.getElementById('kiu-elapsed');
         if (sp) sp.textContent = Math.round((Date.now() - elT0) / 1000) + ' s';
       }, 1000);
-      Kiu.ask(msgs, Math.min(S.maxTok || 400, 320), function (out) {
+      Kiu.ask(msgs, Math.min(S.maxTok || 400, 480), function (out) {
         clearInterval(elTimer);
         self.showTyping(false);
         if (out.ok && out.text) {
@@ -2191,7 +2206,8 @@
           var au = (S.router && S.router.on && self._autoTask) ? ' · Auto: ' + (Rtr.label(self._autoTask) || 'charla') : '';
           var vis = img ? ' · la foto todavía no la puedo ver (usá Servidor o API para visión real)' : '';
           var rec = out.recovered ? ' · respuesta recuperada' : '';
-          self.botSay(out.text + '\n\n*(motor interno' + vis + au + rec + tps + ')*', live);
+          var mdlTag = (S.kiu && S.kiu.name) ? ' · ' + String(S.kiu.name).replace(/\.gguf$/i, '').slice(0, 28) : '';
+          self.botSay(out.text + '\n\n*(motor interno' + mdlTag + vis + au + rec + tps + ')*', live);
           KB.reinforce(text);
         } else {
           clearInterval(elTimer);
@@ -2377,22 +2393,49 @@
        v2.7.0: preCtx = contexto RAG ya calculado (por searchAsync/ctxFor, en el
        worker). undefined → ruta síncrona de siempre; null → sin documentos. */
     kiuMsgs: function (text, tiny, preCtx) {
-      var sys = 'Sos Kiu, un asistente que corre dentro del teléfono. Respondés en español, breve y directo, sin emojis y sin markdown pesado. Para recordatorios explicá el comando: "recuérdame [algo] a las [hora]" o "recuérdame [algo] en [N] minutos".';
-      if (S.name) sys += ' El usuario se llama ' + S.name + '.';
+      /* v2.12.0 · PROMPT DEL MODELO LOCAL.
+         Antes era una sola frase generica, sin personalidad, sin lo que Kiu aprendio del
+         usuario, con 1 fragmento de 500 caracteres de los documentos y turnos cortados a 400.
+         Ahora: instrucciones que obligan a contestar lo preguntado, personalidad, memoria
+         de largo plazo, hasta 3 fragmentos de documentos y un historial mas largo, sin el
+         pie «(motor interno · tok/s)» que se le reinyectaba al modelo como si fuera charla. */
+      var sys = 'Sos Kiu, un asistente personal que corre dentro del teléfono del usuario. Respondé en español, claro y directo, y contestá exactamente lo que se pregunta antes de agregar nada más. Si falta un dato para responder bien, pedilo con una sola pregunta corta. Si no sabés algo, decilo en vez de inventarlo. Sin emojis y sin markdown pesado. Si piden una alarma o un recordatorio, indicá el comando: "recuérdame [algo] a las [hora]".';
       try {
-        if (!tiny && window.RAG && RAG.on && typeof text === 'string') {
-          var rg1 = (preCtx !== undefined) ? preCtx : RAG.search(text, 1);
-          if (rg1) sys += '\n\n[Contexto de documentos del usuario, usalo si es relevante: ' + String(rg1).slice(0, 500) + ']';
+        if (!tiny) {
+          if (window.PERSONAS && PERSONAS[S.persona]) sys += ' ' + PERSONAS[S.persona];
+          if (S.personaX && String(S.personaX).trim()) sys += ' Además: ' + String(S.personaX).trim().slice(0, 300);
         }
-      } catch (eR) { }
+      } catch (eP) { }
+      if (S.name) sys += ' El usuario se llama ' + S.name + '.';
+      if (!tiny) {
+        /* lo aprendido del usuario (hechos + correcciones), acotado para no comerse el contexto */
+        try { if (window.KB) sys += String(KB.context()).slice(0, 700); } catch (eK) { }
+        /* recuerdos que el usuario pidió guardar */
+        try {
+          if (window.KiuMem) {
+            var rcs = KiuMem.list('recuerdos').slice(0, 4).map(function (r) { return '- ' + String(r.text || '').slice(0, 90); });
+            if (rcs.length) sys += '\n\nRecuerdos guardados por el usuario (usalos solo si vienen al caso):\n' + rcs.join('\n');
+          }
+        } catch (eM) { }
+        try {
+          if (window.RAG && RAG.on && typeof text === 'string') {
+            var rg1 = (preCtx !== undefined) ? preCtx : RAG.search(text, 3);
+            if (rg1) sys += '\n\n[Contexto de documentos del usuario. Usalo si es relevante y nombrá el archivo; si no alcanza para responder, decilo: ' + String(rg1).slice(0, 1200) + ']';
+          }
+        } catch (eR) { }
+      }
       var msgs = [{ role: 'system', content: sys }];
       if (!tiny) {
         var h = chatHist();
         try { if (window.Comp) h = Comp.apply(h); } catch (eC) { }
         var rec;
-        if (h.length && h[0] && h[0]._kiuSummary) rec = [h[0]].concat(h.slice(-4));
-        else rec = h.slice(-4);
-        for (var i = 0; i < rec.length; i++) msgs.push({ role: rec[i].role === 'user' ? 'user' : 'assistant', content: String(rec[i].text || '').slice(0, 400) });
+        if (h.length && h[0] && h[0]._kiuSummary) rec = [h[0]].concat(h.slice(-6));
+        else rec = h.slice(-6);
+        for (var i = 0; i < rec.length; i++) {
+          var tx = String(rec[i].text || '');
+          if (rec[i].role !== 'user') tx = tx.replace(/\n\n\*\((?:motor interno|servidor|API)[^\n]*\)\*\s*$/i, '');
+          msgs.push({ role: rec[i].role === 'user' ? 'user' : 'assistant', content: tx.slice(0, 700) });
+        }
       } else {
         msgs.push({ role: 'user', content: text });
       }

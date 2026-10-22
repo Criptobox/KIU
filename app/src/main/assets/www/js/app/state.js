@@ -175,11 +175,13 @@
     name: '', mode: 'hybrid',
     apiUrl: '', apiKey: '', apiModel: '',
     voiceOn: true, rate: 1, conv: true, voiceName: '', pitch: 1,
-    /* v2.9.1: que el MODELO elija herramientas. Apagado por defecto a propósito:
-       consume una generación extra por mensaje, así que no puede ser surprise.
-       Con el on, Kiu igual prueba primero cerebro y ReAct (gratis) y recién ahí
-       pregunta al modelo. */
-    agentOn: false,
+    /* v2.9.1: que el MODELO elija herramientas. Costaba una generación extra por
+       mensaje, por eso estaba apagado. v2.12.0: se enciende por defecto PERO con
+       compuerta (App.agentGate): solo se consulta al modelo cuando el mensaje parece
+       una orden. Preguntas, pedidos de texto y mensajes largos van directo a
+       responder, sin esa generación extra. Kiu igual prueba primero cerebro y ReAct
+       (gratis). */
+    agentOn: true,
     prov: {},
     persona: 'normal', personaX: '', temp: 0.7, maxTok: 700,
     acc: '', chatFs: 'm',
@@ -195,6 +197,8 @@
   if (typeof S.personaX !== 'string') S.personaX = '';
   if (typeof S.acc !== 'string') S.acc = '';
   if (['s', 'm', 'l'].indexOf(S.chatFs) < 0) S.chatFs = 'm';
+  /* v2.12.0: migración única — quien nunca tocó el interruptor tenía false por el default viejo */
+  if (!S._agentGateV2) { S._agentGateV2 = 1; S.agentOn = true; }
   if (S.mode === 'api' && !S.prov) S.mode = 'hybrid';
   if (!S.prov) S.prov = {};
   /* Motor local v1.6.3: servidor estilo OpenAI en la red (LM Studio / Ollama / llama.cpp) */

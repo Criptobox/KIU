@@ -95,7 +95,13 @@
       jobOn('Cargando');
       this.pending = { op: 'load', cb: cb, quiet: !!quiet, name: name, path: path, t0: Date.now() };
       // Contexto según tamaño: modelos chicos tienen más margen para historial
-      var ctx = (gb >= 12) ? 256 : (gb < 1.2 ? 1024 : 512);
+      /* v2.12.0 · 512 tokens era una ventana de juguete: entre el system prompt, el
+         historial y los documentos el prompt se pasaba, y el nativo recortaba del
+         MEDIO (perdia historial y a veces parte de la pregunta). Se sube segun el
+         tamaño del modelo y la RAM; la cache KV va en Q8_0 y el nativo baja solo
+         el contexto (/2) si no entra en la RAM libre, asi que pedir de mas es seguro. */
+      var ctx = (gb < 2.5) ? 4096 : (gb < 5 ? 3072 : 2048);
+      if (ramG && ramG < 6 && ctx > 2048) ctx = 2048;
       var ok = rawBridge('kiuLoad', [path, ctx, 0]);
       if (!ok) {
         this.busyG = false;
@@ -609,9 +615,18 @@
          Antes «qué es…» y «quién es…» acababan en búsqueda web (a menudo Wikipedia),
          impidiendo que el modelo local contestara con sus propios conocimientos.
          Solo se deriva a web si el usuario lo pide explícitamente o si necesita datos
-         que cambian con el tiempo. */
-      if (/^(busca|buscar|buscá|googlea|google|investiga|averigua|consulta en internet|busca en la web)(?:\s|$)/.test(t) ||
-          /\b(noticias de hoy|noticias recientes|ultima hora|ultimas noticias|actualmente|ahora mismo|hoy|esta semana|este mes|version actual|ultima version|precio de|precio actual|cotizacion|tipo de cambio|clima de hoy|tiempo ahora|resultados en vivo|marcador en vivo|quien gano hoy)\b/.test(t)) return 'search';
+         que cambian con el tiempo.
+         v2.12.0 · «hoy», «actualmente», «esta semana»… SOLOS ya no disparan la web:
+         «hoy me siento mal, ¿qué hago?» o «¿cómo se usa actualmente un for?» son
+         charla para el modelo. Hace falta ADEMÁS un dato que de verdad cambia
+         (noticias, precio, clima, resultado…). Y se comparan sin tildes: antes
+         «última hora» nunca coincidía porque las frases estaban escritas sin ellas. */
+      var tn = t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
+      var pideWeb = /^(busca|buscar|busca|googlea|google|investiga|averigua|consulta en internet|busca en la web)(?:\s|$)/.test(tn);
+      var frasesVivas = /\b(noticias de hoy|noticias recientes|ultima hora|ultimas noticias|version actual|ultima version|precio de|precio actual|cotizacion|tipo de cambio|clima de hoy|tiempo ahora|resultados en vivo|marcador en vivo|quien gano hoy)\b/.test(tn);
+      var marcaTiempo = /\b(hoy|ahora mismo|actualmente|esta semana|este mes|en vivo)\b/.test(tn);
+      var datoVivo = /\b(noticias?|precio|cotizacion|dolar|euro|bitcoin|clima|pronostico|temperatura|resultados?|marcador|partido|cartelera|horarios?)\b/.test(tn);
+      if (pideWeb || frasesVivas || (marcaTiempo && datoVivo)) return 'search';
       if (fromVoice) return 'voice';
       return 'chat';
     },

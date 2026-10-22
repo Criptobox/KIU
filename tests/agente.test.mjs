@@ -345,9 +345,14 @@ test('si el agente no hace nada, el flujo sigue igual (no se pierde el mensaje)'
   assert.match(c, /KiuBrain\.fallback\(\)/, 'el fallback final sigue existiendo');
 });
 
-test('el agente está apagado por defecto y se dice por qué', () => {
-  assert.match(stateSrc, /agentOn:\s*false/,
-    'gasta una generación extra por mensaje: no puede activarse por sorpresa');
+test('el agente viene encendido pero con compuerta: no gasta una generación por cada mensaje', () => {
+  /* v2.12.0: antes estaba apagado porque costaba una generación extra por mensaje.
+     Ahora arranca encendido y App.agentGate() solo lo deja correr con órdenes
+     (no con preguntas ni pedidos de texto). El comportamiento de la compuerta se
+     prueba en respuesta-local-v212.test.mjs. */
+  assert.match(stateSrc, /agentOn:\s*true/);
+  assert.match(uiSrc, /S\.agentOn && this\.agentGate\(text\)/,
+    'el agente solo se invoca si pasa la compuerta');
 });
 
 test('cancelar mientras el agente trabaja no lo deja hablando', () => {

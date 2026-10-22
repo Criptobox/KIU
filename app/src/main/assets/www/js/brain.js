@@ -553,34 +553,42 @@ window.KiuBrain = (function () {
       return { handled: true, text: 'Te abrí el calendario con el evento "' + capFirst(tE) + '" para ' + wE.whenTxt + '. Confirmalo ahí y queda guardado.' };
     }
 
+    /* v2.12.0 · SOLO MENSAJES CORTOS. Estas reglas eran regex sueltas: «hola, explicame
+       la fotosintesis» devolvia el saludo fijo, «ayudame a entender X» la lista de
+       comandos y «gracias, y por que el cielo es azul» un «de nada». El modelo local
+       nunca se enteraba. Ahora una charla de cortesia es un mensaje corto; si trae
+       una pregunta de verdad (mas de 4 palabras) se la deja pasar al modelo. */
+    var nPal = t ? t.split(' ').length : 0;
+    var corto = nPal <= 4;
+
     // --- Saludos ---
-    if (/^(hola|holaa+|buenas|buen dia|buenos dias|buenas tardes|buenas noches|hey|che|epa|que tal|holi)\b/.test(t)) {
+    if (corto && /^(hola|holaa+|buenas|buen dia|buenos dias|buenas tardes|buenas noches|hey|che|epa|que tal|holi)\b/.test(t)) {
       var nom = window.KiuApp ? KiuApp.getName() : '';
       return { handled: true, text: (nom ? 'Hola, ' + nom + '. ' : 'Hola. ') + 'Acá estoy. ¿Necesitás una alarma, una nota, un cálculo o simplemente charlar?' };
     }
-    if (/^(chau|adios|hasta luego|nos vemos|me voy)\b/.test(t)) {
+    if (corto && /^(chau|adios|hasta luego|nos vemos|me voy)\b/.test(t)) {
       return { handled: true, text: 'Dale, acá voy a estar. Cuando vuelvas seguimos donde lo dejamos.' };
     }
-    if (/(gracias|gracias kiu|te pasaste)/.test(t)) {
+    if (corto && /(gracias|gracias kiu|te pasaste)/.test(t)) {
       return { handled: true, text: 'De nada, para eso estoy. Cualquier otra cosa avisame.' };
     }
-    if (/(como estas|como andas|todo bien|que haces)/.test(t)) {
+    if (corto && /(como estas|como andas|todo bien|que haces)/.test(t)) {
       return { handled: true, text: 'Al cien: cerebro local respondiendo, memoria intacta y cero quejas. ¿Y vos, cómo andás?' };
     }
 
     // --- Identidad ---
-    if (/(quien eres|que eres|quien sos|vos que sos)/.test(t)) {
+    if (corto && /(quien eres|que eres|quien sos|vos que sos)/.test(t)) {
       return { handled: true, text: 'Soy Kiu, tu agente personal. Vivo en este teléfono con un cerebro local, sin mandar nada a ningún servidor. Puedo darte alarmas exactas, guardarte recuerdos, llevar tareas, hacer cálculos y más. Si conectás tu API en Ajustes, también charlo con IA completa.' };
     }
-    if (/(que puedes hacer|que sabes hacer|ayuda|ayudame|funciones|comandos|para que servis)/.test(t)) {
+    if (corto && /(que puedes hacer|que sabes hacer|ayuda|ayudame|funciones|comandos|para que servis)/.test(t)) {
       return { handled: true, text: 'Esto manejo sin internet:\n- "Enciende la linterna" / "Apaga la linterna" (flash real)\n- "Pon alarma a las 7 y media" (reloj del sistema)\n- "Temporizador de 10 minutos" (suena aunque la app esté cerrada)\n- "Llama a mamá" o "llamá al 911"\n- "Manda un whatsapp a Juan diciendo ya llego"\n- "Busca recetas en YouTube" / "Busca clima en Google"\n- "Abre Spotify" / "Abre WhatsApp" / "Abre Wi-Fi"\n- "Cómo llego al aeropuerto" (rutas en Mapas)\n- "Recuérdame X a las 9" → alarma con notificación\n- "Agenda X mañana a las 15" → evento en calendario\n- "Recuerda que...", "tarea: ...", "nota: ..."\n- "¿Qué hora es?", "Calcula 15% de 2300", "10 kg a libras"\n- "Contraseña segura", chistes, ánimo\n\nY si activás "Despertar por voz" en Ajustes, me despiertás diciendo "Kiu".' };
     }
 
     // --- Hora y fecha ---
-    if (/(que hora|hora es|me decis la hora|la hora)/.test(t)) {
+    if (nPal <= 6 && /(que hora|hora es|me decis la hora|la hora)/.test(t)) {
       return { handled: true, text: 'Son las ' + timeNow() + '.' };
     }
-    if (/(que dia|fecha de hoy|dia es hoy|fecha es hoy|en que fecha)/.test(t)) {
+    if (nPal <= 6 && /(que dia|fecha de hoy|dia es hoy|fecha es hoy|en que fecha)/.test(t)) {
       return { handled: true, text: 'Hoy es ' + dateToday() + '.' };
     }
 

@@ -11,7 +11,11 @@ test('preguntas de conocimiento general no se fuerzan al buscador web', () => {
   assert.doesNotMatch(motor, /qu\[eé\] es \|qui\[eé\]n es/);
 });
 test('búsqueda web se reserva para petición explícita o información cambiante', () => {
-  assert.match(motor, /noticias recientes\|ultima hora\|ultimas noticias\|actualmente/);
+  /* v2.12.0: «actualmente/hoy» sueltos ya NO mandan a la web; hace falta además un dato
+     que cambia (noticias, precio, clima…). Antes la frase llevaba «actualmente» pegada. */
+  assert.match(motor, /noticias recientes\|ultima hora\|ultimas noticias/);
+  assert.doesNotMatch(motor, /noticias recientes\|ultima hora\|ultimas noticias\|actualmente/);
+  assert.match(motor, /marcaTiempo && datoVivo/);
   assert.match(motor, /busca en la web/);
 });
 test('fallback explica el problema del motor sin exigir una API para conversar', () => {

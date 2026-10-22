@@ -25,7 +25,7 @@ test('los reintentos no cortan ni resetean una generación activa a ciegas', () 
   assert.ok(a >= 0 && b > a);
   const block = motor.slice(a, b);
   assert.match(block, /attempt <= 8/);
-  const acceptedPath = block.slice(0, block.indexOf('/* v2.12.6'));
+  const acceptedPath = block.slice(0, block.indexOf('/* v2.12.7'));
   assert.doesNotMatch(acceptedPath, /kiuGenStop|kiuResetBusy/);
   assert.match(block, /attempt <= 8/);
   assert.match(block, /rawBridge\('kiuResetBusy'\)/);
@@ -33,6 +33,6 @@ test('los reintentos no cortan ni resetean una generación activa a ciegas', () 
 });
 
 test('la reparación incrementa versión Android name y code', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
-  assert.match(gradle, /val kiuVersionCode = 80/);
+  assert.match(gradle, /val kiuVersionName = "2\.12\.7"/);
+  assert.match(gradle, /val kiuVersionCode = 81/);
 });

@@ -80,8 +80,8 @@ test('el keystore se busca igual para comprobar que existe y para firmar', () =>
   assert.match(gradle, /val ksFile = rootProject\.file\(ksPath\)/);
   assert.match(gradle, /ksFile\.exists\(\)/);
   assert.match(gradle, /storeFile = ksFile/);
-  assert.match(gradle, /val kiuVersionName = "2\.12\.6"/);
-  assert.match(gradle, /val kiuVersionCode = 80/);
+  assert.match(gradle, /val kiuVersionName = "2\.12\.7"/);
+  assert.match(gradle, /val kiuVersionCode = 81/);
 });
 
 /* ---- v2.11.1: el modelo estaba instalado y el diagnóstico decía SIN MODELO ---- */

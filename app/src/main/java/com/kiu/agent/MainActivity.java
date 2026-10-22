@@ -1389,8 +1389,10 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void kiuGenStop() {
-            KiuNative.stopGen();
-            KiuGenJob.busy = false;
+            // Solo solicita cancelacion. El worker mantiene busy=true hasta salir
+            // de JNI; liberarlo aqui permitia aceptar otra tarea mientras la anterior
+            // seguia dentro de generate(), dejando el estado y las respuestas cruzados.
+            try { KiuNative.stopGen(); } catch (Throwable ignored) { }
         }
 
         @JavascriptInterface
@@ -1432,8 +1434,10 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void kiuResetBusy() {
-            KiuGenJob.busy = false;
-            KiuNative.stopGen();
+            // Compatibilidad con el puente JS antiguo: esto NO puede falsificar
+            // el estado de ejecucion. Solo pide detener; KiuGenJob.run() es el
+            // unico responsable de liberar busy cuando el trabajo realmente termina.
+            try { KiuNative.stopGen(); } catch (Throwable ignored) { }
         }
 
         @JavascriptInterface

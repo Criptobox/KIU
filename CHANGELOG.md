@@ -1,3 +1,12 @@
+## [2.12.7] - 2026-10-22
+
+- Código Android: 81. Corrección de bloqueo del motor.
+
+- `kiuGenStop()` y `kiuResetBusy()` ya no ponen `KiuGenJob.busy=false` de forma prematura.
+- La señal de cancelación se envía al motor nativo; el worker libera el estado al salir realmente de la tarea.
+- Añadida prueba de regresión para impedir que una segunda solicitud se acepte mientras la anterior sigue ejecutándose.
+- Pendiente de validación en dispositivo Android: las pruebas de código no demuestran por sí solas que el modelo nativo se recupere en el teléfono.
+
 ## [2.12.6] - 2026-10-22
 - Fix: tras agotar los reintentos de inicio de generación, intenta sincronizar el estado ocupado del motor nativo.
 - Fix: en el timeout de seguridad, intenta detener la generación y restablecer el estado nativo antes de limpiar el estado JavaScript.

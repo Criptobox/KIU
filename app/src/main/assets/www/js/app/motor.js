@@ -352,7 +352,7 @@
           setTimeout(startGen, 700);
           return;
         }
-        /* v2.12.6 · FIX: si el puente rechazó los 9 intentos, el estado nativo
+        /* v2.12.7 · FIX: si el puente rechazó los 9 intentos, el estado nativo
            podía quedarse ocupado aunque JS ya hubiese liberado busyG. Resetear
            SOLO después de agotar los reintentos evita dejar bloqueadas las
            siguientes preguntas; no se toca una generación aceptada. */

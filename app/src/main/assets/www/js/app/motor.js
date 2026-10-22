@@ -634,7 +634,7 @@
          (noticias, precio, clima, resultado…). Y se comparan sin tildes: antes
          «última hora» nunca coincidía porque las frases estaban escritas sin ellas. */
       var tn = t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
-      var pideWeb = /^(busca|buscar|busca|googlea|google|investiga|averigua|consulta en internet|busca en la web)(?:\s|$)/.test(tn);
+      var pideWeb = /^(?:[¿¡]\s*)?(?:(?:por favor|oye|disculpa|puedes|podrias|podrías|me puedes|me podrias|me podrías)\s*,?\s+)*(busca|buscar|googlea|google|investiga|investigar|averigua|consulta en internet|busca en la web)(?:\s|$)/.test(tn);
       var frasesVivas = /\b(noticias de hoy|noticias recientes|ultima hora|ultimas noticias|version actual|ultima version|precio de|precio actual|cotizacion|tipo de cambio|clima de hoy|tiempo ahora|resultados en vivo|marcador en vivo|quien gano hoy)\b/.test(tn);
       var marcaTiempo = /\b(hoy|ahora mismo|actualmente|esta semana|este mes|en vivo)\b/.test(tn);
       var datoVivo = /\b(noticias?|precio|cotizacion|dolar|euro|bitcoin|clima|pronostico|temperatura|resultados?|marcador|partido|cartelera|horarios?)\b/.test(tn);

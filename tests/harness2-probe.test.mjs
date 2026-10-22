@@ -1,4 +1,4 @@
-/* Harness² Probe v1: evaluación reproducible del enrutador KIU.
+/* Harness² Probe v2: evaluación reproducible y ampliada del enrutador KIU.
  * Ejecutar: node --test tests/harness2-probe.test.mjs
  */
 import test from 'node:test';
@@ -24,6 +24,18 @@ const CASES = [
   { id: 'long-message', text: 'Quiero que me ayudes a pensar en una decisión importante. '.repeat(6), expected: 'reason' },
   { id: 'image', text: '¿Qué aparece en esta imagen?', image: true, expected: 'vision' },
   { id: 'voice-chat', text: 'Cuéntame algo interesante', voice: true, expected: 'voice' },
+  { id: 'chat-temporal-howto', text: '¿Cómo se usa actualmente un bucle for?', expected: 'chat' },
+  { id: 'chat-family-news', text: 'Tengo noticias buenas de mi familia', expected: 'chat' },
+  { id: 'chat-price-concept', text: '¿Qué significa la palabra precio en economía?', expected: 'chat' },
+  { id: 'web-explicit-investigate', text: 'Investiga documentación oficial de Android', expected: 'search' },
+  { id: 'web-exchange-live', text: '¿Cuál es el tipo de cambio del euro ahora mismo?', expected: 'search' },
+  { id: 'code-python', text: 'Corrige este script Python que falla', expected: 'code' },
+  { id: 'reason-compare', text: 'Compara las ventajas y desventajas de dos opciones', expected: 'reason' },
+  { id: 'chat-normal-question', text: '¿Qué puedo cocinar con arroz y frijoles?', expected: 'chat' },
+  { id: 'web-polite-search', text: 'Por favor, busca en internet documentación de Kotlin', expected: 'search' },
+  { id: 'web-polite-research', text: '¿Puedes investigar documentación oficial de Android?', expected: 'search' },
+  { id: 'web-polite-google', text: 'Oye, googlea cómo configurar Gradle', expected: 'search' },
+  { id: 'chat-polite-concept', text: 'Por favor, explícame qué es un API', expected: 'code' },
 ];
 test('Harness² Probe: matriz de enrutamiento y score reproducible', () => {
   const { Rtr } = boot();
@@ -33,7 +45,7 @@ test('Harness² Probe: matriz de enrutamiento y score reproducible', () => {
   });
   const passed = results.filter(r => r.pass).length;
   const score = Math.round((passed / results.length) * 1000) / 10;
-  assert.equal(results.length, 12);
+  assert.equal(results.length, CASES.length);
   assert.equal(passed, results.length,
     `Harness² Probe: ${passed}/${results.length} (${score}%). Casos fallidos:\n` +
     results.filter(r => !r.pass).map(r => `${r.id}: esperado=${r.expected}, actual=${r.actual}`).join('\n'));

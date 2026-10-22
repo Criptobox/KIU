@@ -1,3 +1,26 @@
+## [2.12.5] - 2026-10-22
+
+- Añade una comparación A/B reproducible del detector de peticiones web con fórmulas de cortesía frente a la expresión anterior.
+- Comprueba cinco mejoras previstas y preservación de rutas generales/legadas; no modifica código automáticamente ni llama a servicios externos.
+- Amplía validación de Harness²: la calidad semántica de respuestas del modelo aún requiere evaluación separada.
+- Versión Android: `versionName 2.12.5`, `versionCode 79`.
+- Suite Node.js y compilación APK/dispositivo pendientes de validación en esta iteración.
+
+## [2.12.4] - 2026-10-22
+
+- Harness² Probe: amplía la matriz reproducible de 20 a 24 casos con peticiones explícitas de búsqueda precedidas por fórmulas de cortesía.
+- Enrutador: reconoce peticiones web explícitas con prefijos como «por favor», «puedes», «podrías» y «oye», sin cambiar el comportamiento de preguntas generales.
+- Versión Android: `versionName 2.12.4`, `versionCode 78`.
+- Validación en Node; compilación APK y prueba en dispositivo quedan pendientes.
+
+## [2.12.3] - 2026-10-22
+
+- Amplía Harness² Probe de 12 a 20 casos de enrutamiento, incluyendo casos negativos y frases ambiguas para vigilar falsos positivos.
+- Mantiene la prueba de trazas privacy-safe: registra metadatos, no el texto de consulta.
+- No introduce auto-modificación del código ni llamadas a APIs externas.
+- Versión Android: `versionName 2.12.3`, `versionCode 77`.
+- Suite Node.js, compilación APK y prueba en dispositivo: pendientes de verificación final de esta iteración.
+
 ## [2.12.2] - 2026-10-22
 
 - Añade `tests/harness2-probe.test.mjs`, una matriz de 12 rutas esperadas para probar de forma reproducible el enrutador.

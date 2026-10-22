@@ -8,9 +8,9 @@ const gradle = fs.readFileSync('app/build.gradle.kts', 'utf8');
 const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 
 test('KIU incrementa versión visible y código Android', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.12\.2"/);
-  assert.match(gradle, /val kiuVersionCode = 76/);
-  assert.match(changelog, /## \[2\.12\.2\]/);
+  assert.match(gradle, /val kiuVersionName = "2\.12\.5"/);
+  assert.match(gradle, /val kiuVersionCode = 79/);
+  assert.match(changelog, /## \[2\.12\.5\]/);
 });
 
 test('resumen se identifica por contenido y limita la caché', () => {

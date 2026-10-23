@@ -178,3 +178,7 @@ la recurrencia, así que "todos los lunes" aparece todos los lunes.
 - Al dispararse, el receptor notifica con canal propio `kiu_morning` y, si la app está
   abierta, también empuja `window.kiuMorningSummary(texto)` para dejarlo en el chat.
   Se reagenda solo al día siguiente y `BootReceiver` lo rearma tras reiniciar.
+
+
+## v2.13.3
+- `kiuChatTemplate()` → `String`: plantilla de chat (Jinja) del GGUF cargado; `""` si no hay modelo o no trae plantilla. Solo lectura; se usa para elegir el formato del prompt.

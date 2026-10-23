@@ -68,8 +68,14 @@ test('agentGate: órdenes sí; preguntas, textos y mensajes largos no', () => {
   assert.equal(App.agentGate('qué es la fotosintesis'), false);
   assert.equal(App.agentGate('explicame la relatividad'), false);
   assert.equal(App.agentGate('escribí un poema sobre el mar'), false);
-  assert.equal(App.agentGate('a'.repeat(200)), false);
-  assert.equal(App.agentGate('uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince'), false);
+  assert.equal(App.agentGate('a'.repeat(250)), false);
+  assert.equal(App.agentGate('uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince dieciseis diecisiete dieciocho diecinueve veinte veintiuno veintidos veintitres veinticuatro veinticinco'), false);
+  /* v2.13.0: preguntas sobre el teléfono del usuario SÍ son órdenes para una herramienta */
+  assert.equal(App.agentGate('¿qué tengo mañana?'), true);
+  assert.equal(App.agentGate('que tengo en la agenda el viernes'), true);
+  assert.equal(App.agentGate('¿cuánta batería me queda?'), true);
+  assert.equal(App.agentGate('¿tengo dentista esta semana?'), true);
+  assert.equal(App.agentGate('¿qué hora es?'), true);
   assert.equal(App.agentGate(''), false);
 });
 

@@ -66,6 +66,7 @@ std::atomic<double> g_tps{0.0};
 std::mutex g_out_mtx;             // protege g_out y g_err
 std::string g_out;                // texto acumulado de la generación actual
 std::string g_err;
+std::string g_chat_tpl;           // v2.13.3: plantilla de chat del GGUF cargado (protegida por g_out_mtx)
 
 bool g_backend_ready = false;
 
@@ -211,6 +212,7 @@ void free_locked() {
     // llama g_mtx al llamar
     if (g_ctx)   { llama_free(g_ctx);            g_ctx = nullptr; }
     if (g_model) { llama_model_free(g_model);    g_model = nullptr; }
+    { std::lock_guard<std::mutex> tl(g_out_mtx); g_chat_tpl.clear(); }
 }
 
 void log_silencer(ggml_log_level, const char*, void*) {
@@ -252,6 +254,13 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
         g_loading = false;
         g_load_pct = 0;
         return JNI_FALSE;
+    }
+
+    {   // v2.13.3: guardar la plantilla del GGUF (puede no tener: nullptr). Se lee acá, con
+        // g_mtx tomado, y se sirve desde una copia: el getter no puede esperar una generación.
+        const char* tpl = llama_model_chat_template(g_model, nullptr);
+        std::lock_guard<std::mutex> tl(g_out_mtx);
+        g_chat_tpl = tpl ? std::string(tpl, strnlen(tpl, 32768)) : std::string();
     }
 
     g_load_pct = 70;
@@ -375,6 +384,15 @@ Java_com_kiu_agent_KiuNative_loadProgress(JNIEnv* env, jclass) {
 JNIEXPORT jboolean JNICALL
 Java_com_kiu_agent_KiuNative_isLoaded(JNIEnv*, jclass) {
     return (!g_loading && g_model != nullptr && g_ctx != nullptr) ? JNI_TRUE : JNI_FALSE;
+}
+
+// v2.13.3: plantilla de chat del GGUF cargado ("" si no hay modelo o no trae plantilla).
+// El JS la usa para ELEGIR el formato (ChatML / Llama 3 / Gemma / Mistral) por lo que dice
+// el propio modelo, no por el nombre del archivo.
+JNIEXPORT jstring JNICALL
+Java_com_kiu_agent_KiuNative_chatTemplate(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lk(g_out_mtx);
+    return mk_jstring(env, g_chat_tpl);
 }
 
 JNIEXPORT jstring JNICALL

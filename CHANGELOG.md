@@ -1,3 +1,56 @@
+## [2.13.3] - 2026-10-23
+
+Código Android: 85.
+
+- **El formato de chat sale de la plantilla del propio GGUF.** El nativo guarda `llama_model_chat_template()` al cargar (nuevo `KiuNative.chatTemplate()` → `kiuChatTemplate`) y `Kiu.famFor()` reconoce ChatML, Llama 3, Gemma y Mistral por sus marcadores. Si no hay plantilla o no se reconoce (p. ej. Phi-3), sigue el catálogo / nombre del archivo como antes. Un modelo importado con nombre raro ya no cae en ChatML por defecto.
+- Formato **Mistral** (`[INST] … [/INST]`) y detección de «mistral/mixtral» en nombres importados.
+- La plantilla se sirve desde una copia (no toma `g_mtx`, que se retiene durante toda la generación) y se limpia al liberar el modelo.
+- 4 tests nuevos. El fragmento C++ se comprobó con `g++ -fsyntax-only` contra el `llama.h` del commit fijado (b11669); el archivo completo y el APK siguen sin compilarse.
+
+## [2.13.2] - 2026-10-23
+
+Código Android: 84.
+
+- Ajustes: nuevo interruptor **«Confirmar antes de actuar»** (`S.agentConfirm`) que cierra el pendiente de 2.13.1.
+- El texto del agente en Ajustes y el aviso al activarlo ya no dicen que exige un modelo cargado (desde 2.13.0 se autocarga).
+- 2 tests nuevos; se actualizó el test que fijaba el texto viejo.
+
+## [2.13.1] - 2026-10-23
+
+Código Android: 83.
+
+- **Herramienta `web_search` en el agente** (asíncrona). Nuevo `App.webSnippets(q, cb)`: lee DuckDuckGo y Wikipedia sin pintar nada en el chat; el modelo ve los resultados y redacta. El bucle espera herramientas que devuelven una promesa (tope 10 s).
+- **Selección de herramientas por turno** (`KiuAgente.seleccionar`): se mandan solo las que tienen palabra clave en el pedido; sin coincidencias, todas. Baja el prefill de cada decisión (la CPU del teléfono es el cuello de botella). El presupuesto del manifiesto completo pasa a 360/450 tokens como respaldo; el caso típico queda bajo 300.
+- **Registro de acciones** (`getLog`/`clearLog`): herramienta, riesgo, resultado y hora; nunca los argumentos.
+- **Confirmación de acciones con efecto**: `run({confirmar})` + `App.agentConfirm` (ajuste `S.agentConfirm`, apagado por defecto). Cancelar o 60 s sin respuesta no ejecuta y no cuelga el bucle. `App.confirm` acepta `onCancel`.
+- 11 tests nuevos. Pendiente: compilar y probar en dispositivo; falta el interruptor de `agentConfirm` en Ajustes.
+
+## [2.13.0] - 2026-10-23
+
+Revisión de fondo del agente y del uso de los motores locales. Código Android: 82.
+
+**Motores locales (lo que más fallaba)**
+- Nuevo `Kiu.whenReady(cb)`: carga el último modelo (o el mejor que entre en la RAM), espera una carga ya en curso y recién entonces sigue. Antes, con el modelo descargado de memoria (proceso reiniciado, arranque en frío) Kiu pedía «mandame de nuevo tu mensaje».
+- Con el **router apagado** y ningún modelo cargado, `tryTargets` nunca autocargaba el motor local y contestaba «no tengo un modelo disponible» aunque hubiera modelos descargados. Ahora lo carga y responde.
+- Si el motor está **ocupado**, `tryTargets` espera (hasta ~30 s) en vez de saltar a la nube o al mensaje de «sin modelo».
+- El agente ya no exige `S.kiu.ok`: si hay un modelo descargado, lo carga y sigue.
+
+**Agente**
+- **Gramática GBNF rota (crítico).** Emitía `set_alarm{when:…}` (sin comillas, sin `{"tool":…}`), tenía una `}` suelta y nombres de regla con guion bajo, que llama.cpp no admite. El sampler devolvía `null` y cada decisión salía sin restricción. Reescrita: emite `{"tool":…,"args":{…}}` válido; `grammar(solo)` respeta la lista.
+- Nuevas herramientas: `send_message` (abre el SMS con el texto listo; el usuario toca enviar), `remember` (guarda una nota) y `now` (fecha y hora).
+- El modelo **redacta la respuesta final** viendo lo que hicieron las herramientas (si falla, vale el texto crudo). `componer:false` lo apaga.
+- Compuerta del agente: las preguntas sobre el teléfono («¿qué tengo mañana?», «¿cuánta batería me queda?») ahora son órdenes; el tope de palabras sube de 14 a 24.
+- Qwen3: `/no_think` en las decisiones (antes gastaba los 120 tokens razonando en `<think>`).
+
+**Plantillas**
+- Llama y Gemma: se quitó el BOS escrito a mano; el tokenizador nativo ya lo agrega y quedaba duplicado.
+
+**Tests**
+- 17 tests nuevos (`agente-v213.test.mjs`) y 4 en `agente.test.mjs` (nombres de regla válidos, ramas con JSON legible, `done`, `grammar(solo)`).
+- El test de versión de `embeddings-nativos` ya no fija una versión exacta (por eso la versión quedaba sin subir).
+- Presupuesto de tokens del agente: manifiesto 280→320, prompt 360→410 por las tres herramientas nuevas.
+- Pendiente: compilar y probar en un teléfono; nada de esto está validado en dispositivo.
+
 ## [2.12.7] - 2026-10-22
 
 - Código Android: 81. Corrección de bloqueo del motor.

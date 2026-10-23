@@ -197,7 +197,7 @@ window.KiuAgente = (function () {
      gramática GBNF puede enumerarlos. Menos superficie que inventar. */
   var DEVICE_WHAT = ['linterna', 'bateria', 'espacio', 'abrir_app', 'maps', 'web', 'youtube', 'timer'];
   def('device_action',
-    'Acciones del teléfono. Para llamar: call_contact. Para mandar mensajes: no hay herramienta.',
+    'Acciones del teléfono. Para llamar: call_contact. Para mensajes: send_message.',
     {
       what: { type: 'string', required: true, enum: DEVICE_WHAT, desc: 'Uno de: ' + DEVICE_WHAT.join(' | ') },
       target: { type: 'string', required: false, desc: 'App, minutos o texto. Vacío si no hace falta.' }
@@ -233,6 +233,113 @@ window.KiuAgente = (function () {
       if (r2 && r2.handled) return { ok: true, text: r2.text };
       return { ok: false, err: 'no pude cumplir "' + what + '"' };
     }, { risk: 'write' });
+
+  /* --- 7. mensaje (efecto real, pero lo confirma el usuario) -------------- */
+  def('send_message',
+    'SMS listo para que el usuario toque enviar.',
+    {
+      to: { type: 'string', required: true, desc: 'Contacto o número.' },
+      text: { type: 'string', required: true, desc: 'El mensaje.' }
+    },
+    function (a) {
+      var app = window.KiuApp;
+      var quien = s(a.to, 40), cuerpo = s(a.text, MAX_ARG_LEN);
+      if (!quien || !cuerpo) return { ok: false, err: 'falta a quién o qué decir' };
+      var num = null;
+      if (/^\+?[\d\s\-()]{6,}$/.test(quien)) num = quien.replace(/[^\d+]/g, '');
+      else if (app && app.contactSearch) {
+        var r = app.contactSearch(quien);
+        if (r === 'NEED_PERM') return { ok: false, err: 'necesito permiso de contactos' };
+        if (r && r.length) num = String(r[0].num || '').replace(/[^\d+]/g, '');
+      }
+      if (!num) return { ok: false, err: 'no encontré el número de "' + quien + '"' };
+      var ok = app && app.bridgeCall ? app.bridgeCall('sms', [num, cuerpo]) : false;
+      return { ok: !!ok, text: ok ? ('Te dejé el mensaje para ' + quien + ' listo en tus SMS. Tocá enviar para confirmar.') : 'No pude abrir los mensajes.' };
+    }, { risk: 'write' });
+
+  /* --- 8. memoria ------------------------------------------------------ */
+  def('remember',
+    'Guardar una nota («anotá…»).',
+    { text: { type: 'string', required: true, desc: 'Qué guardar.' } },
+    function (a) {
+      var m = window.KiuMem;
+      var t = s(a.text, MAX_ARG_LEN).trim();
+      if (!t) return { ok: false, err: 'no sé qué guardar' };
+      if (!m || !m.addRecuerdo) return { ok: false, err: 'no puedo guardar notas ahora' };
+      m.addRecuerdo(t);
+      return { ok: true, text: 'Anotado: ' + t };
+    }, { risk: 'write' });
+
+  /* --- 9. fecha y hora (el modelo no tiene reloj) ----------------------- */
+  def('now',
+    'Fecha y hora de hoy.',
+    {},
+    function () {
+      var d = new Date();
+      var dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+      var meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      return { ok: true, text: 'Hoy es ' + dias[d.getDay()] + ' ' + d.getDate() + ' de ' + meses[d.getMonth()] + ' de ' + d.getFullYear() + ', son las ' + hh + '.' };
+    });
+
+  /* --- 10. web (asíncrona: devuelve una promesa; el bucle la espera) ------ */
+  def('web_search',
+    'Buscar datos actuales en internet (noticias, precios, clima, «quién es…»).',
+    { query: { type: 'string', required: true, desc: 'Palabras clave.' } },
+    function (a) {
+      var app = window.KiuApp;
+      var q = s(a.query, MAX_ARG_LEN).trim();
+      if (!q) return { ok: false, err: 'no sé qué buscar' };
+      if (!app || typeof app.webSnippets !== 'function') return { ok: false, err: 'no puedo buscar en la web ahora' };
+      return new Promise(function (resolve) {
+        try {
+          app.webSnippets(q, function (lista) {
+            if (!lista || !lista.length) { resolve({ ok: false, err: 'no encontré nada en la web (¿sin conexión?)' }); return; }
+            resolve({ ok: true, text: 'Resultados de la web sobre «' + q.slice(0, 40) + '»:\n' + lista.map(function (x, i) { return (i + 1) + ') ' + x.t + ': ' + x.s; }).join('\n') });
+          });
+        } catch (e) { resolve({ ok: false, err: 'la búsqueda falló' }); }
+      });
+    });
+
+  /* v2.13.1 · REGISTRO de lo que hizo el agente: solo metadatos (herramienta, riesgo,
+     resultado, hora), nunca los argumentos ni el texto del usuario. Máx. 30. */
+  var LOG = [];
+  function registrar(name, risk, ok, nota) {
+    LOG.push({ tool: name, risk: risk || 'read', ok: !!ok, note: s(nota, 80), at: Date.now() });
+    if (LOG.length > 30) LOG.shift();
+  }
+
+  /* v2.13.1 · SELECCIÓN de herramientas por turno. Con 10 herramientas el manifiesto
+     completo cuesta ~340 tokens de prefill en cada decisión. La mayoría de los pedidos
+     tocan 1 o 2: se mandan solo las que tienen una palabra clave en el pedido. Si ninguna
+     coincide (o el pedido es raro) se mandan TODAS: nunca se le quita al modelo la
+     herramienta correcta por un regex corto. */
+  var KW = {
+    set_alarm: /\b(alarma|recordatorio|recuerda|recuerdame|avisame|despiert|temporizador|timer|a las \d|en \d+ (min|hora))/,
+    read_calendar: /\b(agenda|calendario|reunion|evento|cita|tengo (algo|hoy|manana|el|dentista|que)|que tengo|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/,
+    find_contact: /\b(contacto|numero de|telefono de|celular de)\b/,
+    call_contact: /\b(llam|marc|telefone)/,
+    search_docs: /\b(documento|archivo|pdf|apunte|segun mis|en mis)\b/,
+    device_action: /\b(linterna|bateria|espacio|abr[ei]|maps|mapa|youtube|temporizador|timer|navega|ruta)\b/,
+    send_message: /\b(mensaje|sms|escrib|mand|envi|whatsapp|decile|dile|avisale)/,
+    remember: /\b(anota|apunta|acuerdate|acordate|guarda|recuerda que|recorda)/,
+    now: /\b(hora|fecha|dia es|que dia|cuando es hoy|hoy es)\b/,
+    web_search: /\b(busca|investiga|noticias?|precio|clima|cotizacion|quien es|quien fue|que es|internet|web|google)/
+  };
+  function norm(t) {
+    t = String(t || '').toLowerCase();
+    return t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
+  }
+  function seleccionar(pedido) {
+    var t = norm(pedido), out = [], names = toolNames();
+    for (var i = 0; i < names.length; i++) {
+      var rx = KW[names[i]];
+      if (!rx || rx.test(t)) out.push(names[i]);   /* sin regex = herramienta nueva: va siempre */
+    }
+    /* sin coincidencias reales, o demasiado pocas para estar seguros → todas */
+    var conKw = out.filter(function (n) { return KW[n]; });
+    return conKw.length ? out : names;
+  }
 
   /* ================= esquema → prompt ================= */
   function toolNames() { return Object.keys(TOOLS); }
@@ -518,14 +625,34 @@ window.KiuAgente = (function () {
   function run(opts, cb) {
     var o = opts || {};
     var K = window.Kiu;
-    var herramientas = o.tools && o.tools.length ? o.tools : toolNames();
+    var herramientas = o.tools && o.tools.length ? o.tools : seleccionar((o.habla && o.habla.length) ? o.habla[o.habla.length - 1] : o.pedido);
     var max = o.maxSteps || MAX_STEPS;
     var obs = [];
     var hecho = [];
     var n = 0;
 
     if (!K || typeof K.ask !== 'function') { cb({ ok: false, err: 'sin motor' }); return; }
-    if (!window.S || !window.S.kiu || !window.S.kiu.ok) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
+    /* v2.13.0: si el modelo no está en memoria (proceso reiniciado, descarga por
+       inactividad) se carga ahora y el agente sigue, en vez de rendirse. */
+    var cargado = !!(window.S && window.S.kiu && window.S.kiu.ok);
+    var staleLoad = cargado && typeof K.isLoaded === 'function' && K.isLoaded() === false;
+    if ((!cargado || staleLoad) && typeof K.whenReady === 'function') {
+      K.whenReady(function (okR) {
+        if (!okR) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
+        paso();
+      });
+      return;
+    }
+    if (!cargado) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
+
+    function seguir(t, out) {
+      var txt = (out && (out.text || out.err)) || '';
+      obs.push(txt);
+      if (out && out.ok && out.text) hecho.push(out.text);
+      anotar(t, null, !!(out && out.ok), out && out.ok ? '' : txt);
+      paso();
+    }
+    function anotar(t, args, ok, nota) { registrar(t.name, t.risk, ok, nota); }
 
     function paso() {
       if (n >= max) { finish(); return; }
@@ -555,21 +682,53 @@ window.KiuAgente = (function () {
         var v = validate(rd.name, rd.raw);
         if (!v.ok) { obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
         var t = getTool(rd.name);
-        var out;
-        try { out = t.run(v.args); } catch (e) { out = { ok: false, err: 'la herramienta falló: ' + e.message }; }
-        var txt = (out && (out.text || out.err)) || '';
-        obs.push(txt);
-        if (out && out.ok && out.text) hecho.push(out.text);
-        paso();
+        /* v2.13.1: acciones con efecto pasan por o.confirmar(tool, args, cb) si el llamador
+           lo pide; si el usuario dice que no, se informa al modelo y se sigue. */
+        function ejecutar() {
+          var out;
+          try { out = t.run(v.args); } catch (e) { out = { ok: false, err: 'la herramienta falló: ' + e.message }; }
+          if (out && typeof out.then === 'function') {
+            /* herramienta asíncrona (web_search): se espera, con tope de 10 s */
+            var hecho2 = false;
+            var timer = setTimeout(function () { if (!hecho2) { hecho2 = true; seguir(t, { ok: false, err: 'la herramienta tardó demasiado' }); } }, 10000);
+            out.then(function (r) { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, r); },
+              function () { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, { ok: false, err: 'la herramienta falló' }); });
+            return;
+          }
+          seguir(t, out);
+        }
+        if (t.risk === 'write' && typeof o.confirmar === 'function') {
+          var resp = false;
+          try {
+            o.confirmar(t.name, v.args, function (si) {
+              if (resp) return; resp = true;
+              if (si) ejecutar();
+              else { anotar(t, v.args, false, 'cancelada por el usuario'); obs.push('El usuario canceló ' + t.name + '.'); paso(); }
+            });
+          } catch (eCf) { if (!resp) { resp = true; ejecutar(); } }
+          return;
+        }
+        ejecutar();
       }, null, gbnf);
     }
     function finish() {
-      cb({
-        ok: hecho.length > 0,
-        text: hecho.join('\n'),
-        obs: obs,
-        steps: n
-      });
+      var crudo = hecho.join('\n');
+      var res = { ok: hecho.length > 0, text: crudo, obs: obs, steps: n };
+      /* v2.13.0 · el modelo VE lo que pasó y contesta como Kiu, en vez de volcar el
+         texto de la herramienta. Solo si hubo resultados y el llamador no lo apagó;
+         si la redacción falla o sale vacía, vale el texto crudo (siempre correcto). */
+      if (!hecho.length || o.componer === false || !o.habla || !o.habla.length) { cb(res); return; }
+      var msgs = [
+        { role: 'system', content: 'Sos Kiu, el asistente del teléfono. Ya ejecutaste las acciones. Contestale al usuario en español, en 1 o 2 frases cortas, usando SOLO estos resultados; no inventes nada.\nRESULTADOS:\n' + crudo.slice(0, 600) + (typeof window.S === 'object' && window.S.kiu && /qwen3/i.test(String(window.S.kiu.name || '')) ? '\n/no_think' : '') },
+        { role: 'user', content: o.habla[o.habla.length - 1] }
+      ];
+      try {
+        K.ask(msgs, 110, function (r2) {
+          var t = r2 && r2.ok && r2.text ? String(r2.text).replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim() : '';
+          if (t && t.length > 3) { res.crudo = crudo; res.text = t; }
+          cb(res);
+        });
+      } catch (eC) { cb(res); }
     }
     paso();
   }
@@ -602,7 +761,10 @@ window.KiuAgente = (function () {
 
   return {
     TOOLS: TOOLS,
+    getLog: function () { return LOG.slice(); },
+    clearLog: function () { LOG.length = 0; },
     toolNames: toolNames,
+    seleccionar: seleccionar,
     get: getTool,
     manifest: manifest,
     grammar: grammar,

@@ -27,7 +27,13 @@ test('embeddings se limitan a 96 tokens y normalizan el vector', () => {
   assert.match(cpp, /pooled\[\(size_t\)j\] \/= \(float\)norm/);
 });
 
-test('versión Android incrementada a 2.12.7 / 80', () => {
-  assert.match(gradle, /kiuVersionName = "2\.12\.7"/);
-  assert.match(gradle, /kiuVersionCode = 81/);
+test('versión Android no retrocede de 2.12.7 / 81', () => {
+  /* v2.13.0: antes fijaba la versión EXACTA, y por eso cada mejora obligaba a tocar este test
+     (o se quedaba sin subir la versión). Ahora solo impide retroceder. */
+  const vn = gradle.match(/kiuVersionName = "(\d+)\.(\d+)\.(\d+)"/);
+  const vc = gradle.match(/kiuVersionCode = (\d+)/);
+  assert.ok(vn && vc, 'faltan kiuVersionName / kiuVersionCode');
+  const n = Number(vn[1]) * 1e6 + Number(vn[2]) * 1e3 + Number(vn[3]);
+  assert.ok(n >= 2012007, 'versión por debajo de 2.12.7');
+  assert.ok(Number(vc[1]) >= 81, 'versionCode por debajo de 81');
 });

@@ -1395,6 +1395,17 @@ public class MainActivity extends Activity {
             try { KiuNative.stopGen(); } catch (Throwable ignored) { }
         }
 
+        /* v2.13.3: plantilla de chat del modelo cargado (para elegir el formato del prompt). */
+        @JavascriptInterface
+        public String kiuChatTemplate() {
+            try {
+                String t = KiuNative.chatTemplate();
+                return t == null ? "" : t;
+            } catch (Throwable th) {
+                return "";
+            }
+        }
+
         @JavascriptInterface
         public boolean kiuIsLoaded() {
             try {

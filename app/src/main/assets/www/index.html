@@ -571,8 +571,13 @@
                extra por mensaje; la fila dice qué es para que la decisión sea
                informada y no un misterio. -->
           <div class="set-row">
-            <div><strong>Agente con herramientas</strong><span>Que el modelo elija la herramienta (alarma, agenda, documentos) en vez de acertar con los patrones de siempre. Necesita un modelo cargado</span></div>
+            <div><strong>Agente con herramientas</strong><span>Que el modelo elija la herramienta (alarma, agenda, documentos) en vez de acertar con los patrones de siempre. Si el modelo no está en memoria, lo carga solo</span></div>
             <button class="toggle" id="tg-agent" aria-label="Agente con herramientas"></button>
+          </div>
+          <!-- v2.13.2: confirmación de acciones con efecto del agente -->
+          <div class="set-row">
+            <div><strong>Confirmar antes de actuar</strong><span>El agente pregunta «¿Lo hago?» antes de llamar, mandar un SMS, anotar o programar una alarma</span></div>
+            <button class="toggle" id="tg-agent-confirm" aria-label="Confirmar antes de actuar"></button>
           </div>
           <div class="set-row">
             <div><strong data-i18n="set.thermal">Protección térmica</strong><span data-i18n="set.thermal.sub">Corta la generación del motor si el teléfono pasa de 46°</span></div>

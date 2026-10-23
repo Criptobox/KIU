@@ -33,6 +33,6 @@ test('los reintentos no cortan ni resetean una generación activa a ciegas', () 
 });
 
 test('la reparación incrementa versión Android name y code', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.12\.7"/);
-  assert.match(gradle, /val kiuVersionCode = 81/);
+  assert.ok(((m) => m && (+m[1] * 1e6 + +m[2] * 1e3 + +m[3]) >= 2012007)(gradle.match(/val kiuVersionName = "(\d+)\.(\d+)\.(\d+)"/)), 'la versión no puede bajar de 2.12.7');
+  assert.ok(+gradle.match(/val kiuVersionCode = (\d+)/)[1] >= 81, 'el versionCode no puede bajar de 81');
 });

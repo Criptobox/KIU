@@ -182,6 +182,7 @@
        responder, sin esa generación extra. Kiu igual prueba primero cerebro y ReAct
        (gratis). */
     agentOn: true,
+    agentConfirm: false,   /* v2.13.1: preguntar antes de ejecutar acciones con efecto */
     prov: {},
     persona: 'normal', personaX: '', temp: 0.7, maxTok: 700,
     acc: '', chatFs: 'm',

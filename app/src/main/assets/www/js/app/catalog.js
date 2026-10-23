@@ -25,6 +25,7 @@
     n = String(n || '').toLowerCase();
     if (n.indexOf('llama') >= 0) return 'llama';
     if (n.indexOf('gemma') >= 0) return 'gemma';
+    if (/mistral|mixtral/.test(n)) return 'mistral';
     return 'qwen';
   }
   /* v1.7.3: clasifica un modelo como texto / visión / mmproj (complemento de visión) */

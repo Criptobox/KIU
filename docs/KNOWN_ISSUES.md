@@ -1,6 +1,9 @@
 # Pendientes y mejoras sugeridas
 
 ## Resueltas
+- [x] **No usaba los motores locales** (2.13.0) → con el modelo fuera de memoria o el router apagado, el envío pedía reenviar el mensaje o contestaba «no tengo un modelo». `Kiu.whenReady` carga el modelo y continúa solo; `tryTargets` espera si el motor está ocupado. **Pendiente de confirmar en dispositivo.**
+- [x] **Gramática GBNF del agente inválida** (2.13.0) → nombres con `_`, `}` suelta y JSON sin comillas; llama.cpp la descartaba. Reescrita.
+- [x] **Versión sin subir** (2.13.0) → nueve tests fijaban `2.12.7`/`81` exactos; ahora solo exigen que no retroceda.
 - [x] **El motor nativo compilaba contra `llama.cpp` de `master`** → el CI y
       `vendor_llama.sh` clonaban la punta de la rama: un commit de upstream podía romper
       el build sin cambiar nada del repo y no había forma de volver atrás (el clon local

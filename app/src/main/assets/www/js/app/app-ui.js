@@ -2034,12 +2034,12 @@
          Va ANTES de la generación normal porque si el agente ejecutó algo, esa ES
          la respuesta: generar un párrafo encima sería tirar el trabajo. Si no
          ejecutó nada, se sigue como si nada. */
-      if (S.kiu.ok && window.KiuAgente && S.agentOn && this.agentGate(text)) {
+      if ((S.kiu.ok || (Kiu.available() && Kiu.best())) && window.KiuAgente && S.agentOn && this.agentGate(text)) {
         try {
           this.showTyping(true);
           stSet('ruta', 'Enrutando', 30000);
           var selfA = this;
-          KiuAgente.run({ habla: [text] }, function (ag) {
+          KiuAgente.run({ habla: [text], confirmar: function (tool, args, cbC) { selfA.agentConfirm(tool, args, cbC); } }, function (ag) {
             if (selfA._cancelled) return;
             if (ag && ag.ok && ag.text) {
               stClear('ruta'); stSet('tool', 'Acción del dispositivo');
@@ -2063,14 +2063,36 @@
        directo con el modelo: ahí el agente solo agregaba segundos de espera. */
     agentGate: function (text) {
       var t = String(text || '').trim();
-      if (!t || t.length > 140) return false;
-      if (/[?¿]/.test(t)) return false;
-      if (t.split(/\s+/).length > 14) return false;
+      if (!t || t.length > 200) return false;
       var n = t.toLowerCase().normalize ? t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t.toLowerCase();
+      /* v2.13.0: una pregunta sobre el TELÉFONO del usuario («¿qué tengo mañana?», «¿cuánta
+         batería queda?», «¿tengo dentista?») es una orden para una herramienta, no charla. */
+      var delTelefono = /\b(tengo|agenda|reunion|evento|cita|calendario|bateria|espacio|alarma|recordatorio|contacto|numero de|hora es|fecha es|dia es|mis (notas|tareas|recuerdos))\b/.test(n);
+      if (/[?¿]/.test(t) && !delTelefono) return false;
+      if (t.split(/\s+/).length > 24) return false;
       /* interrogativos (palabra entera) y raíces de verbos de «dame un texto» (tuteo y voseo) */
-      if (/^(que|quien|quienes|como|cual|cuales|cuando|donde|por que|porque|cuanto|cuantos)\b/.test(n)) return false;
+      if (!delTelefono && /^(que|quien|quienes|como|cual|cuales|cuando|donde|por que|porque|cuanto|cuantos)\b/.test(n)) return false;
       if (/^(explic|escrib|reescrib|redact|resum|traduc|compar|analiz|gener|invent|defin|describ|ensen|sugier|suger|recomend|corrig|parafras|cuentame|contame|dime|decime|crea un (cuento|poema|texto))/.test(n)) return false;
       return true;
+    },
+    /* v2.13.1 · confirmación de acciones con efecto (S.agentConfirm, apagada por defecto:
+       llamar y mandar SMS ya abren el marcador/los mensajes y ahí se confirma). Con el
+       ajuste encendido, el agente pregunta ANTES de ejecutar. Sin respuesta en 60 s se
+       cancela: un modal ignorado no puede dejar el bucle colgado. */
+    agentConfirm: function (tool, args, cb) {
+      if (!S.agentConfirm) { cb(true); return; }
+      var a = args || {};
+      var txt = {
+        send_message: 'Preparar un SMS para ' + (a.to || 'ese contacto') + '.',
+        call_contact: 'Llamar a ' + (a.who || 'ese contacto') + '.',
+        remember: 'Guardar esta nota: «' + String(a.text || '').slice(0, 80) + '».',
+        set_alarm: 'Programar una alarma (' + (a.when || '') + ').',
+        device_action: 'Hacer en el teléfono: ' + (a.what || '') + (a.target ? ' ' + a.target : '') + '.'
+      }[tool] || ('Ejecutar ' + tool + '.');
+      var fin = false;
+      function once(v) { if (fin) return; fin = true; cb(v); }
+      setTimeout(function () { once(false); }, 60000);
+      this.confirm('¿Lo hago?', txt, function () { once(true); }, { okLabel: 'Hacerlo', danger: false, onCancel: function () { once(false); } });
     },
     /* lo que venía después del punto donde se inserta el agente */
     tryAfterAgent: function (text, task) {
@@ -2119,6 +2141,17 @@
         /* v2.1: si un ciclo anterior murió sin callback, busyG queda huérfano y el
            motor cargado parecía "no hacer las tareas" — se recupera al vuelo */
         if (Kiu.busyG && !Kiu.pending) { Kiu.busyG = false; try { rawBridge('kiuResetBusy'); } catch (e) { } }
+        /* v2.13.0: motor ocupado (otra generación o carga): esperar, no saltar a la
+           nube ni a «no tengo modelo». Tope ~30 s. */
+        if (Kiu.available() && Kiu.busyG) {
+          this._busyTries = (this._busyTries || 0) + 1;
+          if (this._busyTries <= 25) {
+            this.showTyping(true);
+            setTimeout(function () { self.tryTargets(text, targets, i, live, img, task); }, 1200);
+            return;
+          }
+        }
+        this._busyTries = 0;
         if (Kiu.available() && !Kiu.busyG) {
           var role = Orch.roleOf(task);
           this._autoTask = task;
@@ -2132,6 +2165,9 @@
             if (Orch.wantsSwap(role) && Orch.swapAndReply(role, text)) return;
             if (S.kiu.ok) { this.kiuReply(text, null); return; }
             if (Orch.swapAndReply(role, text)) return;
+            /* v2.13.0: con el router apagado swapAndReply no hace nada y el motor local
+               nunca se cargaba solo aunque hubiera modelos descargados */
+            if (Kiu.best()) { this.kiuReply(text, null); return; }
           }
         }
         this.tryTargets(text, targets, i + 1, live, img, task);
@@ -2151,7 +2187,7 @@
     },
     /* v1.7.0: respuesta con el motor interno (llama.cpp dentro del teléfono)
        v1.9.0: streaming — la respuesta se pinta palabra por palabra en vivo */
-    kiuReply: function (text, liveEl, img, tinyRetry) {
+    kiuReply: function (text, liveEl, img, tinyRetry, _ready) {
       var self = this;
       /* 'Generando' lo enciende Kiu.ask cuando arranca de verdad, no al entrar acá:
          entremedio ensureLoaded() puede estar recargando el modelo, y entonces lo
@@ -2160,14 +2196,19 @@
       /* v2.1.2: verificación honesta del motor. Si el proceso se reinició, el
        * nativo ya no tiene el modelo aunque el sayState dijera "cargado": se
        * recarga sola y se le avisa al usuario en vez de fallar en vacío. */
-      if (!tinyRetry) {
-        var lst = Kiu.ensureLoaded(false);
-        if (lst !== 'ok') {
-          this.showTyping(false);
-          stClear('ruta');
-          if (lst === 'recargando') this.botSay('El motor se había descargado al cerrar la app. Lo estoy recargando: mandame de nuevo tu mensaje en unos segundos.');
-          else if (lst === 'sin-modelo') { this.brainFallbackReply(text); return; }
-          else this.botSay('No pude recargar el modelo automáticamente. Entrá a Modelos y cargalo de nuevo.');
+      if (!tinyRetry && !_ready) {
+        if (!(S.kiu.ok && Kiu.isLoaded())) {
+          /* v2.13.0: no se le pide al usuario que reenvíe: se carga el modelo y se sigue */
+          this.showTyping(true);
+          Kiu.whenReady(function (okR, why) {
+            if (self._cancelled) return;
+            if (okR) { self.kiuReply(text, liveEl, img, tinyRetry, true); return; }
+            self.showTyping(false);
+            stClear('ruta');
+            if (why === 'sin-modelo' || why === 'sin-motor') { self.brainFallbackReply(text); return; }
+            if (why === 'ocupado') { self.botSay('El motor está ocupado con otra tarea. Esperá unos segundos y reintentá.'); return; }
+            self.botSay('No pude cargar el modelo. Entrá a Modelos y cargalo de nuevo.');
+          });
           return;
         }
       }
@@ -4447,14 +4488,25 @@
       }
       /* v2.9.1: el agente. Encenderlo sin modelo cargado no sirve de nada, así que
          el toggle lo avisa en vez de fingir que quedó activo. */
+      var tgAgentCf = document.getElementById('tg-agent-confirm');
+      if (tgAgentCf) {
+        tgAgentCf.classList.toggle('on', !!S.agentConfirm);
+        tgAgentCf.addEventListener('click', function () {
+          S.agentConfirm = !S.agentConfirm; saveS();
+          tgAgentCf.classList.toggle('on', S.agentConfirm);
+          self.toast(S.agentConfirm
+            ? 'Kiu te va a preguntar antes de actuar'
+            : 'Kiu actúa sin preguntar (llamadas y SMS igual se confirman en su app)');
+        });
+      }
       var tgAgent = document.getElementById('tg-agent');
       if (tgAgent) {
         tgAgent.classList.toggle('on', !!S.agentOn);
         tgAgent.addEventListener('click', function () {
           S.agentOn = !S.agentOn; saveS();
           tgAgent.classList.toggle('on', S.agentOn);
-          if (S.agentOn && !S.kiu.ok) {
-            self.toast('El agente necesita un modelo cargado: descargá uno en Modelos y volvé a prenderlo');
+          if (S.agentOn && !S.kiu.ok && !(Kiu.available() && Kiu.best())) {
+            self.toast('El agente necesita un modelo: descargá uno en Modelos y volvé a prenderlo');
             return;
           }
           self.toast(S.agentOn
@@ -5227,6 +5279,37 @@
 
     /* ---------- Puente extendido ---------- */
     bridgeCall: function (fn, args) { return bridge(fn, args); },
+    /* v2.13.1 · fragmentos de la web SIN pintar nada en el chat, para que una herramienta
+       del agente los lea y el modelo redacte. cb(lista) con hasta 3 {t, s, u}; lista vacía
+       si no hay conexión o nadie respondió (nunca lanza). Tope 8 s. */
+    webSnippets: function (q, cb) {
+      var enc = encodeURIComponent(String(q || '').replace(/^busca\s+/i, '').trim().slice(0, 120));
+      var snippets = [];
+      var fin = false;
+      function done() { if (fin) return; fin = true; cb(snippets.slice(0, 3)); }
+      if (!enc || typeof fetch !== 'function') { done(); return; }
+      function to() { var c = (typeof AbortController !== 'undefined') ? new AbortController() : null; setTimeout(function () { if (c) c.abort(); }, 8000); return c ? c.signal : undefined; }
+      var p1 = fetch('https://api.duckduckgo.com/?q=' + enc + '&format=json&no_html=1&skip_disambig=1', { signal: to() })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j) return;
+          var t = (j.AbstractText || '').trim();
+          if (t) snippets.push({ t: (j.Heading || 'Fuente').slice(0, 60), s: t.slice(0, 400), u: j.AbstractURL || '' });
+          var rt = j.RelatedTopics || [];
+          for (var i = 0; i < rt.length && snippets.length < 3; i++) {
+            if (rt[i] && rt[i].Text) snippets.push({ t: rt[i].Text.slice(0, 60), s: rt[i].Text.slice(0, 300), u: rt[i].FirstURL || '' });
+          }
+        }).catch(function () { });
+      var p2 = fetch('https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + enc + '&format=json&origin=*&srlimit=3', { signal: to() })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          var hits = (j && j.query && j.query.search) || [];
+          for (var i = 0; i < hits.length && snippets.length < 3; i++) {
+            snippets.push({ t: String(hits[i].title).slice(0, 60), s: String(hits[i].snippet || '').replace(/<[^>]+>/g, '').slice(0, 300), u: '' });
+          }
+        }).catch(function () { });
+      Promise.all([p1, p2]).then(done, done);
+    },
     contactSearch: function (q) {
       if (!BR || !BR.contacts) return null;
       try {
@@ -5311,7 +5394,7 @@
         '<button class="btn-primary" id="cf-yes" style="' + okStyle + '">' + esc(okLbl) + '</button></div>';
       var body = this.modal(title, html);
       if (!body) return;
-      body.querySelector('#cf-no').addEventListener('click', function () { self.closeModal(); });
+      body.querySelector('#cf-no').addEventListener('click', function () { self.closeModal(); if (typeof opts.onCancel === 'function') opts.onCancel(); });
       body.querySelector('#cf-yes').addEventListener('click', function () {
         self.closeModal();
         onOk();

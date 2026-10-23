@@ -12,6 +12,6 @@ test('recupera generación local huérfana solo tras 180 segundos sin progreso',
   assert.match(motor, /rawBridge\('kiuResetBusy'\)/);
 });
 test('actualiza versionName y versionCode de Android', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.12\.7"/);
-  assert.match(gradle, /val kiuVersionCode = 81/);
+  assert.ok(((m) => m && (+m[1] * 1e6 + +m[2] * 1e3 + +m[3]) >= 2012007)(gradle.match(/val kiuVersionName = "(\d+)\.(\d+)\.(\d+)"/)), 'la versión no puede bajar de 2.12.7');
+  assert.ok(+gradle.match(/val kiuVersionCode = (\d+)/)[1] >= 81, 'el versionCode no puede bajar de 81');
 });

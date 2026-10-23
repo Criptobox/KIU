@@ -320,8 +320,8 @@ test('el toggle del agente existe y avisa si no hay modelo', () => {
   const i = html.indexOf('id="tg-agent"');
   const fila = html.slice(Math.max(0, i - 400), i);
   assert.match(fila, /Agente con herramientas/);
-  assert.match(fila, /Necesita un modelo cargado/,
-    'el texto de la fila dice de qué depende, no solo el nombre');
+  assert.match(fila, /lo carga solo/,
+    'el texto de la fila dice de qué depende, no solo el nombre (v2.13.2: el modelo se autocarga)');
 });
 
 test('el agente va DESPUÉS de cerebro/ReAct y no los reemplaza', () => {
@@ -409,14 +409,16 @@ test('el manifiesto entra en presupuesto', () => {
   const A = cargar().A;
   const tok = A.budget().manifiestoTok;
   assert.equal(typeof tok, 'number', 'budget() tiene que devolver un número');
-  assert.ok(tok <= 280, 'manifiesto: ' + tok + ' tokens (bajó de 435), el techo es 280');
+  /* v2.13.1: techo del manifiesto COMPLETO (10 herramientas, solo se manda entero como
+     respaldo). El caso típico usa seleccionar(): ver agente-v213.test.mjs */
+  assert.ok(tok <= 360, 'manifiesto: ' + tok + ' tokens (bajó de 435), el techo es 360');
 });
 
 test('el prompt completo de una decisión entra en presupuesto', () => {
   const A = cargar().A;
   const tok = A.budget().promptTok;
   assert.equal(typeof tok, 'number');
-  assert.ok(tok <= 360, 'prompt: ' + tok + ' tokens (bajó de 544), el techo es 360');
+  assert.ok(tok <= 450, 'prompt: ' + tok + ' tokens (bajó de 544), el techo es 450');
 });
 
 test('el mensaje del usuario va UNA vez, no dos', () => {

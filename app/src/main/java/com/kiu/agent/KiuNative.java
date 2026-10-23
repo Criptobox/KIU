@@ -52,5 +52,8 @@ public class KiuNative {
         sigue siendo la ruta real. */
     public static native boolean grammarOk();
 
+    /** v2.13.3: plantilla de chat (Jinja) del GGUF cargado; "" si no hay o no trae. */
+    public static native String chatTemplate();
+
     public static native float tokensPerSec();
 }

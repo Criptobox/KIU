@@ -208,6 +208,34 @@
       App.renderStatus();
       return 'fallo';
     },
+    /* v2.13.0 · whenReady(cb): deja el motor local LISTO y recién entonces llama a
+       cb(ok, motivo). Es lo que faltaba para «usar los motores locales»: antes, si el
+       modelo no estaba cargado (proceso reiniciado, descarga por inactividad, arranque
+       en frío), el envío pedía al usuario «mandame de nuevo tu mensaje» o, con el router
+       apagado, ni siquiera intentaba cargarlo y contestaba «no tengo un modelo».
+       Ahora carga el último modelo (o el mejor que entre en la RAM), espera y sigue. */
+    whenReady: function (cb) {
+      var self = this;
+      if (!this.available()) { cb(false, 'sin-motor'); return; }
+      if (S.kiu.ok && this.isLoaded() && !(this.pending && this.pending.op === 'load')) { cb(true); return; }
+      /* ya hay una carga en curso: esperarla (tope 3 min) en vez de lanzar otra */
+      if (this.busyG && this.pending && this.pending.op === 'load') {
+        var t0 = Date.now();
+        var w = setInterval(function () {
+          if (!self.pending || self.pending.op !== 'load') {
+            clearInterval(w); cb(!!S.kiu.ok, S.kiu.ok ? '' : 'fallo-carga'); return;
+          }
+          if (Date.now() - t0 > 180000) { clearInterval(w); cb(false, 'timeout-carga'); }
+        }, 500);
+        return;
+      }
+      if (this.busyG) { cb(false, 'ocupado'); return; }
+      var name = (S.kiu.name && S.dl.done[S.kiu.name]) ? S.kiu.name : this.best();
+      if (!name) { cb(false, 'sin-modelo'); return; }
+      S.kiu.ok = false;
+      try { App.toast('Cargando ' + name.replace(/\.gguf$/i, '').slice(0, 26) + '…'); } catch (eT) { }
+      this.load(name, function (ok) { cb(!!ok, ok ? '' : 'fallo-carga'); }, true);
+    },
     /* v2.4.0 (sección 3-c): PROTECCIÓN TÉRMICA — la temperatura de batería ya
        viene en sysInfo().temp. Mientras hay una generación en curso, cada 10 s
        se mide: a 46 °C o más se corta la generación (entregando el parcial como
@@ -253,12 +281,37 @@
         .replace(/<(\/?)(s|bos|eos|start_of_turn|end_of_turn|unk|pad)>/gi, '<\u200b$1$2>')
         .replace(/\[(\/?)(INST|SYS)\]/gi, '[\u200b$1$2]');
     },
+    /* v2.13.3 · FAMILIA DEL FORMATO DE CHAT. Primero lo que dice el propio GGUF (su
+       plantilla de chat, leída por el nativo al cargar); si no hay plantilla o no se
+       reconoce, el catálogo / el nombre del archivo, como siempre. Así un modelo
+       importado con un nombre raro ya no cae en ChatML por defecto. */
+    famFromTemplate: function (tpl) {
+      var t = String(tpl || '');
+      if (!t) return null;
+      if (t.indexOf('<|start_header_id|>') > -1) return 'llama';
+      if (t.indexOf('<start_of_turn>') > -1) return 'gemma';
+      if (t.indexOf('<|im_start|>') > -1) return 'qwen';       /* ChatML (Qwen, SmolLM2…) */
+      if (t.indexOf('[INST]') > -1) return 'mistral';
+      return null;
+    },
+    famFor: function () {
+      var name = (S.kiu && S.kiu.name) || '';
+      if (this._tplName !== name || !this._tplFam) {
+        var tpl = '';
+        try { tpl = rawBridge('kiuChatTemplate') || ''; } catch (eT) { tpl = ''; }
+        if (typeof tpl === 'string' && tpl.length) {
+          this._tplName = name;                       /* solo se cachea cuando hay plantilla real */
+          this._tplFam = this.famFromTemplate(tpl);
+        }
+      }
+      if (this._tplName === name && this._tplFam) return this._tplFam;
+      var c = modCatByFile(name);
+      return c ? c.fam : 'qwen';
+    },
     fmt: function (msgs) {
       var self0 = this;
       msgs = (msgs || []).map(function (m) { return { role: m.role, content: self0.defang(m.content) }; });
-      var fam = 'qwen';
-      var c = modCatByFile(S.kiu.name);
-      if (c) fam = c.fam;
+      var fam = this.famFor();
       var sys = '';
       for (var i = 0; i < msgs.length; i++) if (msgs[i].role === 'system') sys += msgs[i].content + '\n';
       var out = '';
@@ -282,6 +335,15 @@
           } else if (msgs[g].role === 'assistant') out += '<start_of_turn>model\n' + msgs[g].content + '<end_of_turn>\n';
         }
         out += '<start_of_turn>model\n';
+      } else if (fam === 'mistral') {
+        /* v2.13.3: [INST] … [/INST] (Mistral, Mixtral, Llama 2). El BOS lo agrega el tokenizador. */
+        var firstM = true;
+        for (var q = 0; q < msgs.length; q++) {
+          if (msgs[q].role === 'user') {
+            out += '[INST] ' + (firstM && sys ? sys.trim() + '\n\n' : '') + msgs[q].content + ' [/INST]';
+            firstM = false;
+          } else if (msgs[q].role === 'assistant') out += ' ' + msgs[q].content + '</s>';
+        }
       } else {
         if (sys) out += '<|im_start|>system\n' + sys.trim() + '<|im_end|>\n';
         for (var k = 0; k < msgs.length; k++) {

@@ -469,18 +469,20 @@ test('quedan los disparadores que un modelo chico necesita para no inventar', ()
    lo único que no se puede testear desde Node es el pegamento JNI
    (llama_sampler_init_grammar), que se verifica con un build. */
 
+const rn = (n) => n.replace(/_/g, '-'); /* GBNF: nombres de regla sin guion bajo */
+
 test('la gramática declara una regla por herramienta y una raíz', () => {
   const A = cargar().A;
   const g = A.grammar();
   for (const n of A.toolNames()) {
-    assert.match(g, new RegExp('^' + n + ' ::=', 'm'), 'falta la regla de ' + n);
+    assert.match(g, new RegExp('^' + rn(n) + ' ::=', 'm'), 'falta la regla de ' + n);
   }
   assert.match(g, /^root ::=/m, 'falta la raíz');
   assert.match(g, /\| root|root ::=/);
   /* la raíz tiene queMentionar TODAS las reglas, o alguna queda inalcanzable y el
      motor no puede elegirla */
   const raiz = g.match(/^root ::= (.*)$/m)[1];
-  for (const n of A.toolNames()) assert.ok(raiz.includes(n), n + ' no está en la raíz');
+  for (const n of A.toolNames()) assert.ok(raiz.includes(rn(n)), n + ' no está en la raíz');
   assert.ok(raiz.includes('done'), 'la raíz incluye "listo"');
 });
 
@@ -490,7 +492,7 @@ test('la gramática declara una regla por herramienta y una raíz', () => {
 function chequeaGBNF(g) {
   const reglas = [];
   for (const linea of g.split('\n')) {
-    const m = linea.match(/^(\w+) ::=(.*)$/);
+    const m = linea.match(/^([\w-]+) ::=(.*)$/);
     if (m) reglas.push({ nombre: m[1], cuerpo: m[2] });
     else if (linea.trim() && !/^\s*\|/.test(linea)) {
       throw new Error('línea que no es regla ni continuación: ' + linea);
@@ -521,7 +523,7 @@ test('la gramática está bien formada (llama.cpp tira si no)', () => {
   assert.doesNotThrow(() => { reglas = chequeaGBNF(A.grammar()); },
     'una gramática mal formada revienta el nativo en runtime, no acá');
   for (const n of A.toolNames()) {
-    assert.ok(reglas.some((r) => r.nombre === n), 'falta la regla ' + n);
+    assert.ok(reglas.some((r) => r.nombre === rn(n)), 'falta la regla ' + n);
   }
   assert.ok(reglas.some((r) => r.nombre === 'root'));
   assert.ok(reglas.some((r) => r.nombre === 'done'));
@@ -532,7 +534,7 @@ test('la raíz menciona TODAS las reglas (si no, alguna herramienta es inalcanza
   const reglas = chequeaGBNF(A.grammar());
   const raiz = reglas.find((r) => r.nombre === 'root').cuerpo;
   for (const n of A.toolNames()) {
-    assert.ok(raiz.includes(n), n + ' no está en la raíz: el motor no puede elegirla');
+    assert.ok(raiz.includes(rn(n)), n + ' no está en la raíz: el motor no puede elegirla');
   }
   assert.ok(raiz.includes('done'), 'la raíz incluye "listo"');
 });
@@ -543,7 +545,7 @@ test('cada herramienta declara sus campos con el nombre exacto del esquema', () 
   for (const n of A.toolNames()) {
     const t = A.get(n);
     for (const k of Object.keys(t.args)) {
-      assert.ok(g.includes('"' + k + '"'), n + '.' + k + ' no está en la gramática');
+      assert.ok(g.includes('\\"' + k + '\\"'), n + '.' + k + ' no está en la gramática');
     }
   }
 });
@@ -552,25 +554,25 @@ test('los argumentos opcionales generan las alternativas que existen', () => {
   const A = cargar().A;
   const g = A.grammar();
   /* set_alarm: 1 requerido + 1 opcional = 2 ramas (solo when, y when+label) */
-  const lineas = g.split('\n').filter((l) => l.includes('"set_alarm"'));
+  const lineas = g.split('\n').filter((l) => l.includes('\\"tool\\":\\"set_alarm\\"'));
   assert.equal(lineas.length, 2, 'dos ramas: con y sin el opcional');
-  assert.ok(lineas.some((l) => !l.includes('"label"')), 'la rama sin el opcional');
-  assert.ok(lineas.some((l) => l.includes('"label"')), 'la rama con el opcional');
+  assert.ok(lineas.some((l) => !l.includes('label')), 'la rama sin el opcional');
+  assert.ok(lineas.some((l) => l.includes('label')), 'la rama con el opcional');
   /* read_calendar no tiene requeridos: un objeto vacío tiene que ser legal */
-  assert.ok(g.includes('"read_calendar" "{" "}"') || g.includes('"read_calendar" "{"  }'),
+  assert.ok(g.includes('\\"read_calendar\\",\\"args\\":{" "}}"'),
     'read_calendar tiene que admitir args vacíos');
 });
 
 test('los ENUM quedan enumerados en la gramática (ahí es donde se ahorra)', () => {
   const A = cargar().A;
   const g = A.grammar();
-  const linea = g.split('\n').find((l) => l.includes('"what" ":" ( "linterna"'));
+  const linea = g.split('\n').find((l) => l.includes('\\"what\\":" ( "\\"linterna\\""'));
   assert.ok(linea, 'device_action.what no está enumerado');
   for (const w of A.DEVICE_WHAT) {
-    assert.ok(linea.includes('"' + w + '"'), 'falta el valor ' + w + ' en la gramática');
+    assert.ok(linea.includes('\\"' + w + '\\"'), 'falta el valor ' + w + ' en la gramática');
   }
   /* y NO puede aparecer como string libre al lado */
-  assert.doesNotMatch(linea, /\[\^"\\\\\\n\]/, 'what es enum, no texto libre');
+  assert.doesNotMatch(linea.split('"target')[0], /\bstr\b/, 'what es enum, no texto libre');
 });
 
 test('el enum se valida aunque la gramática no esté activa', () => {
@@ -607,8 +609,8 @@ test('agregar un argumento no obliga a tocar la gramática a mano', () => {
   try {
     const g = A.grammar();
     assert.match(g, /^prueba ::=/m);
-    assert.ok(g.includes('"a"'));
-    assert.ok(g.includes('"b"'));
+    assert.ok(g.includes('\\"a\\":'));
+    assert.ok(g.includes('\\"b\\":'));
     assert.match(A.manifest(), /prueba\(/, 'y el manifiesto también lo toma solo');
     assert.equal(A.validate('prueba', { a: '1' }).ok, true);
   } finally {
@@ -649,7 +651,7 @@ test('la gramática se pasa al motor, y solo cuando el motor la soporta', () => 
     const g = llamadas[0].gbnf;
     assert.notEqual(g, null, 'la gramática tiene que llegar al motor, no null');
     assert.equal(typeof g, 'string');
-    assert.match(g, /^set_alarm ::=/m, 'y ser la derivada del esquema');
+    assert.match(g, /^set-alarm ::=/m, 'y ser la derivada del esquema');
     assert.match(g, /^root ::=/m);
     res();
   }));
@@ -730,4 +732,46 @@ test('motor.js manda temp 0 cuando manda gramática', () => {
   /* y la gramática es opcional: el resto de la app la ignora */
   const c = m.slice(m.indexOf('ask: function'));
   assert.match(c, /gbnf\)/, 'ask() la acepta como argumento opcional');
+});
+
+
+/* v2.12.8 · reglas que la versión anterior violaba y ningún test miraba:
+   llama.cpp rechaza la gramática entera (y el agente cae sin restricción) si
+   un nombre de regla lleva guion bajo o si hay sintaxis suelta fuera de literales. */
+test('la gramática usa solo nombres de regla válidos de GBNF ([a-zA-Z0-9-])', () => {
+  const g = cargar().A.grammar();
+  for (const l of g.split('\n')) {
+    const m = l.match(/^(\S+) ::=/);
+    if (m) assert.match(m[1], /^[a-zA-Z0-9-]+$/, 'nombre de regla inválido: ' + m[1]);
+  }
+});
+
+test('toda rama de la gramática produce el JSON que parseDecision/validate leen', () => {
+  const A = cargar().A;
+  /* Se genera el literal de una rama a mano a partir del texto de la gramática:
+     debe ser JSON parseable y con {"tool","args"}. */
+  const g = A.grammar();
+  const rama = g.split('\n').find((l) => l.includes('set-alarm ::='));
+  const lits = [...rama.matchAll(/"((?:\\.|[^"\\])*)"/g)].map((m) => m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
+  /* lits = [cabecera, '"when":', ... '}}'] ; se rellena el str con "a las 7" */
+  const json = lits[0] + lits[1] + '"a las 7"' + lits[2].replace(/^,.*$/, '') ;
+  const doc = json.endsWith('}}') ? json : json + '}}';
+  const d = A.parseDecision(doc);
+  assert.ok(d, 'no parsea: ' + doc);
+  assert.equal(d.tool, 'set_alarm');
+  assert.equal(A.validate(d.tool, d.args).ok, true);
+});
+
+test('{"listo":true} es una salida legal de la gramática y la lee isDone', () => {
+  const A = cargar().A;
+  assert.match(A.grammar(), /^done ::= "\{\\"listo\\":true\}"$/m);
+  assert.equal(A.isDone(A.parseDecision('{"listo":true}')), true);
+});
+
+test('grammar(solo) respeta la lista de herramientas', () => {
+  const A = cargar().A;
+  const g = A.grammar(['set_alarm']);
+  assert.match(g, /^set-alarm ::=/m);
+  assert.doesNotMatch(g, /^find-contact ::=/m);
+  assert.doesNotMatch(g, /^root ::=.*find-contact/m);
 });

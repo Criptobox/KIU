@@ -313,90 +313,74 @@ window.KiuAgente = (function () {
   function lit(s0) {
     return '"' + String(s0).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   }
-  /* Un valor de tipo string: cualquier cosa menos la comilla de cierre, porque
-     el motor no puede "deshacer" un token ya emitido. */
-  function strValue() {
-    return '( [^"\\\\\\n] | "\\\\\"" )+';
-  }
+  /* v2.12.8 · FIX CRÍTICO. La gramática anterior emitía `set_alarm{when:...}`: sin
+     comillas en las claves, sin `{"tool":…}` y con una `}` suelta fuera de literal
+     (error de sintaxis en GBNF). llama_sampler_init_grammar devolvía null, el nativo
+     lo anotaba en grammarOk=false y la decisión salía SIN restringir: el agente
+     nunca tuvo la garantía de JSON válido que el diseño daba por hecha. Ahora cada
+     rama es un literal JSON completo, tal cual lo lee parseDecision(). */
+  var STR_RULE = 'str ::= "\\"" ( [^"\\\\\\n] | "\\\\" ["\\\\nrt/] )+ "\\""';
 
-  function grammarTools() {
+  function grammarTools(solo) {
     var g = [];
-    var names = toolNames();
+    var names = (solo && solo.length) ? solo : toolNames();
     for (var i = 0; i < names.length; i++) {
-      var t = TOOLS[names[i]];
-      g.push(toolRule(t));
+      if (!TOOLS[names[i]]) continue;
+      g.push(toolRule(TOOLS[names[i]]));
     }
     return g;
   }
 
-  /* Regla de UNA herramienta:
-       tool ::= "set_alarm" "{" "when" ":" string "}"      (los requeridos van)
-              | "set_alarm" "{" "when" ":" string "," "label" ":" string "}"
-     Los opcionales abren DOS alternativas: la de solo los requeridos, y la de
-     todos. Es más fácil de generar y de verificar que una regla con duplicados
-     opcionales, y no deja de ser válida.
-     Solo se generan las alternativas de subconjuntos NO VACÍOS de opcionales:
-     una herramienta con cinco opcionales daría 31 ramas y la gramática se
-     vuelve un mapa de estados más caro que lo que justifica el benefit. Con
-     1 o 2 opcionales, las alternativas son exactas. */
+  /* Regla de UNA herramienta. Los opcionales abren alternativas (hasta 2
+     opcionales: todos los subconjuntos; más de 2: solo requeridos y todos). */
+  /* GBNF solo admite [a-zA-Z0-9-] en nombres de regla: el guion bajo es un error de sintaxis. */
+  function ruleName(n) { return String(n).replace(/_/g, '-'); }
+
   function toolRule(t) {
     var req = [], opt = [];
     for (var k in t.args) {
       if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
       (t.args[k].required ? req : opt).push(k);
     }
-    var nameLit = lit(t.name);
-    var ramas = [];
-    // sin opcionales: una sola rama
-    ramas.push(nameLit + ' "{" ' + objBody(req, t) + ' }');
-    // con opcionales: por cada subconjunto no vacío
-    if (opt.length === 1) {
-      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[0]]), t) + ' }');
-    } else if (opt.length === 2) {
-      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[0]]), t) + ' }');
-      ramas.push(nameLit + ' "{" ' + objBody(req.concat([opt[1]]), t) + ' }');
-      ramas.push(nameLit + ' "{" ' + objBody(req.concat(opt), t) + ' }');
-    }
-    // >2 opcionales: la de todos. Ver la nota de arriba.
-    if (opt.length > 2) {
-      ramas.length = 1;
-      ramas.push(nameLit + ' "{" ' + objBody(req.concat(opt), t) + ' }');
-    }
-    return t.name + ' ::= ' + ramas.join('\n           | ');
+    var subsets = [req];
+    if (opt.length === 1) subsets.push(req.concat([opt[0]]));
+    else if (opt.length === 2) {
+      subsets.push(req.concat([opt[0]]));
+      subsets.push(req.concat([opt[1]]));
+      subsets.push(req.concat(opt));
+    } else if (opt.length > 2) subsets.push(req.concat(opt));
+    var ramas = subsets.map(function (keys) { return branch(t, keys); });
+    return ruleName(t.name) + ' ::= ' + ramas.join('\n           | ');
   }
 
-  /* El cuerpo del objeto: campos separados por coma, en el orden del esquema. */
-  function objBody(keys, t) {
-    if (!keys.length) return '';
-    var partes = [];
+  /* Una rama: {"tool":"x","args":{"k":v,"k2":v2}} como secuencia de literales. */
+  function branch(t, keys) {
+    var out = lit('{"tool":"' + t.name + '","args":{');
     for (var i = 0; i < keys.length; i++) {
-      partes.push(lit(keys[i]) + ' ":" ' + valueRule(t.args[keys[i]], t));
+      out += ' ' + lit((i ? ',' : '') + '"' + keys[i] + '":') + ' ' + valueRule(t.args[keys[i]]);
     }
-    return partes.join(' "," ');
+    return out + ' ' + lit('}}');
   }
 
-  /* El valor de un campo: por tipo, y acotado si el esquema lo acota.
-     Los ENUM son los que másBytes ahorran: en vez de un string libre, el modelo
-     solo puede decir una de las palabras de la lista. */
-  function valueRule(spec, t) {
+  /* El valor de un campo: por tipo, y acotado si el esquema lo acota. */
+  function valueRule(spec) {
     if (spec.enum && spec.enum.length) {
-      return '( ' + spec.enum.map(lit).join(' | ') + ' )';
+      return '( ' + spec.enum.map(function (e) { return lit('"' + e + '"'); }).join(' | ') + ' )';
     }
     if (spec.type === 'number' || spec.type === 'integer') {
-      return '( "-" | [0-9] ) ( [0-9] | [1-9] [0-9] )*';
+      return '( [0-9]+ ( "." [0-9]+ )? )';
     }
-    if (spec.type === 'boolean') {
-      return '( "true" | "false" )';
-    }
-    return strValue();
+    if (spec.type === 'boolean') return '( "true" | "false" )';
+    return 'str';
   }
 
-  /* La gramática entera, con la raíz que acepta tanto una herramienta como el
-     "listo". Es lo que se le pasa a llama_sampler_init_grammar como root. */
+  /* La gramática entera: raíz que acepta una herramienta o {"listo":true}. */
   function grammar(solo) {
     var g = grammarTools(solo);
-    g.push('done ::= "{\\"listo\\": true}"');
-    g.push('root ::= ' + g.map(function (r) { return r.split(' ::=')[0]; }).join(' | '));
+    var nombres = g.map(function (r) { return r.split(' ::=')[0]; });  /* ya con guiones */
+    g.push('done ::= ' + lit('{"listo":true}'));
+    g.push(STR_RULE);
+    g.push('root ::= ' + nombres.concat(['done']).join(' | '));
     return g.join('\n') + '\n';
   }
 
@@ -605,6 +589,10 @@ window.KiuAgente = (function () {
       'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n' +
       'Si no necesitás ninguna: {"listo": true}\n\n' +
       'Usá una herramienta por vez. Elegí la más específica que sirva.';
+    /* v2.12.8: Qwen3 arranca en modo «thinking» y se come los 120 tokens de la
+       decisión razonando en <think> antes de emitir el JSON. /no_think es su
+       interruptor oficial; con otras familias no se agrega. */
+    try { if (window.S && S.kiu && /qwen3/i.test(String(S.kiu.name || ''))) p += '\n/no_think'; } catch (eNt) { }
     if (obs && obs.length) {
       p += '\n\nYA INTENTASTE:\n' + obs.map(function (o, i2) { return (i2 + 1) + ') ' + o; }).join('\n') +
         '\nCon eso decidí si falta algo o si ya está listo.';

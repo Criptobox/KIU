@@ -263,7 +263,9 @@
       for (var i = 0; i < msgs.length; i++) if (msgs[i].role === 'system') sys += msgs[i].content + '\n';
       var out = '';
       if (fam === 'llama') {
-        out = '<|begin_of_text|>';
+        /* v2.12.8: SIN literal <|begin_of_text|>: el tokenizador nativo ya antepone el BOS
+           (llama_tokenize add_special=true) y escribirlo acá lo duplicaba. */
+        out = '';
         if (sys) out += '<|start_header_id|>system<|end_header_id|>\n\n' + sys.trim() + '<|eot_id|>\n';
         for (var j = 0; j < msgs.length; j++) {
           if (msgs[j].role === 'user') out += '<|start_header_id|>user<|end_header_id|>\n\n' + msgs[j].content + '<|eot_id|>\n';
@@ -271,7 +273,7 @@
         }
         out += '<|start_header_id|>assistant<|end_header_id|>\n\n';
       } else if (fam === 'gemma') {
-        out = '<bos>';
+        out = '';   /* v2.12.8: el BOS lo agrega el tokenizador nativo; escribirlo acá lo duplicaba */
         var first = true;
         for (var g = 0; g < msgs.length; g++) {
           if (msgs[g].role === 'user') {

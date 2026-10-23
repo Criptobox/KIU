@@ -238,7 +238,8 @@ test('motor: Kiu.fmt arma plantillas qwen y llama con sistema', () => {
   assert.ok(q.endsWith('<|im_start|>assistant\n'), 'termina invitando al assistant');
   sb.S.kiu.name = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
   const l = sb.Kiu.fmt(msgs);
-  assert.ok(l.indexOf('<|begin_of_text|>') === 0, 'plantilla llama');
+  assert.ok(l.indexOf('<|begin_of_text|>') === -1, 'el BOS lo pone el tokenizador nativo, no la plantilla');
+  assert.ok(l.indexOf('<|start_header_id|>') === 0, 'plantilla llama');
   assert.ok(l.indexOf('<|start_header_id|>user') > 0);
 });
 

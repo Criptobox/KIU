@@ -7,9 +7,13 @@ import re, sys, pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 JAVA = ROOT / 'app/src/main/java/com/kiu/agent/MainActivity.java'
 WWW = ROOT / 'app/src/main/assets/www/js'
-JS_FILES = ['brain.js', 'react.js', 'skills.js', 'tools.js', 'kiu-secure.js',
-            'kiu-migrate.js', 'kiu-avatar-boot.js', 'rag.js', 'i18n.js',
-            'app/env.js', 'app/state.js', 'app/models.js', 'app/motor.js', 'app/app-ui.js']
+# Descubre todos los JS propios recursivamente para que los módulos nuevos no
+# queden fuera de la auditoría por olvidar agregarlos a una lista manual.
+JS_FILES = sorted(
+    str(p.relative_to(WWW)).replace('\\', '/')
+    for p in WWW.rglob('*.js')
+    if 'vendor/' not in str(p.relative_to(WWW)).replace('\\', '/')
+)
 
 java = JAVA.read_text(encoding='utf-8')
 # métodos del Bridge: "@JavascriptInterface\n public TIPO nombre("
@@ -50,6 +54,7 @@ handled = set()
 for f in JS_FILES:
     src = (WWW / f).read_text(encoding='utf-8')
     handled |= set(re.findall(r'window\.(\w+)\s*=\s*function', src))
+    handled |= set(re.findall(r'window\.(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>', src))
     handled |= set(re.findall(r'window\.(\w+)\s*=\s*\(', src))
 print(' ', ', '.join(sorted(handled)))
 
@@ -65,3 +70,18 @@ allpub = set(re.findall(r'public\s+[\w\[\]<>.]+\s+(\w+)\s*\(', java))
 suspect = sorted((called & allpub) - jmethods)
 for m in suspect: print('  !', m)
 if not suspect: print('  (ninguno)')
+
+# La auditoría forma parte de CI: cualquier contrato roto debe bloquear el build.
+# Antes solo imprimía los hallazgos y siempre devolvía código 0, por lo que un
+# puente incompleto podía llegar al APK sin que GitHub Actions lo detectara.
+errors = []
+if missing:
+    errors.append(f'{len(missing)} método(s) JS→Java inexistente(s)')
+if sin:
+    errors.append(f'{len(sin)} evento(s) Java→JS sin handler')
+if suspect:
+    errors.append(f'{len(suspect)} método(s) público(s) usado(s) sin @JavascriptInterface')
+if errors:
+    print('\nAUDITORÍA FALLIDA: ' + '; '.join(errors))
+    sys.exit(1)
+print('\nAUDITORÍA OK: contratos JS↔Java coherentes.')

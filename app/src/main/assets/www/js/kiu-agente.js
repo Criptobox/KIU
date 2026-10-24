@@ -361,7 +361,7 @@ window.KiuAgente = (function () {
    *
    * El presupuesto lo vigila `budget()` y lo fija un test (ver agente.test.mjs):
    * si alguien vuelve a escribir un párrafo, el test se pone rojo. */
-  function manifest(solo) {
+  function manifest(solo, compact) {
     var out = [];
     var names = (solo && solo.length) ? solo : toolNames();
     for (var i = 0; i < names.length; i++) {
@@ -370,9 +370,9 @@ window.KiuAgente = (function () {
       for (var k in t.args) {
         if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
         var a = t.args[k];
-        as.push(k + (a.required ? '' : '?') + ': ' + a.desc);
+        as.push(compact ? (k + (a.required ? '' : '?')) : (k + (a.required ? '' : '?') + ': ' + a.desc));
       }
-      out.push(t.name + '(' + as.join(', ') + ') — ' + t.desc);
+      out.push(compact ? (t.name + '(' + as.join(', ') + ')') : (t.name + '(' + as.join(', ') + ') — ' + t.desc));
     }
     return out.join('\n');
   }
@@ -428,12 +428,12 @@ window.KiuAgente = (function () {
      rama es un literal JSON completo, tal cual lo lee parseDecision(). */
   var STR_RULE = 'str ::= "\\"" ( [^"\\\\\\n] | "\\\\" ["\\\\nrt/] )+ "\\""';
 
-  function grammarTools(solo) {
+  function grammarTools(solo, hermes) {
     var g = [];
     var names = (solo && solo.length) ? solo : toolNames();
     for (var i = 0; i < names.length; i++) {
       if (!TOOLS[names[i]]) continue;
-      g.push(toolRule(TOOLS[names[i]]));
+      g.push(toolRule(TOOLS[names[i]], !!hermes));
     }
     return g;
   }
@@ -443,7 +443,7 @@ window.KiuAgente = (function () {
   /* GBNF solo admite [a-zA-Z0-9-] en nombres de regla: el guion bajo es un error de sintaxis. */
   function ruleName(n) { return String(n).replace(/_/g, '-'); }
 
-  function toolRule(t) {
+  function toolRule(t, hermes) {
     var req = [], opt = [];
     for (var k in t.args) {
       if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
@@ -456,17 +456,19 @@ window.KiuAgente = (function () {
       subsets.push(req.concat([opt[1]]));
       subsets.push(req.concat(opt));
     } else if (opt.length > 2) subsets.push(req.concat(opt));
-    var ramas = subsets.map(function (keys) { return branch(t, keys); });
+    var ramas = subsets.map(function (keys) { return branch(t, keys, hermes); });
     return ruleName(t.name) + ' ::= ' + ramas.join('\n           | ');
   }
 
   /* Una rama: {"tool":"x","args":{"k":v,"k2":v2}} como secuencia de literales. */
-  function branch(t, keys) {
-    var out = lit('{"tool":"' + t.name + '","args":{');
+  function branch(t, keys, hermes) {
+    var out = hermes
+      ? lit('<tool_call>{"name":"' + t.name + '","arguments":{')
+      : lit('{"tool":"' + t.name + '","args":{');
     for (var i = 0; i < keys.length; i++) {
       out += ' ' + lit((i ? ',' : '') + '"' + keys[i] + '":') + ' ' + valueRule(t.args[keys[i]]);
     }
-    return out + ' ' + lit('}}');
+    return out + ' ' + lit(hermes ? '}}</tool_call>' : '}}');
   }
 
   /* El valor de un campo: por tipo, y acotado si el esquema lo acota. */
@@ -482,8 +484,8 @@ window.KiuAgente = (function () {
   }
 
   /* La gramática entera: raíz que acepta una herramienta o {"listo":true}. */
-  function grammar(solo) {
-    var g = grammarTools(solo);
+  function grammar(solo, hermes) {
+    var g = grammarTools(solo, !!hermes);
     var nombres = g.map(function (r) { return r.split(' ::=')[0]; });  /* ya con guiones */
     g.push('done ::= ' + lit('{"listo":true}'));
     g.push(STR_RULE);
@@ -626,7 +628,9 @@ window.KiuAgente = (function () {
     var o = opts || {};
     var K = window.Kiu;
     var herramientas = o.tools && o.tools.length ? o.tools : seleccionar((o.habla && o.habla.length) ? o.habla[o.habla.length - 1] : o.pedido);
-    var max = o.maxSteps || MAX_STEPS;
+    var harness = null;
+    try { harness = window.KiuHarness2 && window.KiuHarness2.choose({ modelName: window.S && window.S.kiu && window.S.kiu.name, provider: o.provider, remote: o.remote }); } catch (eHarness) { harness = null; }
+    var max = o.maxSteps || (harness && harness.maxSteps) || MAX_STEPS;
     var obs = [];
     var hecho = [];
     var n = 0;
@@ -657,7 +661,7 @@ window.KiuAgente = (function () {
     function paso() {
       if (n >= max) { finish(); return; }
       n++;
-      var hist = [{ role: 'system', content: systemPrompt(o.pedido, herramientas, obs, o.habla && o.habla.length) }];
+      var hist = [{ role: 'system', content: systemPrompt(o.pedido, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''))) }];
       if (o.habla && o.habla.length) {
         for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
       }
@@ -667,20 +671,22 @@ window.KiuAgente = (function () {
          igual hace falta: un modelo chico va a fallar el JSON de vez en cuando).
          La gramatica se deriva del esquema, asi que no puede quedar vieja. */
       var gbnf = null;
+      var hermesMode = /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''));
       if (o.usarGramatica !== false) {
         try {
-          if (rawBridge('kiuGenGrammarOk') !== false) gbnf = grammar(herramientas);
+          if (rawBridge('kiuGenGrammarOk') !== false) gbnf = grammar(herramientas, hermesMode);
         } catch (eGr) { gbnf = null; }
       }
-      K.ask(hist, o.maxTokens || 120, function (res) {
-        if (!res || !res.ok || !res.text) { finish(); return; }
+      K.ask(hist, o.maxTokens || (harness && harness.maxTokens) || 120, function (res) {
+        if (!res || !res.ok || !res.text) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'generation'); } catch (eH1) { } finish(); return; }
         var d = parseDecision(res.text);
-        if (!d) { obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
+        if (!d) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'json parse'); } catch (eH2) { } obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
         if (isDone(d)) { finish(); return; }
         var rd = readDecision(d);
         if (rd.bad) { obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
         var v = validate(rd.name, rd.raw);
-        if (!v.ok) { obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
+        if (!v.ok) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'validation'); } catch (eH3) { } obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
+        try { if (window.KiuHarness2) window.KiuHarness2.record(true, 'validated'); } catch (eH4) { }
         var t = getTool(rd.name);
         /* v2.13.1: acciones con efecto pasan por o.confirmar(tool, args, cb) si el llamador
            lo pide; si el usuario dice que no, se informa al modelo y se sigue. */
@@ -733,19 +739,18 @@ window.KiuAgente = (function () {
     paso();
   }
 
-  function systemPrompt(pedido, herramientas, obs, hayHabla) {
+  function systemPrompt(pedido, herramientas, obs, hayHabla, compact, hermes) {
     /* Si el llamador pasa una lista, el prompt muestra SOLO esas herramientas.
        Importa para un modelo chico: cada línea del manifiesto es contexto que no
        está usando, y cada herramienta de más es una chance más de que elija mal. */
-    var lista = manifest(herramientas);
+    var lista = manifest(herramientas, !!compact);
     var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n\n' +
       'HERRAMIENTAS:\n' + lista + '\n\n' +
       /* v2.9.2: la TAREA solo va si NO hay historial. Con historial, el último
          mensaje del usuario YA es la tarea y repetirla acá es tokens de prefill
          tirados a la basura — y en un teléfono, cada token cuenta. */
       (hayHabla ? '' : 'TAREA: ' + s(pedido, 300) + '\n\n') +
-      'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' +
-      'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n' +
+      (hermes ? 'Respondé SOLO con una llamada Hermes: <tool_call>{\"name\":\"nombre\",\"arguments\":{\"k\":\"v\"}}</tool_call>. No agregues texto.\n' : 'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' + 'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n') +
       'Si no necesitás ninguna: {"listo": true}\n\n' +
       'Usá una herramienta por vez. Elegí la más específica que sirva.';
     /* v2.12.8: Qwen3 arranca en modo «thinking» y se come los 120 tokens de la

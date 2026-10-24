@@ -1,3 +1,30 @@
+## [2.13.7] - 2026-10-24
+
+- Añade reutilización conservadora del prefijo común de tokens en la caché KV nativa.
+- Invalida el prefijo guardado cuando embeddings limpian la memoria, se libera el modelo o hay desplazamiento de contexto.
+- Reevaluación obligatoria de al menos el último token del prompt para evitar reutilizar logits obsoletos.
+- La compilación nativa y el rendimiento real deben verificarse en CI/dispositivo; esta entrega no declara esas comprobaciones como realizadas.
+
+## [2.13.5] - 2026-10-24
+
+Código Android: 87.
+
+- **Harness² Compose inicial conectado al agente:** `harness2-compose.js` elige el perfil compacto local por defecto y solo usa el perfil cloud-rich si el llamador indica explícitamente `provider: "cloud"` o `remote: true`. No infiere proveedor remoto por el nombre del modelo.
+- El perfil aporta límites de generación al bucle de herramientas y registra únicamente contadores agregados. No almacena prompts, argumentos ni texto de error.
+- Dos fallos consecutivos devuelven el perfil al compacto; un resultado validado reinicia el contador.
+- Tests específicos para selección, recuperación, privacidad del registro, compresión del manifiesto y formato Hermes. La suite completa queda en 448 pruebas. Esto no cierra aún toda la Fase 1: la auditoría de rollback en dispositivo y la validación del puente durante fallos reales siguen pendientes.
+- **Hermes 2 en el agente:** si el nombre del modelo contiene `Hermes`, el prompt y la gramática GBNF usan `<tool_call>{"name":...,"arguments":...}</tool_call>`; el parser existente normaliza `name/arguments` antes de validar y ejecutar. El formato estándar de otras familias no cambia. Pendiente: prueba real con un GGUF Hermes y la versión nativa vendorizada.
+- **Voz por oraciones durante la generación:** se agregó una cola de TTS que solo entrega oraciones completas, avanza al recibir el evento de fin de voz, cancela el resto al detener la generación y evita pronunciar respuestas que contienen bloques de código o etiquetas de herramientas. La latencia real menor de 400 ms y la telemetría AEC/RMS deben medirse/verificarse en dispositivo.
+
+## [2.13.4] - 2026-10-24
+
+Código Android: 86.
+
+- **Auditoría del puente ampliada:** `scripts/bridge_audit.py` descubre recursivamente todos los módulos JavaScript propios bajo `assets/www/js`, excluyendo `vendor`, en vez de depender de una lista manual que podía omitir archivos nuevos.
+- Reconoce además handlers JavaScript escritos con funciones flecha al revisar eventos Java→JS.
+- Se mantienen las pruebas de proyecto como puerta de CI. Esta iteración no modifica el diseño visual.
+- **Limitación de verificación:** la suite Node y la auditoría se ejecutan localmente; no se pudo compilar el APK en este entorno porque el wrapper Gradle necesita descargar Gradle y la conexión DNS externa no está disponible.
+
 ## [2.13.3] - 2026-10-23
 
 Código Android: 85.
@@ -1649,3 +1676,9 @@ Los dos caminos se pisaban. Ahora hay un solo dueño del estado.
 - **RAG**: notas de ≥12 caracteres (antes 40) y ids de documento únicos (dos archivos en el mismo ms chocaban).
 - **Calculadora**: `%` es porcentaje (`200+10%`=220, `50%`=0,5) en lugar de módulo. `KiuTools.calcEval` expuesto para tests.
 - Tests: 90 → 93 (nuevo `tools.test.mjs`).
+
+## [2.13.3] — mantenimiento de CI (2026-10-24)
+
+- La auditoría `scripts/bridge_audit.py` ahora devuelve código de error si detecta llamadas JS→Java inexistentes, eventos Java→JS sin handler o métodos públicos usados sin `@JavascriptInterface`.
+- El workflow de GitHub Actions ejecuta esa auditoría junto con la suite de pruebas antes de compilar el APK.
+- No se cambia el número de versión de la aplicación: esta entrega no completa el plan v2.14.0.

@@ -576,6 +576,7 @@
     /* v2.1.1: botón «Detener» para el motor local — antes solo existía cuando
        llegaba el primer token (y con el prefill lento había que esperar a ciegas) */
     cancelGen: function () {
+      try { if (window.KiuSentenceTTS) KiuSentenceTTS.cancel(); } catch (eTtsCancel) { }
       if (!this.pending) return false;
       this.pending = null;
       this.busyG = false;
@@ -597,6 +598,56 @@
       App.renderStatus();
     }
   };
+  /* v2.13.5 · cola de TTS por oraciones: permite encolar una oración completa
+     mientras el modelo sigue generando. No habla fragmentos parciales, código ni
+     etiquetas de llamadas a herramientas. La cola avanza con nexoTtsDone. */
+  window.KiuSentenceTTS = (function () {
+    var q = [], last = '', buffer = '', busy = false, enabled = false, disabled = false;
+    function speakNext() {
+      if (window.S && !window.S.voiceOn) { begin(false); return false; }
+      if (busy || !q.length || !enabled || disabled) return false;
+      if (!window.App || typeof App.speak !== 'function') return false;
+      var part = q.shift();
+      if (!part) return speakNext();
+      busy = true;
+      try { App.speak(part); return true; } catch (e) { busy = false; return false; }
+    }
+    function begin(on) { q = []; last = ''; buffer = ''; busy = false; enabled = !!on; disabled = false; }
+    function push(text) {
+      if (!enabled || disabled || typeof text !== 'string') return;
+      if (/```|<\/?tool_call>|<\|im_start\|>/i.test(text)) { disabled = true; q = []; buffer = ''; return; }
+      if (text.length < last.length) { last = ''; buffer = ''; }
+      var delta = text.slice(last.length); last = text;
+      buffer += delta;
+      var m;
+      while ((m = buffer.match(/^([\s\S]*?[.!?](?:[\s]+|$))/))) {
+        var sentence = m[1].replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim();
+        buffer = buffer.slice(m[1].length);
+        if (sentence.length >= 3 && sentence.length <= 600) q.push(sentence);
+      }
+      speakNext();
+    }
+    function finish(finalText) {
+      if (!enabled || disabled) { begin(false); return; }
+      if (typeof finalText === 'string' && /```|<\/?tool_call>|<\|im_start\|>/i.test(finalText)) { begin(false); return; }
+      var rest = buffer;
+      if (!rest && typeof finalText === 'string' && finalText.length > last.length) rest = finalText.slice(last.length);
+      rest = String(rest || '').replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim();
+      if (rest.length >= 3 && rest.length <= 600) q.push(rest);
+      buffer = '';
+      speakNext();
+    }
+    function onDone() {
+      if (!busy) return false;
+      busy = false;
+      if (speakNext()) return true;
+      enabled = false; q = []; buffer = ''; last = '';
+      return false;
+    }
+    function cancel() { begin(false); }
+    return { begin: begin, push: push, finish: finish, onDone: onDone, cancel: cancel };
+  })();
+
   window.kiuNativeDone = function (o) { try { Kiu.handle(o); } catch (e) { } };
   /* v2.3.0 (sección 2): PUSH de tokens en vivo — el wrapper JNI (build desde
      fuente) llama a KiuStream.onToken en Java y acá llega el parcial. Con el

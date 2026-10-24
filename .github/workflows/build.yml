@@ -21,6 +21,8 @@ jobs:
           node-version: '20'
       - name: Correr la suite completa
         run: node --test tests/*.test.mjs
+      - name: Auditar el puente JavaScript ↔ Android
+        run: python3 scripts/bridge_audit.py
 
   # ---- 2) build Gradle (necesita que los tests estén en verde) ----
   # Orden exigido por el flujo: tests → herramientas (get-tools.sh) →

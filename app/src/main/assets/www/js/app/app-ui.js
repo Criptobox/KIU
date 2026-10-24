@@ -153,6 +153,7 @@
       /* v2.11.13: «chao» / «cuelga» dichos mientras Kiu habla (los detecta el servicio) */
       window.nexoEndCall = function () { try { App.endCall(); } catch (e) { } };
       window.nexoTtsDone = function () {
+        try { if (window.KiuSentenceTTS && KiuSentenceTTS.onDone()) return; } catch (eQueueTts) { }
         clearTimeout(App._avT);
         var kk = KS(); if (kk && kk.layer('voz') === 'Hablando') kk.clear('voz');
       };
@@ -2235,8 +2236,10 @@
         var sp = document.getElementById('kiu-elapsed');
         if (sp) sp.textContent = Math.round((Date.now() - elT0) / 1000) + ' s';
       }, 1000);
+      try { if (window.KiuSentenceTTS) KiuSentenceTTS.begin(!!S.voiceOn); } catch (eStreamTts) { }
       Kiu.ask(msgs, Math.min(S.maxTok || 400, 480), function (out) {
         clearInterval(elTimer);
+        try { if (window.KiuSentenceTTS) KiuSentenceTTS.finish(out && out.text ? out.text : ''); } catch (eFinishTts) { }
         self.showTyping(false);
         if (out.ok && out.text) {
           self._kiuStuck = false;
@@ -2276,8 +2279,9 @@
           self.botSay('El motor interno no pudo responder (' + (out.err || 'error') + '). ' + (fb || ''));
         }
       }, function (partial, st) {
-        /* v1.9.0: streaming palabra por palabra */
+        /* v1.9.0: streaming palabra por palabra; TTS recibe solo oraciones completas. */
         if (!partial) return;
+        try { if (window.KiuSentenceTTS) KiuSentenceTTS.push(partial); } catch (ePushTts) { }
         var el = document.getElementById('chat-messages');
         if (!el) return;
         if (firstTok) {
@@ -5240,6 +5244,7 @@
         u.lang = 'es-AR'; u.rate = S.rate;
         var self3 = this;
         u.onend = function () {
+          try { if (window.KiuSentenceTTS && KiuSentenceTTS.onDone()) return; } catch (eQueueBrowser) { }
           clearTimeout(self3._avT);
           var k3 = KS(); if (k3 && k3.layer('voz') === 'Hablando') k3.clear('voz');
         };

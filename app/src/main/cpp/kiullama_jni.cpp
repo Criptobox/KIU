@@ -10,6 +10,7 @@
 // patrón de examples/simple.cpp (llama_batch_ext + llama_process).
 
 #include <jni.h>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -62,6 +63,13 @@ std::atomic<int>  g_threads{4};
 std::atomic<int>  g_ctx_used{0};   // v2.7.4: contexto realmente aplicado (puede ser menor al pedido)
 std::atomic<int>  g_toks{0};
 std::atomic<double> g_tps{0.0};
+
+// v2.13.7: metadatos del prefijo KV reutilizable. Solo se conservan tokens del
+// prompt anterior; los tokens de respuesta se eliminan desde el primer token
+// distinto antes de evaluar el siguiente prompt. Se invalida en operaciones que
+// limpian o desplazan la memoria para no reutilizar posiciones que ya no existen.
+std::vector<llama_token> g_cached_prompt_tokens;
+bool g_prompt_cache_valid = false; // protegido por g_mtx
 
 std::mutex g_out_mtx;             // protege g_out y g_err
 std::string g_out;                // texto acumulado de la generación actual
@@ -210,6 +218,8 @@ void set_err(const std::string& e) {
 
 void free_locked() {
     // llama g_mtx al llamar
+    g_cached_prompt_tokens.clear();
+    g_prompt_cache_valid = false;
     if (g_ctx)   { llama_free(g_ctx);            g_ctx = nullptr; }
     if (g_model) { llama_model_free(g_model);    g_model = nullptr; }
     { std::lock_guard<std::mutex> tl(g_out_mtx); g_chat_tpl.clear(); }
@@ -341,6 +351,10 @@ Java_com_kiu_agent_KiuNative_embedText(JNIEnv* env, jclass, jstring text) {
     }
     // El contexto es compartido con generación: limpiamos antes y después para
     // que la consulta de embeddings no contamine el historial de generación.
+    // Los embeddings comparten el contexto con generación: limpiar aquí invalida
+    // cualquier prefijo KV que se hubiese conservado para el chat.
+    g_cached_prompt_tokens.clear();
+    g_prompt_cache_valid = false;
     llama_memory_clear(llama_get_memory(g_ctx), true);
     int rc = llama_process(g_ctx, LLAMA_PROCESS_TYPE_DECODE, batch);
     int n_embd = llama_model_n_embd(g_model);
@@ -364,6 +378,8 @@ Java_com_kiu_agent_KiuNative_embedText(JNIEnv* env, jclass, jstring text) {
         }
     }
     llama_memory_clear(llama_get_memory(g_ctx), true);
+    g_cached_prompt_tokens.clear();
+    g_prompt_cache_valid = false;
     llama_batch_ext_free(batch);
     if (!valid) return nullptr;
     jfloatArray result = env->NewFloatArray(n_embd);
@@ -547,6 +563,30 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
         n_prompt = (int)toks.size();
     }
 
+    // v2.13.7: reutilización conservadora del prefijo común. La caché solo es
+    // válida si la generación anterior no desplazó contexto y ninguna operación
+    // (p. ej. embeddings) limpió la memoria. Siempre reevaluamos al menos el
+    // último token del prompt para restaurar logits correctos para el sampler.
+    int reuse_tokens = 0;
+    llama_memory_t prompt_mem = llama_get_memory(g_ctx);
+    if (g_prompt_cache_valid && !g_cached_prompt_tokens.empty() && n_prompt > 1) {
+        const int max_common = (int)std::min(g_cached_prompt_tokens.size(), toks.size());
+        while (reuse_tokens < max_common && g_cached_prompt_tokens[(size_t)reuse_tokens] == toks[(size_t)reuse_tokens]) {
+            ++reuse_tokens;
+        }
+        if (reuse_tokens >= n_prompt) reuse_tokens = n_prompt - 1;
+        if (reuse_tokens > 0) {
+            // Borra la respuesta anterior y el sufijo antiguo; el prefijo [0,reuse)
+            // permanece en KV. End=-1 significa hasta el final de la secuencia.
+            llama_memory_seq_rm(prompt_mem, 0, reuse_tokens, -1);
+        }
+    }
+    if (reuse_tokens == 0) {
+        llama_memory_clear(prompt_mem, true);
+        g_prompt_cache_valid = false;
+        g_cached_prompt_tokens.clear();
+    }
+
     // sampler: greedy si temp<=0, si no min_p + temp + dist
     auto sp = llama_sampler_chain_default_params();
     sp.no_perf = false;
@@ -625,7 +665,9 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
 
     // prefill del prompt por lotes
     const int n_batch = 512;
-    int done = 0;
+    int done = reuse_tokens;
+    n_pos = reuse_tokens;
+    bool context_shifted = false;
     while (done < n_prompt) {
         if (g_stop) { ok = false; break; }
         int chunk = n_prompt - done;
@@ -657,6 +699,9 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
                         llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
                         llama_memory_seq_add(mem, 0, n_keep + n_discard, -1, -n_discard);
                         n_pos -= n_discard;
+                        context_shifted = true;
+                        g_prompt_cache_valid = false;
+                        g_cached_prompt_tokens.clear();
                     }
                 } else {
                     set_err("contexto lleno");
@@ -704,6 +749,17 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
 
     llama_batch_ext_free(batch);
     llama_sampler_free(smpl);
+
+    // Guardar solo si el prompt entero fue prellenado y no hubo context shift.
+    // Aunque la respuesta esté incompleta por cancelación, el siguiente turno
+    // eliminará todo lo que esté después del prefijo común antes de reutilizarlo.
+    if (ok && !context_shifted && done == n_prompt) {
+        g_cached_prompt_tokens = toks;
+        g_prompt_cache_valid = true;
+    } else {
+        g_cached_prompt_tokens.clear();
+        g_prompt_cache_valid = false;
+    }
 
     if (!ok && out.empty()) {
         return nullptr;

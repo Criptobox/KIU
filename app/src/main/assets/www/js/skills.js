@@ -25,6 +25,9 @@ window.KiuSkills = (function () {
   var LS = 'kiu_skills';
   var MAX_SKILLS = 20;
   var MAX_SIZE = 8192;
+  var RECIPE_KEY = 'kiu_procedural_recipes_v2138';
+  var MAX_RECIPES = 30;
+  var RECIPE_STOP = /^(?:para|como|cuando|donde|desde|hasta|quiero|necesito|puedes|podrias|hacer|hazme|hacerme|porfavor|favor|esto|esta|este|algo|todo|tengo|tiene|con|sin|una|uno|unos|unas|los|las|del|que|qué|por|mis|mis|me|mi|el|la|de|un|y|o|a|en|al|es|son|the|and|for|with|from|this|that)$/i;
 
   /* ---------- normalización (misma base que el cerebro) ---------- */
   function norm(s) {
@@ -189,6 +192,45 @@ window.KiuSkills = (function () {
     return false;
   }
 
+  function recipeAll() {
+    var a = [];
+    try { a = JSON.parse(localStorage.getItem(RECIPE_KEY) || '[]'); } catch (e) { a = []; }
+    return Array.isArray(a) ? a.filter(function (r) {
+      return r && Array.isArray(r.trigger_keywords) && Array.isArray(r.tool_sequence) && typeof r.id === 'string';
+    }).slice(0, MAX_RECIPES) : [];
+  }
+  function recipeKeywords(task) {
+    var words = norm(task).split(/[^a-z0-9]+/).filter(function (w) {
+      return w.length >= 4 && !RECIPE_STOP.test(w) && !/^\d+$/.test(w);
+    });
+    var out = [];
+    words.forEach(function (w) { if (out.indexOf(w) < 0 && out.length < 6) out.push(w); });
+    return out;
+  }
+  function recordRecipe(task, sequence, validationRule) {
+    if (!Array.isArray(sequence) || sequence.length < 3 || sequence.length > 8) return { ok: false, err: 'se requieren 3–8 pasos exitosos' };
+    var safeSequence = sequence.map(function (x) { return String(x || ''); });
+    if (safeSequence.some(function (x) { return !/^[a-z][a-z0-9_]{1,39}$/.test(x); })) return { ok: false, err: 'secuencia de herramientas inválida' };
+    var keywords = recipeKeywords(task);
+    if (keywords.length < 2) return { ok: false, err: 'no hay suficientes palabras clave genéricas' };
+    var id = 'recipe-' + safeSequence.join('-').slice(0, 24) + '-' + keywords.slice(0, 2).join('-').slice(0, 20);
+    var list = recipeAll().filter(function (r) { return r.id !== id; });
+    list.unshift({ id: id, trigger_keywords: keywords, tool_sequence: safeSequence, validation_rule: String(validationRule || 'Solo sugerir la secuencia; validar argumentos actuales y confirmar acciones de escritura.' ).slice(0, 180), updated_at: Date.now(), uses: 0 });
+    try { localStorage.setItem(RECIPE_KEY, JSON.stringify(list.slice(0, MAX_RECIPES))); return { ok: true, id: id, count: Math.min(list.length, MAX_RECIPES) }; }
+    catch (e) { return { ok: false, err: 'no se pudo guardar la receta local' }; }
+  }
+  function matchRecipe(task) {
+    var words = recipeKeywords(task), best = null, bestScore = 0;
+    if (words.length < 2) return null;
+    recipeAll().forEach(function (r) {
+      var hits = r.trigger_keywords.filter(function (w) { return words.indexOf(w) >= 0; }).length;
+      var score = hits / Math.max(2, Math.min(words.length, r.trigger_keywords.length));
+      if (hits >= 2 && score >= 0.4 && score > bestScore) { best = r; bestScore = score; }
+    });
+    if (best) return { id: best.id, trigger_keywords: best.trigger_keywords.slice(), tool_sequence: best.tool_sequence.slice(), validation_rule: best.validation_rule, score: bestScore };
+    return null;
+  }
+  function clearRecipes() { try { localStorage.removeItem(RECIPE_KEY); return true; } catch (e) { return false; } }
   function count() { return all().length; }
 
   /* ---------- ejemplos incorporados ---------- */
@@ -265,6 +307,10 @@ window.KiuSkills = (function () {
     remove: remove,
     setEnabled: setEnabled,
     count: count,
+    recipeAll: recipeAll,
+    recordRecipe: recordRecipe,
+    matchRecipe: matchRecipe,
+    clearRecipes: clearRecipes,
     exportAll: exportAll,
     importAll: importAll,
     EXAMPLES: EXAMPLES

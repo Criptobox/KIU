@@ -145,7 +145,15 @@
         : ('No arrancó' + (d.ttsErr ? ' — ' + d.ttsErr : '')),
       d.ttsReady
         ? ''
-        : 'Sin motor de TTS, o el sistema lo tiene deshabilitado para esta app. Kiu responde escrito pero no habla: eso NO es lo mismo que "está pensando".'))
+        : 'Sin motor de TTS, o el sistema lo tiene deshabilitado para esta app. Kiu responde escrito pero no habla: eso NO es lo mismo que "está pensando".'));
+
+    var fx = d.audioEffects || {};
+    f.push(fila(!fx.observed || !!fx.aecEnabled, 'Cancelación de eco (AEC)',
+      !fx.observed ? 'Aún no hay una sesión de micrófono medida' : (fx.aecEnabled ? 'Activa en la última sesión' : (fx.aecAvailable ? 'Disponible, pero no se pudo activar' : 'No disponible en este dispositivo/ROM')),
+      fx.observed && !fx.aecEnabled ? 'AEC es opcional en Android; el sistema puede no ofrecerlo para esta sesión.' : ''));
+    f.push(fila(!fx.observed || !!fx.nsEnabled, 'Supresión de ruido',
+      !fx.observed ? 'Aún no hay una sesión de micrófono medida' : (fx.nsEnabled ? 'Activa en la última sesión' : (fx.nsAvailable ? 'Disponible, pero no se pudo activar' : 'No disponible')),
+      'Efectos de audio reportados por la última sesión de micrófono.'));
 
     return f;
   };
@@ -160,6 +168,7 @@
     var h = '<div style="margin:-6px 0 14px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)">';
     h += '<div style="font:600 13px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--mut);margin-bottom:10px">Voz · ' +
       (malas.length ? malas.length + ' problema(s)' : 'todo bien') + '</div>';
+    h += '<div style="font:400 12px/1.5 system-ui,sans-serif;color:var(--mut);margin-bottom:8px">Nivel del micrófono (RMS): <span id="diag-voice-rms-value">' + (KiuDiagVoz.lastRmsDb == null ? 'esperando micrófono' : KiuDiagVoz.lastRmsDb.toFixed(1) + ' dBFS') + '</span></div>';
     for (var i = 0; i < filas.length; i++) {
       var f = filas[i];
       h += '<div style="display:flex;gap:9px;padding:7px 0;border-top:' + (i ? '1px solid var(--line)' : 'none') + '">';

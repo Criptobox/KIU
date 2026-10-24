@@ -2280,6 +2280,7 @@ public class MainActivity extends Activity {
             /* --- 6 · servicio de la palabra de activación --- */
             b.append("\"wwActive\":").append(KiuService.ACTIVE).append(",");
             b.append("\"wwSuspended\":").append(KiuService.SUSPENDED).append(",");
+            b.append("\"audioEffects\":").append(KiuAudioEffects.diagnosticJson()).append(",");
             b.append("\"speaking\":").append(MainActivity.SPEAKING);
             b.append('}');
             return b.toString();

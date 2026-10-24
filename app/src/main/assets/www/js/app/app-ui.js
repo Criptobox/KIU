@@ -146,6 +146,12 @@
       };
       /* v2.11.0: nivel del micrófono (dB del reconocedor) → barras y brillo de Kiu */
       window.nexoVoiceLevel = function (db) { App.vpLevel(db); };
+      window.nexoVoiceRms = function (db) {
+        if (!isFinite(Number(db))) return;
+        if (window.KiuDiagVoz) KiuDiagVoz.lastRmsDb = Number(db);
+        var meter = document.getElementById('diag-voice-rms-value');
+        if (meter) meter.textContent = Number(db).toFixed(1) + ' dBFS';
+      };
       /* v2.8.0: el TTS avisa cuándo empieza y cuándo termina de verdad. Antes se
          calculaba la duración por el largo del texto (Math.min(45000, 3500 + len*70))
          y el bot cortaba o se Pasaba. Ahora manda el evento. */
@@ -5503,6 +5509,22 @@
 
   /* v2.5.0 (sección 4-b): el resumen matutino también queda en el chat
      cuando la app está abierta al dispararse la notificación */
+  /* v2.13.8 · Nudge de memoria al quedar inactivo antes de descargar el modelo.
+     Usa el compresor ya existente; solo actúa si hay historial suficiente y no hay
+     generación activa. No crea hechos nuevos ni borra mensajes de la conversación. */
+  window.KiuMemoryNudge = {
+    run: function () {
+      try {
+        if (!window.Comp || !window.Kiu || Kiu.busyG || !S || !S.kiu || !S.kiu.ok) return false;
+        var hist = chatHist();
+        if (!hist || hist.length <= 8) return false;
+        var before = !!Comp.busy;
+        Comp.apply(hist);
+        return !before && !!Comp.busy;
+      } catch (eNudge) { return false; }
+    }
+  };
+
   window.kiuMorningSummary = function (text) {
     try {
       var t = String(text || '').trim();

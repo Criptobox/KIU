@@ -633,6 +633,9 @@ window.KiuAgente = (function () {
     var max = o.maxSteps || (harness && harness.maxSteps) || MAX_STEPS;
     var obs = [];
     var hecho = [];
+    var successfulTools = [];
+    var failedTools = false;
+    var taskText = s(o.pedido || (o.habla && o.habla.length ? o.habla[o.habla.length - 1] : ''), 300);
     var n = 0;
 
     if (!K || typeof K.ask !== 'function') { cb({ ok: false, err: 'sin motor' }); return; }
@@ -652,6 +655,7 @@ window.KiuAgente = (function () {
     function seguir(t, out) {
       var txt = (out && (out.text || out.err)) || '';
       obs.push(txt);
+      if (out && out.ok) successfulTools.push(t.name); else failedTools = true;
       if (out && out.ok && out.text) hecho.push(out.text);
       anotar(t, null, !!(out && out.ok), out && out.ok ? '' : txt);
       paso();
@@ -661,7 +665,7 @@ window.KiuAgente = (function () {
     function paso() {
       if (n >= max) { finish(); return; }
       n++;
-      var hist = [{ role: 'system', content: systemPrompt(o.pedido, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''))) }];
+      var hist = [{ role: 'system', content: systemPrompt(taskText, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''))) }];
       if (o.habla && o.habla.length) {
         for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
       }
@@ -718,6 +722,11 @@ window.KiuAgente = (function () {
       }, null, gbnf);
     }
     function finish() {
+      /* Aprende solo de ejecuciones completas con al menos tres herramientas exitosas.
+         Guarda nombres/keywords, nunca argumentos, contactos ni resultados. */
+      if (!failedTools && successfulTools.length >= 3 && window.KiuSkills && typeof window.KiuSkills.recordRecipe === 'function') {
+        try { window.KiuSkills.recordRecipe(taskText, successfulTools, 'Reutilizar solo como guía; generar argumentos nuevos, validar esquemas y respetar confirmación para acciones de escritura.'); } catch (eRecipe) { }
+      }
       var crudo = hecho.join('\n');
       var res = { ok: hecho.length > 0, text: crudo, obs: obs, steps: n };
       /* v2.13.0 · el modelo VE lo que pasó y contesta como Kiu, en vez de volcar el
@@ -753,6 +762,14 @@ window.KiuAgente = (function () {
       (hermes ? 'Respondé SOLO con una llamada Hermes: <tool_call>{\"name\":\"nombre\",\"arguments\":{\"k\":\"v\"}}</tool_call>. No agregues texto.\n' : 'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' + 'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n') +
       'Si no necesitás ninguna: {"listo": true}\n\n' +
       'Usá una herramienta por vez. Elegí la más específica que sirva.';
+    /* Receta procedural: solo pista de herramientas, nunca argumentos guardados ni ejecución automática. */
+    try {
+      var recipe = window.KiuSkills && window.KiuSkills.matchRecipe && window.KiuSkills.matchRecipe(pedido);
+      if (recipe && recipe.tool_sequence && recipe.tool_sequence.length >= 3) {
+        p += '\n\nRECETA PROCEDURAL APRENDIDA (pista no vinculante): ' + recipe.tool_sequence.join(' → ') +
+          '. Regenera los argumentos con la petición actual; valida cada herramienta y no omitas confirmaciones. Regla: ' + s(recipe.validation_rule, 180);
+      }
+    } catch (eRecipeHint) { }
     /* v2.12.8: Qwen3 arranca en modo «thinking» y se come los 120 tokens de la
        decisión razonando en <think> antes de emitir el JSON. /no_think es su
        interruptor oficial; con otras familias no se agrega. */

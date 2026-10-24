@@ -47,3 +47,15 @@ test('voz streaming: desactivada no genera llamadas al TTS', () => {
   T.finish('Hola.');
   assert.deepEqual(spoken, []);
 });
+
+
+test('voz streaming: una línea completa termina chunk aunque no tenga puntuación', () => {
+  const { sb, spoken } = boot();
+  const T = sb.KiuSentenceTTS;
+  T.begin(true);
+  T.push('Primera línea\n');
+  assert.deepEqual(spoken, ['Primera línea']);
+  T.push('Primera línea\nSegunda línea\n');
+  assert.equal(T.onDone(), true);
+  assert.deepEqual(spoken, ['Primera línea', 'Segunda línea']);
+});

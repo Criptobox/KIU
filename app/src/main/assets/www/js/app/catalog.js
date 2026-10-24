@@ -21,8 +21,20 @@
     { n: 'Llama 3.2 · 3B · servidor', f: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf', gb: 2.0, r: 4.2, eng: 'server', fam: 'llama', u: 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf', d: 'Para tu PC o servidor local (no corre dentro del teléfono)', sha: '6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff' },
     { n: 'MiniCPM-V 2.6 · visión', vis: true, f: 'ggml-model-IQ4_XS.gguf', gb: 4.0, r: 6.5, eng: 'server', fam: 'qwen', u: 'https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf/resolve/main/ggml-model-IQ4_XS.gguf', d: 'Modelo de visión multimodal para tu servidor (mirá la Guía para el mmproj)', sha: 'ba1e23aa5470520c8c920d7944479133af9ae091a23653529be4348f77ba1e18' }
   ];
+  /* Perfiles de formato para modelos Hermes ya importados. No se publican como
+     descargas: aquí no hay URL/hash de artefacto verificados, así que no se inventan. */
+  var HERMES_PROFILES = [
+    { id: 'nous-hermes-2-pro', match: /nous[-_ ]?hermes[-_ ]?2[-_ ]?pro/i, name: 'Nous-Hermes-2-Pro-Llama-3-8B', format: 'hermes2-tool-call', grammar: true },
+    { id: 'hermes-2-theta', match: /hermes[-_ ]?2[-_ ]?theta/i, name: 'Hermes-2-Theta', format: 'hermes2-tool-call', grammar: true }
+  ];
+  function hermesProfile(name) {
+    var n = String(name || '');
+    for (var i = 0; i < HERMES_PROFILES.length; i++) if (HERMES_PROFILES[i].match.test(n)) return HERMES_PROFILES[i];
+    return /hermes/i.test(n) ? { id: 'hermes-generic', name: n, format: 'hermes2-tool-call', grammar: true } : null;
+  }
   function guessFam(n) {
     n = String(n || '').toLowerCase();
+    if (n.indexOf('hermes') >= 0) return 'hermes';
     if (n.indexOf('llama') >= 0) return 'llama';
     if (n.indexOf('gemma') >= 0) return 'gemma';
     if (/mistral|mixtral/.test(n)) return 'mistral';
@@ -150,6 +162,8 @@
   window.KiuBench = { rec: benchRec };
   window.KiuReco = { plan: recomendar };
   window.MODCAT = MODCAT;
+  window.HERMES_PROFILES = HERMES_PROFILES;
+  window.hermesProfile = hermesProfile;
   window.guessFam = guessFam;
   window.VIS_RX = VIS_RX;
   window.modKind = modKind;

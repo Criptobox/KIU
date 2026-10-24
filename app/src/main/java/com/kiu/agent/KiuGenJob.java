@@ -4,6 +4,7 @@ package com.kiu.agent;
 public class KiuGenJob implements Runnable {
     private static final Object MODEL_LOCK = new Object();
     private static final long IDLE_UNLOAD_MS = 10L * 60L * 1000L;
+    private static final long IDLE_NUDGE_LEAD_MS = 2L * 60L * 1000L;
     private static final java.util.concurrent.ScheduledExecutorService IDLE_EXECUTOR =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "kiu-idle-unload");
@@ -39,22 +40,28 @@ public class KiuGenJob implements Runnable {
     private static void scheduleIdleUnload() {
         java.util.concurrent.ScheduledFuture<?> old = idleUnloadTask;
         if (old != null) old.cancel(false);
+        /* El nudge corre dos minutos antes de liberar el modelo. Si la consolidación
+           empieza una generación, KiuGenJob vuelve a programar este plazo al terminar. */
         idleUnloadTask = IDLE_EXECUTOR.schedule(() -> {
             synchronized (MODEL_LOCK) {
-                // No competir con una generación. Si está ocupada, se reintenta
-                // más tarde en vez de interrumpir la respuesta.
-                if (busy) {
-                    scheduleIdleUnload();
-                    return;
-                }
+                if (busy) { scheduleIdleUnload(); return; }
                 try {
-                    if (KiuNative.isLoaded()) {
-                        KiuNative.freeModel();
-                        unloadedByIdle = true;
-                    }
+                    MainActivity activity = MainActivity.inst;
+                    if (activity != null) activity.js("if(window.KiuMemoryNudge)window.KiuMemoryNudge.run()");
                 } catch (Throwable ignored) { }
+                idleUnloadTask = IDLE_EXECUTOR.schedule(() -> {
+                    synchronized (MODEL_LOCK) {
+                        if (busy) { scheduleIdleUnload(); return; }
+                        try {
+                            if (KiuNative.isLoaded()) {
+                                KiuNative.freeModel();
+                                unloadedByIdle = true;
+                            }
+                        } catch (Throwable ignored) { }
+                    }
+                }, IDLE_NUDGE_LEAD_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
             }
-        }, IDLE_UNLOAD_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, IDLE_UNLOAD_MS - IDLE_NUDGE_LEAD_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     /* v2.11.14: libera la RAM del modelo tras 10 minutos sin uso y lo recarga

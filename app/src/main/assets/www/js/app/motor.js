@@ -620,7 +620,7 @@
       var delta = text.slice(last.length); last = text;
       buffer += delta;
       var m;
-      while ((m = buffer.match(/^([\s\S]*?[.!?](?:[\s]+|$))/))) {
+      while ((m = buffer.match(/^([\s\S]*?(?:[.!?](?:[ \t]+|$)|\n+))/))) {
         var sentence = m[1].replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim();
         buffer = buffer.slice(m[1].length);
         if (sentence.length >= 3 && sentence.length <= 600) q.push(sentence);

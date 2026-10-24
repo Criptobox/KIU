@@ -238,6 +238,7 @@ public class WakeWordEngine {
             avisar("nexoWakeState(true)");
 
             boolean limpio = true;
+            long lastRmsSent = 0;
             while (running.get()) {
                 /* v2.11.6 · BUG REAL «código 7 / no me escucha»: pause() solo levantaba una bandera y este
                    AudioRecord seguía GRABANDO mientras el reconocedor de Google intentaba oírte. Con dos
@@ -282,6 +283,23 @@ public class WakeWordEngine {
                         return LECHO_PARADO;
                     }
                     continue;
+                }
+                /* RMS del micrófono (dBFS), limitado a 2 muestras/segundo para no
+                   añadir carga apreciable al hilo de escucha. Solo se emite telemetría.
+                   No se guarda ni se envía audio crudo. */
+                long rmsNow = System.currentTimeMillis();
+                if (rmsNow - lastRmsSent >= 500L && MainActivity.inst != null) {
+                    double sumSquares = 0.0;
+                    for (int ri = 0; ri < n; ri++) { double sample = buf[ri]; sumSquares += sample * sample; }
+                    double rms = Math.sqrt(sumSquares / Math.max(1, n));
+                    double dbfs = rms > 0 ? 20.0 * Math.log10(rms / 32768.0) : -96.0;
+                    if (dbfs < -96.0) dbfs = -96.0;
+                    if (dbfs > 0.0) dbfs = 0.0;
+                    try {
+                        MainActivity activity = MainActivity.inst;
+                        if (activity != null) activity.js("if(window.nexoVoiceRms)window.nexoVoiceRms(" + String.format(java.util.Locale.US, "%.1f", dbfs) + ")");
+                    } catch (Throwable ignored) { }
+                    lastRmsSent = rmsNow;
                 }
                 /* Mientras Kiu habla por TTS no escuchamos (evita auto-disparo),
                    y tampoco mientras el reconocedor de comando tiene el micro: este

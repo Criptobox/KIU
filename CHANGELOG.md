@@ -1,3 +1,23 @@
+## [2.14.0] - 2026-10-24
+
+- Cierre de Harness²: selección/rollback del perfil activo y validación antes de ejecutar herramientas.
+- Hermes 2: perfiles de formato para modelos ya importados, prompt `<tool_call>` y gramática GBNF con pruebas de parseo/validación.
+- Caché KV: reutilización conservadora del prefijo común; invalidación al limpiar memoria, cambiar contexto o calcular embeddings.
+- Memoria procedural: recetas locales a partir de tareas con al menos tres herramientas exitosas; solo guarda keywords y nombres de herramientas, sin argumentos/resultados. Las recetas sugieren, no ejecutan.
+- Periodic Nudge: intenta consolidar historial extenso con el compresor existente antes de descargar el modelo en inactividad; conserva el historial original.
+- Voz: TTS en streaming por oración y salto de línea; panel de diagnóstico con RMS dBFS limitado a 2 muestras/segundo y estado de AEC/supresión de ruido.
+- Rediseño visual fase 6 omitido deliberadamente, según la instrucción del usuario.
+- Verificación local: 467 pruebas Node pasan y auditoría JS↔Java pasa. No se pudo compilar APK ni C++: falta `vendor/llama.cpp` y el entorno no puede descargar Gradle (`UnknownHostException`).
+
+## [2.13.8] - 2026-10-24
+
+- Memoria procedural local: guarda recetas tras tareas con al menos tres herramientas exitosas; no conserva argumentos ni resultados personales.
+- Hermes 2: perfiles de formato para modelos ya importados, detección de familia y pruebas de `<tool_call>` + gramática. No se añaden enlaces ni hashes de descarga sin verificar.
+- Las recetas coincidentes solo orientan el prompt; no ejecutan acciones automáticamente y respetan validación/confirmaciones.
+- Límite de 30 recetas, palabras clave normalizadas y API para consultar o borrar recetas.
+- Voz: el TTS por streaming también corta en saltos de línea completos; el diagnóstico expone RMS del micrófono y estados reales de AEC/supresión de ruido de la última sesión.
+- Verificación: pruebas automatizadas y auditoría del puente; compilación nativa/APK pendiente por dependencias nativas no incluidas en el paquete de trabajo.
+
 ## [2.13.7] - 2026-10-24
 
 - Añade reutilización conservadora del prefijo común de tokens en la caché KV nativa.

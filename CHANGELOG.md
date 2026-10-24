@@ -1,3 +1,10 @@
+## [2.14.1] - 2026-10-24
+
+- Diagnóstico de generación: `genStatus` expone `running` e ID incremental por solicitud; `done` también se marca al finalizar con cero tokens.
+- JavaScript ignora el estado/texto de una generación anterior y reporta si JNI no publica el inicio en 12 segundos.
+- El motor devuelve errores controlados si no puede reservar sampler, batch o memoria del token, en lugar de desreferenciar punteros nulos.
+- Verificación estática y pruebas automatizadas ejecutadas. La compilación C++/APK sigue pendiente: este ZIP no incluye `vendor/llama.cpp` ni bibliotecas `.so`.
+
 ## [2.14.0] - 2026-10-24
 
 - Cierre de Harness²: selección/rollback del perfil activo y validación antes de ejecutar herramientas.

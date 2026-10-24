@@ -1345,6 +1345,15 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String kiuNativeLoadError() {
+            try {
+                return KiuNative.loadError();
+            } catch (Throwable th) {
+                return th.getClass().getSimpleName() + ": " + String.valueOf(th.getMessage());
+            }
+        }
+
+        @JavascriptInterface
         public void kiuFree() {
             try {
                 if (KiuGenJob.busy) {

@@ -66,7 +66,7 @@
     },
     load: function (name, cb, quiet) {
       var self = this;
-      if (!this.available()) { if (!quiet) App.toast('El motor interno no está disponible en este teléfono'); if (cb) cb(false); return; }
+      if (!this.available()) { var nativeLoadError = ''; try { nativeLoadError = String(rawBridge('kiuNativeLoadError') || '').trim(); } catch (eNativeLoad) {} if (!quiet) App.toast('El motor interno no está disponible' + (nativeLoadError ? ': ' + nativeLoadError.slice(0, 110) : ' en este teléfono')); if (cb) cb(false); return; }
       if (this.busyG) { if (!quiet) App.toast('Motor ocupado. Tocá «Liberar motor» y reintentá'); if (cb) cb(false); return; }
       // Aviso de modelos grandes (v1.9.0: con mmap + GPU el 8B ya es viable)
       var cat = modCatByFile(name);
@@ -405,6 +405,14 @@
          KiuGenJob.busy ahora es volatile (la UI y el worker comparten el estado).
          Si el puente todavía rechaza el inicio, esperamos hasta 8 intentos; no
          llamamos stop/reset a ciegas porque eso podía cortar el modelo anterior. */
+      // Capturar la generación anterior. genStatus conserva su último texto al
+      // terminar; sin ID el primer sondeo podía recuperar como nueva una respuesta vieja.
+      var genBaselineId = -1;
+      try {
+        var beforeGenStatus = jparse(rawBridge('kiuGenStatus') || '{}', {});
+        var beforeGenId = Number(beforeGenStatus.id);
+        if (isFinite(beforeGenId) && beforeGenId >= 0) genBaselineId = beforeGenId;
+      } catch (eBaseline) { }
       var attempt = 0;
       var startGen = function () {
         if (!self.pending || self.pending.op !== 'gen') return;
@@ -445,6 +453,22 @@
         var st = null;
         try { st = jparse(rawBridge('kiuGenStatus') || '{}', {}); } catch (e) { }
         if (!st) return;
+        var statusId = Number(st.id);
+        // No consumir texto/estado de la llamada anterior mientras JNI todavía
+        // no haya publicado el ID de esta solicitud. Si no inicia, fallar rápido.
+        if (genBaselineId >= 0 && (!isFinite(statusId) || statusId === genBaselineId)) {
+          if (Date.now() - t0 > 12000) {
+            if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
+            try { rawBridge('kiuGenStop'); } catch (eNoStartStop) { }
+            try { rawBridge('kiuResetBusy'); } catch (eNoStartReset) { }
+            self.busyG = false;
+            var cbNoStart = self.pending.cb;
+            self.pending = null;
+            jobErr('Error', 2600);
+            cbNoStart({ ok: false, err: 'el motor nativo no inició la solicitud (sin cambio de ID en 12 s)', stuck: true });
+          }
+          return;
+        }
         var partial = String(st.text || '');
         var nTok = (typeof st.toks === 'number') ? st.toks : -1;
         if (partial.length !== lastLen || nTok !== lastTokN) {

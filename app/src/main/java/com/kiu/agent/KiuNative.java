@@ -3,6 +3,7 @@ package com.kiu.agent;
 /* loaded from: classes.dex */
 public class KiuNative {
     private static boolean ok;
+    private static String loadError = "";
 
     static {
         try {
@@ -10,11 +11,18 @@ public class KiuNative {
             ok = true;
         } catch (Throwable th) {
             ok = false;
+            // Conservar la causa: UnsatisfiedLinkError suele indicar .so ausente,
+            // ABI incorrecta o dependencia nativa no empaquetada.
+            loadError = th.getClass().getSimpleName() + ": " + String.valueOf(th.getMessage());
         }
     }
 
     public static boolean available() {
         return ok;
+    }
+
+    public static String loadError() {
+        return loadError;
     }
 
     public static native void freeModel();

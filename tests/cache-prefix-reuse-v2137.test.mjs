@@ -25,7 +25,7 @@ test('KV prefix reuse: invalidates on memory clearing and context shift', () => 
 });
 
 test('Version is bumped consistently for the KV prefix implementation', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.14\.0"/);
-  assert.match(gradle, /val kiuVersionCode = 91/);
-  assert.match(changelog, /^## \[2\.14\.0\]/);
+  assert.match(gradle, /val kiuVersionName = "2\.14\.1"/);
+  assert.match(gradle, /val kiuVersionCode = 92/);
+  assert.match(changelog, /^## \[2\.14\.1\]/);
 });

@@ -57,6 +57,8 @@ llama_model*    g_model = nullptr;
 llama_context*  g_ctx   = nullptr;
 
 std::atomic<bool> g_stop{false};
+// llama.cpp puede consultar esto durante decode en CPU, no solo entre lotes.
+bool kiu_abort_llama(void*) { return g_stop.load(); }
 std::atomic<bool> g_loading{false};
 std::atomic<int>  g_load_pct{0};
 std::atomic<int>  g_threads{4};
@@ -78,7 +80,8 @@ std::string g_chat_tpl;           // v2.13.3: plantilla de chat del GGUF cargado
 
 bool g_backend_ready = false;
 
-std::atomic<bool> g_running{false};   // v2.7.3: hay una generacion en curso (para "done" real)
+std::atomic<bool> g_running{false};   // hay una generación en curso (para "done" real)
+std::atomic<unsigned long long> g_gen_id{0}; // identifica cada llamada, incluso si termina con cero tokens
 
 // v2.9.2: gramatica de muestreo pendiente (GBNF). La aplica la PROXIMA generate()
 // y se consume: si no se consumiera, toda generación posterior de la app —una
@@ -288,6 +291,10 @@ Java_com_kiu_agent_KiuNative_loadModel(JNIEnv* env, jclass, jstring path, jint n
     cp.n_threads = th;
     cp.n_threads_batch = th;
     cp.no_perf = false;
+    // El modelo se carga en CPU (n_gpu_layers=0); el callback permite que
+    // stopGen interrumpa una evaluación larga en vez de esperar al lote completo.
+    cp.abort_callback = kiu_abort_llama;
+    cp.abort_callback_data = nullptr;
     // v2.11.20: conservar salidas de embeddings para extraer vectores del
     // modelo local ya cargado, sin cargar un segundo modelo en RAM.
     cp.embeddings = true;
@@ -459,12 +466,15 @@ Java_com_kiu_agent_KiuNative_genStatus(JNIEnv* env, jclass) {
     }
     text.resize(utf8_valid_prefix(text));   // no mostrar un caracter a medio llegar
     std::string esc = json_escape(text);
-    char buf[96];
-    // v2.7.3: "done" era (toks > 0): true desde el PRIMER token, y el JS (sondeo de respaldo)
-    // daba por terminada y abortaba la generacion si el push se cortaba >1,3 s (modelos lentos).
-    bool done = !g_running.load() && g_toks.load() > 0;
-    snprintf(buf, sizeof(buf), ",\"toks\":%d,\"tps\":%.1f,\"done\":%s}",
-             g_toks.load(), g_tps.load(), done ? "true" : "false");
+    char buf[160];
+    // done describe el estado real del worker, no si ya emitió tokens. Esto permite
+    // detectar terminaciones tempranas y errores antes del primer token.
+    bool running = g_running.load();
+    // done también debe ser true cuando el modelo termina con cero tokens; de
+    // otro modo el watchdog JS espera 180 s porque su ruta de 6 s nunca se activa.
+    bool done = !running;
+    snprintf(buf, sizeof(buf), ",\"toks\":%d,\"tps\":%.1f,\"running\":%s,\"id\":%llu,\"done\":%s}",
+             g_toks.load(), g_tps.load(), running ? "true" : "false", g_gen_id.load(), done ? "true" : "false");
     std::string s = "{\"text\":\"" + esc + "\"" + buf;
     return mk_jstring(env, s);
 }
@@ -506,29 +516,28 @@ Java_com_kiu_agent_KiuNative_grammarPending(JNIEnv* env, jclass) {
 
 JNIEXPORT jstring JNICALL
 Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint max_tokens, jfloat temp) {
-    std::string pr = j2s(env, prompt);
-    int n_predict = max_tokens < 1 ? 256 : max_tokens;
-    float temperature = temp;
-
-    if (g_model == nullptr || g_ctx == nullptr) {
-        set_err("modelo no cargado");
-        return nullptr;
-    }
-
-    std::lock_guard<std::mutex> lk(g_mtx);
-    if (g_model == nullptr || g_ctx == nullptr) {
-        set_err("modelo no cargado");
-        return nullptr;
-    }
-
+    // Publicar el inicio ANTES de esperar el mutex. Así el JS distingue esta
+    // solicitud de los datos "done/text" que quedaron de la generación anterior.
+    RunGuard runGuard;
+    g_gen_id.fetch_add(1);
     g_stop = false;
     g_toks = 0;
     g_tps = 0.0;
     {
         std::lock_guard<std::mutex> lk2(g_out_mtx);
         g_out.clear();
+        g_err.clear();
     }
-    RunGuard runGuard;   // v2.7.3
+
+    std::string pr = j2s(env, prompt);
+    int n_predict = max_tokens < 1 ? 256 : max_tokens;
+    float temperature = temp;
+
+    std::lock_guard<std::mutex> lk(g_mtx);
+    if (g_model == nullptr || g_ctx == nullptr) {
+        set_err("modelo no cargado");
+        return nullptr;
+    }
 
     const llama_vocab* vocab = llama_model_get_vocab(g_model);
 
@@ -591,6 +600,10 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     auto sp = llama_sampler_chain_default_params();
     sp.no_perf = false;
     llama_sampler* smpl = llama_sampler_chain_init(sp);
+    if (smpl == nullptr) {
+        set_err("no pude reservar el sampler del motor");
+        return nullptr;
+    }
     // v2.7.4: penalizacion de repeticion (ultimos 64 tokens, x1.1): los modelos chicos entraban en
     // bucles ("y y y y"). Firma de 4 argumentos (llama.cpp >= b3900); si el vendor es mas viejo, ajustar.
     // Se llama a traves de kiu_penalties(): si el llama.cpp vendorizado cambia la firma, el build NO se rompe
@@ -641,6 +654,18 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     }
 
     llama_batch_ext* batch = llama_batch_ext_init(g_ctx);
+    if (batch == nullptr) {
+        llama_sampler_free(smpl);
+        set_err("no pude reservar el batch de inferencia (memoria insuficiente)");
+        return nullptr;
+    }
+    llama_token* one = (llama_token*)malloc(sizeof(llama_token));
+    if (one == nullptr) {
+        llama_batch_ext_free(batch);
+        llama_sampler_free(smpl);
+        set_err("no pude reservar memoria para el siguiente token");
+        return nullptr;
+    }
 
     const auto t0 = ggml_time_us();
     std::string out;
@@ -684,7 +709,6 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     }
 
     if (ok) {
-        llama_token* one = (llama_token*)malloc(sizeof(llama_token));
         for (int i = 0; i < n_predict; i++) {
             if (g_stop) break;
 
@@ -744,8 +768,8 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
             }
             n_pos += 1;
         }
-        free(one);
     }
+    free(one);
 
     llama_batch_ext_free(batch);
     llama_sampler_free(smpl);

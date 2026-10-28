@@ -1,3 +1,14 @@
+## [2.14.7] - 2026-10-28
+
+**EL REDISEÑO, POR PARTES, Y LA VISIÓN QUE NO FUNCIONABA.**
+
+- **LA VISIÓN.** El motor del teléfono no tiene soporte multimodal: el JNI no carga `mmproj` ni usa `mtmd`. Un GGUF de visión en el teléfono NO se puede ver, se tenga el modelo que se tenga. Y el ruteo lo empeoraba: en modo Auto el motor local (que no ve) se probaba **antes** que el servidor (que sí ve), así que la foto nunca llegaba a quien podía verla. Peor aún: el "swap" de visión **descargaba el modelo que el usuario tenía cargado** para poner un modelo de TEXTO (que tampoco ve), dejando el teléfono sin modelo y sin respuesta.
+  Ahora: **la foto va al servidor o a la API, y el modelo que tenías cargado se queda cargado** para la siguiente pregunta de texto. No hay swap de visión. Si no hay nadie que vea, Kiu contesta el texto y lo dice claro: "no puedo ver la foto".
+- **LA TARJETA DE ERROR** (lo que le faltaba al rediseño): un fallo no es una respuesta del bot, es un problema de la app, y tiene que verse distinto: ícono, qué pasó y el botón que lo resuelve ("Liberar motor", "Conectar visión", "Reintentar"). Y no se lee por el TTS — un error leído en voz alta es un error más difícil de entender, y corta la conversación. El micro se rearma igual.
+- **LOS TOKENS DEL REDISEÑO**: el gris secundario daba 3,6:1 sobre el panel (por debajo del 4,5:1 de WCAG AA) — o sea, el texto más chico era el menos legible. Ahora da 5,3:1 / 5,8:1 sin perder la jerarquía. Y hay un piso de 11 px para lo que hay que leer (9,5 px queda solo para metadatos). Un test CALCULA el contraste y lo exige, así que no vuelve a bajar.
+- El aviso "no veo la foto" dejó de ir en el pie opcional: es una limitación funcional, no un dato de diagnóstico, y no puede esconderse con el interruptor.
+- 561 tests: 556 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin JDK se saltan a la vista; en el CI corren).
+
 ## [2.14.6] - 2026-10-28
 
 **Tres cosas que la gente pidió en voz alta.**

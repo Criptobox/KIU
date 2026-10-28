@@ -1722,6 +1722,25 @@
           else if (!App.openUrl(href)) App.copyText(href);
           return;
         }
+        /* v2.14.7: el botón de acción de la tarjeta de error */
+        var acc = ev.target.closest('[data-kiu-act]');
+        if (acc) {
+          ev.preventDefault();
+          var a2 = acc.getAttribute('data-kiu-act') || '';
+          if (a2 === 'kiu://liberar-motor') { Kiu.forceReset(); Kiu.unload(); self.toast('Motor liberado'); self.go('models'); }
+          else if (a2 === 'kiu://modelos') { self.go('models'); }
+          else if (a2 === 'kiu://vision') { self.go('models'); self.toast('Conectá un servidor o una API con visión'); }
+          else if (a2 === 'kiu://reintentar') {
+            var hist2 = chatHist();
+            var prev2 = null;
+            for (var j2 = hist2.length - 1; j2 >= 0; j2--) {
+              if (hist2[j2].role === 'user') { prev2 = hist2[j2]; break; }
+            }
+            if (prev2) { self.toast('Reintentando…'); self.sendMsg(prev2.text); }
+            else self.toast('No encontré la pregunta original');
+          }
+          return;
+        }
         /* Botón copiar de los bloques de código */
         var cc = ev.target.closest('.code-copy');
         if (cc) {
@@ -1846,6 +1865,31 @@
         blocks.push('<div class="codeblock"><button class="code-copy" data-code="' + encodeURIComponent(raw) + '">Copiar</button><pre><code>' + c + '</code></pre></div>');
         return '\u0000' + (blocks.length - 1) + '\u0000';
       });
+      /* 1-bis) TARJETA DE ERROR (v2.14.7).
+         Las líneas que empiezan con "!! " no son una respuesta del bot: son
+         un problema de la app, y tienen que verse distinto, con su ícono y
+         su acción. Sin esto, un fallo salía como un párrafo más mezclado con
+         lo que Kiu dice, y la persona no sabía si Kiu había fallado.
+         Formato:
+           !! **Título**
+           !! detalle
+           !! → [Acción](kiu://accion) */
+      t = t.replace(/(^|\n)((?:!! ?[^\n]*\n?)+)/g, function (_, pre, run) {
+        var ls = run.split('\n').filter(function (x) { return x.indexOf('!!') === 0; });
+        var acc = '';
+        var mAcc = null;
+        for (var ai = 0; ai < ls.length; ai++) {
+          mAcc = ls[ai].match(/→\s*\[([^\]]+)\]\((kiu:\/\/[^)\s]+)\)/);
+          if (mAcc) { ls[ai] = ls[ai].replace(/→\s*\[[^\]]+\]\([^)\s]+\)/, ''); break; }
+        }
+        var inner = ls.map(function (x) { return x.replace(/^!! ?/, '').trim(); }).filter(function (x) { return !!x; }).join('<br>');
+        inner = inner.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+        if (mAcc) {
+          acc = '<button class="errcard-act" data-kiu-act="' + esc(mAcc[2]) + '">' + esc(mAcc[1]) + '</button>';
+        }
+        blocks.push('<div class="errcard"><span class="errcard-ic">' + icon('alert', 16) + '</span><div class="errcard-body">' + inner + acc + '</div></div>');
+        return pre + '\u0000' + (blocks.length - 1) + '\u0000';
+      });
       /* 2) Código en línea */
       t = t.replace(/`([^`\n]+)`/g, function (_, code) { /* v2.7.2: se aparta para que negrita y links no se procesen dentro */
         blocks.push('<code>' + code + '</code>');
@@ -1960,7 +2004,9 @@
         }
         setTimeout(function () {
           self.showTyping(false);
-          self.botSay('Para analizar fotos necesito visión real: en Modelos → Orquestador → «Fotos (visión)» conectá tu servidor en «Servidor en tu red», o activá una API con visión (Gemini, OpenAI, OpenRouter) en la sección APIs.');
+          /* v2.14.7 · la visión también es una tarjeta: es una limitación
+             concreta con una acción concreta, no una respuesta de Kiu. */
+          self.botSay('!! **No puedo ver la foto**\n!! El motor del teléfono no tiene visión. Las fotos las contesta tu servidor en red o una API con visión (Gemini, OpenAI, OpenRouter).\n!! → [Conectar visión](kiu://vision)', null, true);
         }, 420);
         return;
       }
@@ -2264,14 +2310,17 @@
           stClear('ruta');
           var tps = out.tps ? ' · ' + out.tps.toFixed(1).replace('.', ',') + ' tok/s en tu teléfono' : '';
           var au = (S.router && S.router.on && self._autoTask) ? ' · Auto: ' + (Rtr.label(self._autoTask) || 'charla') : '';
-          var vis = img ? ' · la foto todavía no la puedo ver (usá Servidor o API para visión real)' : '';
           var rec = out.recovered ? ' · respuesta recuperada' : '';
           var mdlTag = (S.kiu && S.kiu.name) ? ' · ' + String(S.kiu.name).replace(/\.gguf$/i, '').slice(0, 28) : '';
           /* v2.14.6 · El pie de diagnóstico es OPCIONAL (S.detalles). Por
              defecto no se escribe: era ruido al final de cada respuesta.
              El detalle real vive en el diagnóstico, que siempre está. */
-          var pie = S.detalles ? ('\n\n*(motor interno' + mdlTag + vis + au + rec + tps + ')*') : '';
-          self.botSay(out.text + pie, live);
+          var pie = S.detalles ? ('\n\n*(motor interno' + mdlTag + au + rec + tps + ')*') : '';
+          /* v2.14.7 · "NO VEO LA FOTO" NO ES DIAGNÓSTICO: es una limitación
+             funcional. Si se va con el pie opcional, el usuario se queda
+             creyendo que Kiu miró la imagen. Va siempre, aparte. */
+          var vis = img ? '\n\n_(no puedo ver la foto: el motor del teléfono no tiene visión. Conectá tu servidor en red o una API con visión para eso.)_' : '';
+          self.botSay(out.text + pie + vis, live);
           KB.reinforce(text);
         } else {
           clearInterval(elTimer);
@@ -2295,8 +2344,15 @@
             return;
           }
           stErr('Error', 2400);
-          var fb = KiuBrain.fallback();
-          self.botSay('El motor interno no pudo responder (' + (out.err || 'error') + '). ' + (fb || ''));
+          /* v2.14.7 · TARJETA DE ERROR, no un párrafo más.
+             Un fallo del motor no es la respuesta de Kiu: es un problema de la
+             app, con su acción. Antes salía mezclado con lo que Kiu dice
+             (y además era un muro de texto de 700 caracteres). */
+          var motivo = String(out.err || 'error');
+          var accion = /memoria/i.test(motivo)
+            ? '→ [Liberar motor](kiu://liberar-motor)'
+            : (/ocupado/i.test(motivo) ? '→ [Liberar motor](kiu://liberar-motor)' : '→ [Ver Modelos](kiu://modelos)');
+          self.botSay('!! **No pude responder**\n!! ' + motivo.replace(/\n/g, ' ') + '\n!! ' + accion, null, true);
         }
       }, function (partial, st) {
         /* v1.9.0: streaming palabra por palabra; TTS recibe solo oraciones completas. */
@@ -2401,7 +2457,7 @@
         self.tryProvs(text, provs, i + 1, liveEl, imgFull, task, next);
       });
     },
-    botSay: function (text, liveEl) {
+    botSay: function (text, liveEl, sinVoz) {
       this.pushMsg('bot', text, !!liveEl);
       if (liveEl) {
         var tm = liveEl.querySelector('.msg-time'), bb = liveEl.querySelector('.msg-bubble');
@@ -2409,8 +2465,16 @@
         if (bb) bb.innerHTML = this.md(text);
         this.scrollBottom();
       }
-      if (this.inCall()) { this._convLive = Date.now(); this.vpSay(String(text).replace(/[#*`>_]/g, '').trim(), 'KIU'); }
-      this.speak(text);
+      /* v2.14.7 · sinVoz: una TARJETA DE ERROR no se lee por el TTS. Un error
+         leído en voz alta es un error más difícil de entender que un error
+         leído, y encima corta la conversación.
+         OJO: el rearme del micro (abajo) tiene que correr IGUAL en los dos
+         casos: si la tarjeta de error se comía el rearme, la conversación se
+         moría en silencio después de un fallo. */
+      if (!sinVoz) {
+        if (this.inCall()) { this._convLive = Date.now(); this.vpSay(String(text).replace(/[#*`>_]/g, '').trim(), 'KIU'); }
+        this.speak(text);
+      }
       if (!S.voiceOn) {
         /* sin voz no hay 'Hablando': el bot queda libre y muestra que terminó */
         stClear('ruta');

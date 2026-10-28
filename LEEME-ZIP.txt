@@ -1,4 +1,4 @@
-KIU - Tanda 26: pie de diagnostico, cierre forzado y voz (v2.14.6)
+KIU - Tanda 27: el rediseño y la visión (v2.14.7)
 ===============================================================================
 
 OJO, LEÉ ESTO PRIMERO
@@ -14,7 +14,7 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
 1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
    dependés de que tu build local funcione. ES LO MÁS SEGURO.
 2) Verificalo ANTES de instalar:
-      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.6
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.7
    Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
    del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
 3) Si igual compilás local: tenés que tener las .so. Se recuperan con
@@ -25,6 +25,22 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
    te obliga a desinstalar y se pierden los datos locales.
 
 LO QUE HAY EN ESTA TANDA
+- App v2.14.7 (versionCode 98).
+- LA VISION: el motor del telefono NO tiene soporte multimodal (el JNI no
+  carga mmproj ni usa mtmd). Antes, en modo Auto, el motor local (que no ve) se
+  probaba antes que el servidor (que si ve), y el "swap" de vision
+  descargaba el modelo del usuario para poner un modelo de TEXTO (que
+  tampoco ve). Ahora la foto va al servidor o a la API y el modelo cargado
+  SE QUEDA CARGADO. Si no hay quien vea, Kiu contesta el texto y lo dice.
+- LA TARJETA DE ERROR: un fallo no es una respuesta del bot, es un problema
+  de la app: ahora sale con icono, motivo y boton ("Liberar motor", "Conectar
+  vision", "Reintentar"), y no se lee por el TTS.
+- LOS TOKENS DEL REDISENO: el gris secundario pasa de 3,6:1 a 5,3:1 (WCAG
+  AA) y hay un piso de 11 px para lo que hay que leer. Un test calcula el
+  contraste y lo exige.
+- 561 tests: 556 en verde, 0 en rojo, 5 omitidas.
+
+LO QUE HAY EN ESTA TANDA (v2.14.6, el resto)
 - App v2.14.6 (versionCode 97).
 - EL PIE DE DIAGNOSTICO SE FUE: cada respuesta del motor terminaba con
   "(motor interno - modelo - 6,3 tok/s en tu telefono)". Media pantalla de

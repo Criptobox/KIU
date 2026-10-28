@@ -1093,7 +1093,15 @@
        manda; si no hay, cerebro = el más grande que entra en la RAM, rápido = el más chico)
        v2.1: el rol visión también tiene preferencia propia (kiuVis) */
     pickModel: function (role) {
-      var pref = role === 'brain' ? (S.router.kiuBrain || '') : role === 'vision' ? (S.router.kiuVis || '') : (S.router.kiuFast || '');
+      /* v2.14.7 · PARA VISIÓN NO HAY A QUÉ CAMBIAR.
+         El motor del teléfono no tiene soporte multimodal, así que cambiar
+         de modelo en el teléfono no hace que vea la foto: solo hace que el
+         modelo cargado cambie (y tarde). Peor: antes el swap de visión
+         descargaba el modelo del usuario para poner un modelo de TEXTO, y
+         el teléfono se quedaba sin modelo. Con esto, la foto va al
+         servidor o a la API y el modelo local sigue cargado. */
+      if (role === 'vision') return '';
+      var pref = role === 'brain' ? (S.router.kiuBrain || '') : (S.router.kiuFast || '');
       if (pref && S.dl.done[pref]) {
         var pc = modCatByFile(pref);
         if (pc && pc.eng === 'kiu' && modKind(pref) === 'text') return pref;
@@ -1128,8 +1136,19 @@
       var role = this.roleOf(task);
       var pref = (S.router && S.router.on) ? (S.router[role] || 'auto') : 'auto';
       var provs = (S.mode !== 'local') ? Rtr.order(task) : [];
-      /* v2.1: el motor del teléfono también atiende fotos (texto + nota honesta);
-         antes quedaba excluido por completo y no había forma de usar modelos locales en visión */
+      /* v2.14.7 · EL MOTOR DEL TELÉFONO NO VE FOTOS.
+         El JNI (kiullama_jni.cpp) no tiene soporte multimodal: no carga
+         mmproj ni usa mtmd. Un GGUF de visión en el teléfono NO se puede
+         ver, se tenga el modelo que se tenga. Y el "swap" de visión
+         descargaba el modelo que el usuario tenía cargado para poner un
+         modelo de TEXTO (que tampoco ve): el teléfono se quedaba sin
+         modelo y sin respuesta.
+
+         Ahora: una foto va al servidor o a la API (que sí ven) y el modelo
+         local QUEDA CARGADO para la próxima pregunta de texto. El motor
+         local solo entra si el usuario lo elige a mano, y entonces
+         contesta con la nota honesta de que no ve la foto. */
+      var vision = (role === 'vision');
       var kiu = Kiu.available() ? [{ t: 'kiu' }] : [];
       var srv = provs.filter(function (pv) { return pv.def.local; });
       var cloud = provs.filter(function (pv) { return !pv.def.local; });
@@ -1138,30 +1157,34 @@
       if (pref === 'auto') {
         /* v2.1 orden Auto: servidor conectado → TELÉFONO si ya tiene modelo cargado
            → APIs → teléfono (autocarga). Antes las APIs iban primero aunque hubiera
-           un modelo cargado en memoria: parecía que "el modelo cargado no hace las tareas". */
-        var first = (role === 'vision') ? cloud : srv;
-        var second = (role === 'vision') ? srv : cloud;
+           un modelo cargado en memoria: parecía que "el modelo cargado no hace las tareas".
+           v2.14.7: para VISION el motor del teléfono queda AFUERA del auto (no ve):
+           la foto tiene que llegar al servidor o a la API, que sí la ven. */
+        var first = vision ? cloud : srv;
+        var second = vision ? srv : cloud;
         if (first.length) out.push({ t: 'prov', pvs: first });
-        if (loaded) out = out.concat(kiu);
+        if (!vision && loaded) out = out.concat(kiu);
         if (second.length) out.push({ t: 'prov', pvs: second });
-        if (!loaded) out = out.concat(kiu);
+        if (!vision && !loaded) out = out.concat(kiu);
       } else if (pref === 'kiu') {
+        /* el usuario lo eligió a mano: se respeta, y Kiu contesta con la nota
+           honesta de que el motor del teléfono no ve la foto */
         out = out.concat(kiu);
         if (srv.length) out.push({ t: 'prov', pvs: srv });
         if (cloud.length) out.push({ t: 'prov', pvs: cloud });
       } else if (pref === 'loc') {
         if (srv.length) out.push({ t: 'prov', pvs: srv });
-        if (loaded) out = out.concat(kiu);
+        if (!vision && loaded) out = out.concat(kiu);
         if (cloud.length) out.push({ t: 'prov', pvs: cloud });
-        if (!loaded) out = out.concat(kiu);
+        if (!vision && !loaded) out = out.concat(kiu);
       } else if (pref.indexOf('prov:') === 0) {
         var pid = pref.slice(5);
         var mine = provs.filter(function (pv) { return pv.def.id === pid; });
         var others = provs.filter(function (pv) { return pv.def.id !== pid; });
         if (mine.length) out.push({ t: 'prov', pvs: mine });
-        if (loaded) out = out.concat(kiu);
+        if (!vision && loaded) out = out.concat(kiu);
         if (others.length) out.push({ t: 'prov', pvs: others });
-        if (!loaded) out = out.concat(kiu);
+        if (!vision && !loaded) out = out.concat(kiu);
       }
       if (!out.length) out = kiu;
       return out;

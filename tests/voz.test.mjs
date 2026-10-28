@@ -143,7 +143,9 @@ test('si no hay motor de voz, se avisa en vez de fingir que está despierto', ()
 /* ================= 2 · la conversación continua no muere al primer turno ================= */
 
 test('el rearme del micro no depende de _voiceDriven', () => {
-  const bot = sinComentarios(cuerpo(ui, 'botSay: function (text, liveEl)'));
+  /* v2.14.7: botSay creció un parametro (sinVoz, para las tarjetas de error
+     que no se leen en voz alta). El rearme del micro tiene que seguir adentro. */
+  const bot = sinComentarios(cuerpo(ui, 'botSay: function (text, liveEl, sinVoz)'));
   assert.doesNotMatch(bot, /_voiceDriven/,
     'con _voiceDriven el bucle solo sobrevive si el usuario apretó el botón del micro');
   assert.match(bot, /if \(S\.conv\)/);

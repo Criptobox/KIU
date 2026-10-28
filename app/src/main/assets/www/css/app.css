@@ -1408,3 +1408,77 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
   }
   .quick-card:hover, .tool-card:hover, .row-card:hover { transform:none; }
 }
+
+
+/* ============================================================
+   KIU · v2.14.7 · TARJETA DE ERROR Y TOKENS DEL REDISEÑO
+   ------------------------------------------------------------
+   Lo que el rediseño Pro trae y faltaba: un FALLO no es una
+   respuesta del bot, es un problema de la app, y tiene que verse
+   distinto. Antes salía como un párrafo más, mezclado con lo que
+   Kiu dice, y la persona no sabía si Kiu había fallado o si eso
+   era su respuesta.
+
+   La tarjeta lleva: ícono, qué pasó, y la ACCIÓN que lo resuelve.
+   Y no se lee por el TTS: un error leído en voz alta es un error
+   más difícil de entender que un error leído.
+
+   Y los tokens: el gris secundario (#5E6A85) daba 3,6:1 sobre el
+   panel — por debajo del 4,5:1 que pide WCAG AA. O sea: el texto
+   más chico era el menos legible. Sube a #7C8CA6 (5,3:1 / 5,8:1)
+   sin perder la jerarquía. La escala tipográfica tiene un piso de
+   11 px para lo que hay que leer; 9,5 px queda solo para metadatos
+   (la hora de un mensaje). */
+:root {
+  /* el gris secundario, accesible (antes 3,6:1) */
+  --dim2:#7C8CA6;
+  /* escala con piso: nada legible por debajo de 11 px */
+  --fs-xs:11px;      /* metadatos */
+  --fs-sm:12px;      /* chips, etiquetas */
+  --fs-md:13.5px;    /* cuerpo chico */
+  --fs-lg:15px;      /* cuerpo */
+  --fs-xl:17px;      /* títulos de tarjeta */
+  /* superficies del rediseño */
+  --p-panel:#0E1526;
+  --p-panel2:#131C30;
+  --p-brand:#FB923C;   /* naranja: marca y robot */
+  --p-ok:#34D399;      /* menta: lo que salió bien */
+  --p-err:#FB7185;     /* rosa: lo que falló */
+}
+
+/* ---------- la tarjeta de error ---------- */
+.errcard{
+  display:flex; gap:11px; align-items:flex-start;
+  margin:2px 0 6px; padding:13px 14px;
+  border-radius:18px;
+  background:linear-gradient(180deg, rgba(251,113,133,.11), rgba(251,113,133,.045));
+  border:1px solid rgba(251,113,133,.30);
+  box-shadow:0 8px 24px rgba(2,6,18,.40), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.errcard-ic{
+  width:28px; height:28px; border-radius:10px; flex:none;
+  display:grid; place-items:center;
+  background:rgba(251,113,133,.15); border:1px solid rgba(251,113,133,.30);
+  color:var(--p-err);
+}
+.errcard-body{ min-width:0; font-size:var(--fs-md); line-height:1.5; color:var(--txt); }
+.errcard-body b{ font-weight:800; }
+.errcard-act{
+  margin-top:9px; padding:8px 14px; border-radius:11px;
+  font:inherit; font-size:var(--fs-sm); font-weight:700; cursor:pointer;
+  color:#2A0912; background:linear-gradient(135deg,#FDA4AF,#FB7185);
+  border:none; box-shadow:0 4px 12px rgba(251,113,133,.28), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.errcard-act:active{ transform:scale(.97); }
+.errcard-act.ghost{
+  color:var(--txt); background:rgba(141,166,255,.08);
+  border:1px solid var(--line2); box-shadow:none;
+}
+/* la tarjeta de error NO se lee por el TTS: se marca para que la voz la salte */
+.msg-err .msg-bubble{ background:transparent; border:none; padding:0; }
+
+/* ---------- el piso tipográfico, donde importa ---------- */
+.set-row span{ font-size:var(--fs-md); }
+.row-txt span{ font-size:var(--fs-md); }
+.chip{ font-size:var(--fs-sm); }
+.quick-card span, .tool-card span{ font-size:var(--fs-sm); }

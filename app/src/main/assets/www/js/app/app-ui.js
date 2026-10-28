@@ -2250,6 +2250,11 @@
       try { if (window.KiuSentenceTTS) KiuSentenceTTS.begin(!!S.voiceOn); } catch (eStreamTts) { }
       Kiu.ask(msgs, Math.min(S.maxTok || 400, 480), function (out) {
         clearInterval(elTimer);
+        /* v2.14.3 · Con la cola del motor, la respuesta puede llegar tarde:
+           si el usuario ya canceló o ya mandó otra cosa, esta no se muestra
+           (ni se habla). Antes, un pedido que esperaba al motor y el usuario
+           cancelaba, igual le contestaba tarde. */
+        if (self._cancelled) { try { if (window.KiuSentenceTTS) KiuSentenceTTS.finish(''); } catch (eFcT) { } return; }
         try { if (window.KiuSentenceTTS) KiuSentenceTTS.finish(out && out.text ? out.text : ''); } catch (eFinishTts) { }
         self.showTyping(false);
         if (out.ok && out.text) {

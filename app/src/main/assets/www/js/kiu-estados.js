@@ -106,7 +106,7 @@
     if (!known(layer)) {
       /* Capa desconocida: se crea con la prioridad más baja para no romper nada
          (un typo no debe dejar el avatar sin estado). */
-      layers[layer] = { state: null, t: 0, until: 0 };
+      layers[layer] = { state: null, t: 0, until: 0, tid: 0 };
       PRIO[layer] = 1;
     }
     var L = layers[layer];
@@ -117,19 +117,34 @@
     return paint();
   }
 
+  /* v2.14.3 · UN SOLO TEMPORIZADOR POR CAPA.
+     El comentario de arriba decía "el temporizador es UNO, del controlador, y
+     se cancela solo si la capa recibe otro evento" — pero no era verdad: cada
+     evento armaba un timer NUEVO y los viejos no se cancelaban. Cada timer
+     vencido se re-programaba para el vencimiento más reciente de la capa, así
+     que el número de timers crecía con cada mensaje (dos por mensaje: al
+     empezar a generar y al terminar). En un WebView en segundo plano, donde
+     Android además estrangula los timers, eso es un desgaste real de CPU: el
+     chat se vuelve lento y los timers del motor (el sondeo de 130 ms) se
+     atrasan. Ahora, al recibir un evento nuevo, el timer anterior se cancela
+     y queda uno solo —que es lo que el comentario prometía. */
   function expireLater(L, ms) {
-    setTimeout(function () {
+    if (L.tid) { try { clearTimeout(L.tid); } catch (e) { } L.tid = 0; }
+    var delay = Math.max(50, Math.min(ms || 0, 60000));
+    L.tid = setTimeout(function () {
+      L.tid = 0;
       if (!L.until) return;                       /* ya lo apagó otro evento */
-      if (Date.now() < L.until) { expireLater(L, L.until - Date.now()); return; }
+      var falta = L.until - Date.now();
+      if (falta > 0) { expireLater(L, falta); return; }
       L.state = null; L.until = 0; paint();
-    }, ms);
+    }, delay);
   }
 
   function clear(layer) { return set(layer, null); }
 
   function flash(layer, state, ms) {
     var ms2 = Math.max(300, ms || 1800);
-    if (!known(layer)) { layers[layer] = { state: null, t: 0, until: 0 }; PRIO[layer] = 1; }
+    if (!known(layer)) { layers[layer] = { state: null, t: 0, until: 0, tid: 0 }; PRIO[layer] = 1; }
     var L = layers[layer];
     L.state = state || null;
     L.t = ++seq;

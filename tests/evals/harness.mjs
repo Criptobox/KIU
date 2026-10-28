@@ -165,16 +165,29 @@ export function modeloHTTP(opts = {}) {
   const url = opts.url || process.env.KIU_EVAL_URL || 'http://127.0.0.1:8080/v1/chat/completions';
   const key = opts.key || process.env.KIU_EVAL_KEY || '';
   const modelo = opts.modelo || process.env.KIU_EVAL_MODEL || 'local-model';
-  return async function (hist) {
+  /* La gramática GBNF: en el teléfono el motor la aplica y por eso la
+     decisión sale SIEMPRE con la forma correcta. Acá se puede medir con y
+     sin ella: la diferencia es lo que aporta elizador nativo. */
+  const gram = opts.grammar || null;
+  /* la gramática se guarda EN LA FUNCIÓN DEVUELTA (no en la fábrica): si se
+     guarda en la fábrica, el arnés (que la fija después) y la función (que la
+     lee) no ven la misma variable y la gramática nunca viaja. */
+  const f = async function (hist) {
+    const cuerpo = { model: modelo, messages: hist, temperature: 0, max_tokens: 160 };
+    const g2 = f.gramatica || gram;
+    if (g2) cuerpo.grammar = typeof g2 === 'function' ? g2(hist) : g2;
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(key ? { authorization: 'Bearer ' + key } : {}) },
-      body: JSON.stringify({ model: modelo, messages: hist, temperature: 0, max_tokens: 160 }),
+      body: JSON.stringify(cuerpo),
     });
     if (!r.ok) throw new Error('el modelo respondió ' + r.status);
     const j = await r.json();
     return ((j.choices || [])[0] || {}).message?.content || '{"listo":true}';
   };
+  f.__esHTTP = true;
+  f.gramatica = null;
+  return f;
 }
 
 /* ---------- leer una decisión cruda del modelo ---------- */
@@ -242,8 +255,17 @@ async function correrUno(A, ctx, esc, modelo) {
 /* ---------- correr el juego entero ---------- */
 export async function correrEscenarios(opts = {}) {
   const escenarios = opts.escenarios || ESCENARIOS;
-  const modelo = opts.modelo || modeloGuion({});
   const { A, ctx } = cargarAgente(opts.over || {});
+  /* si el modelo es HTTP y no se pasó una gramática, se usa la MISMA que arma
+     el agente en el teléfono: la que sale del mismo esquema. */
+  const modelo = opts.modelo || modeloGuion({});
+  if (modelo && modelo.__esHTTP && opts.grammar !== false) {
+    modelo.gramatica = (hist) => {
+      const pedido = (hist[hist.length - 1] || {}).content || '';
+      const sel = A.seleccionar(pedido);
+      try { return A.grammar(sel, false); } catch (e) { return null; }
+    };
+  }
   const filas = [];
   for (const esc of escenarios) {
     filas.push(await correrUno(A, ctx, esc, modelo));

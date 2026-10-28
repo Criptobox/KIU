@@ -29,6 +29,7 @@ const arg = (n) => {
 };
 
 let modelo;
+let conGram = !args.includes('--sin-gramatica');
 if (args.includes('--guion')) {
   /* el modelo perfecto: sirve para ver que el arnés y el entorno funcionan */
   const g = {};
@@ -40,12 +41,15 @@ if (args.includes('--guion')) {
     url: arg('--url') || undefined,
     key: arg('--key') || undefined,
     modelo: arg('--model') || undefined,
+    grammar: conGram ? true : null,
   });
-  console.log('modo HTTP: ' + (arg('--url') || process.env.KIU_EVAL_URL || 'http://127.0.0.1:8080/v1/chat/completions') + '\n');
+  console.log('modo HTTP: ' + (arg('--url') || process.env.KIU_EVAL_URL || 'http://127.0.0.1:8080/v1/chat/completions'));
+  console.log('gramática GBNF: ' + (conGram ? 'SÍ (como en el teléfono)' : 'no (el modelo solo)'));
+  console.log('modelo: ' + (arg('--model') || process.env.KIU_EVAL_MODEL || 'local-model') + '\n');
 }
 
 try {
-  const corrida = await correrEscenarios({ modelo });
+  const corrida = await correrEscenarios({ modelo, grammar: conGram });
   const r = reporte(corrida);
   console.log(r.texto);
   process.exit(r.pasa ? 0 : 1);

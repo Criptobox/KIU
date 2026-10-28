@@ -131,3 +131,29 @@ test('el arnés usa los umbrales del repo y no los permite aflojar sin querer', 
   assert.ok(UMBRALES.pasosMax <= 3);
   assert.ok(UMBRALES.noopMax <= 0.1);
 });
+
+/* ================= 4 · las palabras clave tienen que servir =================
+ * El arnés de evaluación encontró que la selección de herramientas fallaba
+ * para la mitad de los pedidos reales: las palabras clave eran regex
+ * demasiado angostas ("llévame al aeropuerto" no matcheaba nada) y, cuando
+ * no matcheaba nada, se devolvían las 16 herramientas en el orden del
+ * registro. El ejemplo del prompt era entonces el de set_alarm, y el modelo
+ * copiaba el ejemplo: armaba una alarma donde le habían pedido un mapa.
+ *
+ * Este test ata las palabras clave a los pedidos REALES del arnés: para cada
+ * escenario, la herramienta que va primera tiene que ser la correcta (o una
+ * de las aceptables).
+ */
+test('para cada pedido real, la herramienta que va primera es la correcta', async () => {
+  const { ESCENARIOS } = await import('./evals/escenarios.mjs');
+  const { A } = cargarAgente();
+  const malos = [];
+  for (const s of ESCENARIOS) {
+    const sel = A.seleccionar(s.pedido);
+    const aceptadas = [s.espera.tool].concat(s.espera.acepta || []);
+    if (!sel.length || !aceptadas.includes(sel[0])) {
+      malos.push(s.id + ' (' + s.pedido + ') -> ' + (sel[0] || 'nada'));
+    }
+  }
+  assert.equal(malos.join(' | '), '', 'estas peticiones no eligen bien la herramienta: ' + malos.join(' | '));
+});

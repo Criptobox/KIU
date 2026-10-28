@@ -260,8 +260,16 @@ test('el prompt explica el formato y el "listo"', () => {
   const A = cargar().A;
   const p = A.systemPrompt('poné una alarma', null, []);
   assert.match(p, /\{"tool": "nombre", "args": \{"k": "v"\}\}/);
-  assert.match(p, /\{"listo": true\}/);
   assert.match(p, /poné una alarma/);
+  /* v2.14.4 · en el PRIMER paso "listo" no se ofrece: el agente solo entra
+     para órdenes, así que "no necesito ninguna herramienta" nunca es la
+     respuesta correcta ahí. Medido con un modelo real: sin esto, el 97 % de
+     los pedidos terminaban sin hacer nada. */
+  assert.doesNotMatch(p, /\{"listo": true\}/, 'en el primer paso no se ofrece "listo"');
+  assert.match(p, /Elegí SIEMPRE una herramienta/);
+  /* después de trabajar, "listo" vuelve: ahí SÍ es la respuesta correcta */
+  const p2 = A.systemPrompt('x', null, ['[set_alarm ok] listo']);
+  assert.match(p2, /\{"listo": true\}/, 'después de un paso, "listo" sí se ofrece');
 });
 
 test('el historial de intentos aparece en el prompt siguiente', () => {
@@ -440,7 +448,11 @@ test('el perfil del usuario no infla el prompt de la decisión', () => {
   assert.match(conPerfil, /PERFIL DEL USUARIO:/, 'el perfil tiene que estar en el prompt');
   assert.match(conPerfil, /Sasha/);
   const largo = A.systemPrompt('x', null, [], false).length;
-  assert.ok(largo < 2600, 'el prompt no puede pasar de ~2600 caracteres: ' + largo);
+  /* v2.14.4 · el techo sube porque el prompt lleva EJEMPLOS: medido con un
+     modelo real, sin ellos el 97 % de los pedidos terminaban sin hacer nada
+     (el modelo contestaba {"listo":true}). 100 caracteres de ejemplo
+     compraron 74 puntos de acierto. */
+  assert.ok(largo < 2900, 'el prompt no puede pasar de ~2900 caracteres: ' + largo);
 });
 
 test('el mensaje del usuario va UNA vez, no dos', () => {
@@ -577,11 +589,18 @@ test('cada herramienta declara sus campos con el nombre exacto del esquema', () 
 test('los argumentos opcionales generan las alternativas que existen', () => {
   const A = cargar().A;
   const g = A.grammar();
-  /* set_alarm: 1 requerido + 1 opcional = 2 ramas (solo when, y when+label) */
-  const lineas = g.split('\n').filter((l) => l.includes('\\"tool\\":\\"set_alarm\\"'));
-  assert.equal(lineas.length, 2, 'dos ramas: con y sin el opcional');
-  assert.ok(lineas.some((l) => !l.includes('label')), 'la rama sin el opcional');
-  assert.ok(lineas.some((l) => l.includes('label')), 'la rama con el opcional');
+  /* set_alarm: 1 requerido + 1 opcional = 2 ramas (solo when, y when+label).
+     v2.14.4: las alternativas van en la MISMA línea. En GBNF un salto de
+     línea termina la regla, así que el "|" al principio de la línea
+     siguiente hacía que la gramática NO PARSEARA (verificado contra el
+     parser real de llama.cpp: "failed to parse grammar"). */
+  const linea = g.split('\n').find((l) => l.includes('\\"tool\\":\\"set_alarm\\"')) || '';
+  const ramas = linea.split('|').filter((x) => x.includes('\\"tool\\":\\"set_alarm\\"'));
+  assert.equal(ramas.length, 2, 'dos ramas: con y sin el opcional');
+  assert.ok(ramas.some((l) => !l.includes('label')), 'la rama sin el opcional');
+  assert.ok(ramas.some((l) => l.includes('label')), 'la rama con el opcional');
+  /* y ninguna regla puede terminar con un "|" suelto al principio de línea */
+  assert.ok(!/^\s*\|/m.test(g), 'ninguna alternativa puede empezar la línea: en GBNF el salto de línea termina la regla');
   /* read_calendar no tiene requeridos: un objeto vacío tiene que ser legal */
   assert.ok(g.includes('\\"read_calendar\\",\\"args\\":{" "}}"'),
     'read_calendar tiene que admitir args vacíos');
@@ -697,9 +716,16 @@ test('si el motor no soporta gramática, se genera igual y sin gramática', () =
   vm.runInContext(src, ctx, { filename: 'kiu-agente.js' });
   const A = ctx.KiuAgente;
   return new Promise((res) => A.run({ pedido: 'x' }, () => {
-    /* el fallback NO es opcional: sin gramática el bucle depende del parse */
+    /* v2.14.4 · LA GRAMÁTICA SE PONE SIEMPRE.
+       Antes se ponía solo si `kiuGenGrammarOk()` devolvía true, y ese valor
+       dice si la gramática ANTERIOR se pudo aplicar: en la primera decisión
+       nunca hubo una anterior, así que la primera tampoco la ponía; y como
+       esa nunca se aplicó, la segunda tampoco. El agente NUNCA tuvo
+       gramática. Ahora se manda siempre y, si el nativo no la aplicó, queda
+       registrado para el diagnóstico. */
     assert.equal(llamadas.length, 1, 'igual se consultó al motor');
-    assert.equal(llamadas[0], null, 'pero sin gramática que no se va a aplicar');
+    assert.ok(llamadas[0] && typeof llamadas[0] === 'string' && llamadas[0].length > 50,
+      'y se le manda la gramática, la haya aplicable la anterior o no');
     res();
   }));
 });

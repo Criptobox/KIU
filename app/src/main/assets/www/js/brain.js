@@ -228,6 +228,30 @@ window.KiuBrain = (function () {
   function parseWhen(t) {
     var now = new Date();
 
+    /* v2.14.4 · EL MODELO HABLA OTRO IDIOMA.
+       El agente le pasa el horario al parser y el modelo responde con la
+       cifra pelada ("7") en vez de la frase ("a las 7"): el parser solo
+       entendía frases y la herramienta contestaba "no entendí el horario".
+       Medido con un modelo real (Qwen3-0.6B) sobre el arnés de evaluación:
+       1 de cada 3 alarmas caía en este caso.
+       Un número suelto es una hora: se acepta. */
+    var crudoHora = String(t == null ? '' : t).trim();
+    var conMin = crudoHora.match(/^(\d{1,2})[:.](\d{2})(?:\s*(h|hs|horas?))?$/i);
+    var soloHora = conMin ? null : crudoHora.match(/^(\d{1,2})(?:\s*(h|hs|horas?))?$/i);
+    if (conMin || soloHora) {
+      var hSolo = parseInt(conMin ? conMin[1] : soloHora[1], 10);
+      var mSolo = conMin ? parseInt(conMin[2], 10) : 0;
+      if (hSolo >= 0 && hSolo <= 23 && mSolo >= 0 && mSolo <= 59) {
+        var dSolo = new Date(now);
+        dSolo.setHours(hSolo, mSolo, 0, 0);
+        if (dSolo.getTime() <= now.getTime()) dSolo.setDate(dSolo.getDate() + 1);
+        return {
+          when: dSolo,
+          whenTxt: 'a las ' + (hSolo < 10 ? '0' : '') + hSolo + ':' + (mSolo < 10 ? '0' : '') + mSolo
+        };
+      }
+    }
+
     // "en media hora"
     if (/\ben\s+(?:una\s+)?media\s+hora\b/.test(t)) {
       return { when: new Date(Date.now() + 30 * 60000), whenTxt: 'en 30 minutos' };
@@ -871,7 +895,14 @@ window.KiuBrain = (function () {
   function fallback() {
     var apiOn = window.KiuApp && KiuApp.apiReady();
     if (apiOn) return null;
-    return 'No pude generar la respuesta con el motor local. Esto no significa que tu pregunta sea demasiado difícil: puede que el modelo no esté cargado o que el motor se haya quedado bloqueado. Revisá Modelos para confirmar que el GGUF esté cargado. Para datos recientes sí necesito consultar Internet; para preguntas generales debo intentar responder con el modelo local.';
+    /* v2.14.4 · MENSAJE CORTO Y HONESTO. Antes eran 362 caracteres (700 en el
+       chat con el prefijo): un muro de texto para un problema puntual. Peor:
+       ese texto entraba al historial y, con el historial largo, disparaba el
+       resumen de memoria, que a su vez hacía fallar la respuesta siguiente
+       (el bucle auto-amplificante que se corrigió en 2.14.4). Ahora: corto,
+       con la tranquilidad de que no es culpa de la pregunta, y con el
+       siguiente paso a mano. El detalle largo vive en el diagnóstico. */
+    return 'No pude generar la respuesta con el motor local, y no es que tu pregunta sea difícil: puede que el modelo no esté cargado. Revisá Modelos, o tocá «Liberar motor».';
   }
 
   function tip() { return pick(TIPS); }

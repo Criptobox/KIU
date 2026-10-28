@@ -546,39 +546,123 @@ window.KiuAgente = (function () {
      tocan 1 o 2: se mandan solo las que tienen una palabra clave en el pedido. Si ninguna
      coincide (o el pedido es raro) se mandan TODAS: nunca se le quita al modelo la
      herramienta correcta por un regex corto. */
+  /* v2.14.4 · LAS PALABRAS CLAVE SON PALABRAS, NO REGEX.
+     Eran regex: un solo patrón por herramienta, así que "prefiero el mate
+     amargo" no matcheaba NADA (nadie decía "prefiero") y "llévame al
+     aeropuerto" tampoco (nadie decía "maps"). Cuando no matcheaba nada se
+     devolvían las 16 herramientas en el orden del registro, y el ejemplo
+     del prompt era el de la primera: set_alarm. El modelo copiaba el
+     ejemplo y armaba una alarma donde le habían pedido un mapa.
+     Ahora cada herramienta tiene su lista, se cuentan las palabras que
+     matchean (cuántas más, más específica) y el pedido gana la más
+     específica. Es la misma idea que el KW elige, pero afinable palabra por
+     palabra — y el arnés de evaluación dice si está bien o no. */
   var KW = {
-    set_alarm: /\b(alarma|recordatorio|recuerda|recuerdame|avisame|despiert|temporizador|timer|a las \d|en \d+ (min|hora))/,
-    read_calendar: /\b(agenda|calendario|reunion|evento|cita|tengo (algo|hoy|manana|el|dentista|que)|que tengo|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/,
-    find_contact: /\b(contacto|numero de|telefono de|celular de)\b/,
-    call_contact: /\b(llam|marc|telefone)/,
-    search_docs: /\b(documento|archivo|pdf|apunte|segun mis|en mis)\b/,
-    device_action: /\b(linterna|bateria|espacio|abr[ei]|maps|mapa|youtube|temporizador|timer|navega|ruta)\b/,
-    send_message: /\b(mensaje|sms|escrib|mand|envi|whatsapp|decile|dile|avisale)/,
-    remember: /\b(anota|apunta|acuerdate|acordate|guarda|recuerda que|recorda)/,
-    now: /\b(hora|fecha|dia es|que dia|cuando es hoy|hoy es)\b/,
-    web_search: /\b(busca|investiga|noticias?|precio|clima|cotizacion|quien es|quien fue|que es|internet|web|google)/,
-    /* v2.14.2 · las herramientas de memoria y de datos del usuario. */
-    recall: /\b(recuerda|recuerdos|anot|nota|notas|tarea|tareas|guardad|memor|que se|que me dij|prefer|guarda|guardaste|recorda|recordaste)/,
-    manage_task: /\b(tarea|tareas|pendiente|pendientes|agenda personal|to do|todo)/,
-    manage_alarm: /\b(alarma|alarmas|recordatorio|recordatorios|temporizador)/,
-    create_calendar_event: /\b(evento|agenda|agendar|calendario|reunion|cita|invitacion)/,
-    /* v2.14.2 · olvidar y corregir */
-    forget: /\b(olvid|olvida|olvidate|borra|borralo|elimina|ya no (es|son)|saca|quita|no quiero (guardar|que)|no hace falta)/,
-    update_memory: /\b(correg|cambia|reemplaz|en realidad|ahora es|ya no es|no era|equivoc)/
+    set_alarm: ['alarma', 'alarmas', 'recordatorio', 'recordatorios', 'despiertame', 'despiertá', 'despertar', 'avisame', 'avisá', 'recordá', 'recordame', 'poneme una alarma', 'poné una alarma'],
+    read_calendar: ['agenda', 'calendario', 'reunion', 'reunión', 'evento', 'eventos', 'cita', 'citas', 'agendá', 'dia', 'día', 'mañana', 'manana', 'ayer', 'semana', 'tengo'],
+    find_contact: ['contacto', 'contactos', 'numero', 'número', 'telefono', 'teléfono', 'celular', 'quien es', 'dónde está', 'donde esta', 'numero de'],
+    call_contact: ['llamar', 'llamá', 'llame', 'llama', 'marcá', 'marcar', 'telefonear'],
+    search_docs: ['documento', 'documentos', 'archivo', 'archivos', 'pdf', 'apunte', 'apuntes', 'contrato', 'segun mis', 'según mis', 'en mis'],
+    device_action: ['linterna', 'bateria', 'batería', 'espacio', 'disco', 'abrí', 'abrir', 'abre', 'maps', 'mapa', 'temporizador', 'timer', 'navegá', 'ruta', 'llevame', 'llévame', 'como llego', 'cómo llego', 'aeropuerto', 'youtube', 'memoria ram'],
+    send_message: ['mensaje', 'sms', 'escribí', 'escribi', 'mandá', 'manda', 'enviá', 'envia', 'whatsapp', 'decile', 'decí', 'avisale', 'avisá'],
+    remember: ['recordá', 'recorda', 'anotá', 'anota', 'guardá', 'guarda', 'acordate', 'prefiero', 'prefiero', 'me gusta', 'no me gusta', 'apuntá', 'apuntate'],
+    recall: ['recordá', 'recuerdos', 'recuerdo', 'anoté', 'anote', 'anotado', 'guardé', 'guarde', 'guardado', 'guardados', 'mi memoria', 'que se', 'qué sé', 'buscá en tu memoria', 'preguntáte', 'que tengo guardado', 'qué tengo guardado', 'que era', 'qué era', 'cuando era', 'cuándo era'],
+    manage_task: ['tarea', 'tareas', 'pendiente', 'pendientes', 'to do', 'todo', 'agendame una tarea', 'tengo una tarea', 'tengo tareas'],
+    manage_alarm: ['alarma', 'alarmas', 'recordatorio', 'recordatorios', 'cancelá', 'cancela', 'borra la alarma', 'borrala', 'quitala', 'eliminá', 'elimina'],
+    create_calendar_event: ['evento', 'eventos', 'agendá', 'agendar', 'agenda un', 'agendá un', 'calendario', 'reunión', 'cita', 'invitación', 'turno', 'meeting', 'agendame un'],
+    forget: ['olvidá', 'olvida', 'olvidate', 'no quiero guardar', 'sacá', 'saca', 'borra mi', 'elimina mi'],
+    update_memory: ['corregí', 'corregir', 'corrige', 'cambiá', 'cambia', 'reemplazá', 'en realidad', 'ahora es', 'ya no es', 'no era', 'equivocad', 'es el'],
+    now: ['hora', 'fecha', 'que dia', 'qué día', 'hoy es', 'que fecha', 'qué fecha', 'que horas'],
+    web_search: ['buscá', 'busca', 'buscar', 'investiga', 'noticias', 'precio', 'precios', 'clima', 'tiempo', 'cotizacion', 'cotización', 'quien es', 'que es', 'internet', 'web', 'google', 'dolar', 'dólar', 'cuanto sale']
   };
-  function norm(t) {
-    t = String(t || '').toLowerCase();
-    return t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
-  }
-  function seleccionar(pedido) {
-    var t = norm(pedido), out = [], names = toolNames();
-    for (var i = 0; i < names.length; i++) {
-      var rx = KW[names[i]];
-      if (!rx || rx.test(t)) out.push(names[i]);   /* sin regex = herramienta nueva: va siempre */
+  /* las que CONSULTAN (no modifican nada) */
+  var LECTURA = {
+    read_calendar: 1, find_contact: 1, search_docs: 1, recall: 1,
+    manage_task: 1, manage_alarm: 1, now: 1, web_search: 1
+  };
+  function esLectura(n) { return !!LECTURA[n]; }
+  /* v2.14.4 · DESEMPATE EXPRESO. Cuando dos herramientas matchean la misma
+     cantidad de palabras ("qué tareas tengo" → manage_task y read_calendar),
+     el orden del registro decidía y a veces decidía mal. Con esta tabla el
+     desempate es explícito y revisable: "qué tarea tengo pendiente" es una
+     tarea; "qué tengo mañana" es la agenda. */
+  var PRIORIDAD = {
+    manage_task: 3, recall: 3, manage_alarm: 3, create_calendar_event: 3,
+    read_calendar: 2, device_action: 2, web_search: 2, find_contact: 2, search_docs: 2,
+    set_alarm: 1, send_message: 1, remember: 1, now: 1, forget: 1, update_memory: 1
+  };
+  /* ¿alguno de estos tools matcheó palabras del pedido? */
+  function herramientasConPalabras(lista, pedido) {
+    var pal = palabrasPedido(pedido);
+    for (var i = 0; i < lista.length; i++) {
+      if (cuentaPalabras(pal, KW[lista[i]]) > 0) return true;
     }
-    /* sin coincidencias reales, o demasiado pocas para estar seguros → todas */
-    var conKw = out.filter(function (n) { return KW[n]; });
-    return conKw.length ? out : names;
+    return false;
+  }
+  /* palabras del pedido, normalizadas como las del cerebro */
+  function palabrasPedido(t) {
+    var out = [];
+    var ps = String(t || '').toLowerCase()
+      .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+      .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace(/ñ/g, 'n')
+      .replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+    for (var i = 0; i < ps.length; i++) {
+      if (ps[i] && ps[i].length > 1) out.push(ps[i]);
+    }
+    return out;
+  }
+  /* v2.14.4 · LAS PALABRAS CLAVE SE NORMALIZAN IGUAL QUE EL PEDIDO.
+     El pedido se normaliza sin acentos ("abrí" -> "abri"), pero las palabras
+     clave estaban escritas con acentos: "abrí" nunca matcheaba "abri". La
+     mitad de la lista estaba muerta sin que nadie lo notara. */
+  function sinAcentos(t) {
+    return String(t == null ? '' : t).toLowerCase()
+      .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+      .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace(/ñ/g, 'n');
+  }
+  function cuentaPalabras(pal, lista) {
+    if (!lista) return 0;
+    var n = 0;
+    for (var i = 0; i < lista.length; i++) {
+      var k = sinAcentos(lista[i]);
+      if (k.indexOf(' ') >= 0) {
+        /* frase: matchea si aparece en el pedido ("agenda un turno") */
+        if (pal.join(' ').indexOf(k) >= 0) n++;
+        continue;
+      }
+      for (var j = 0; j < pal.length; j++) {
+        if (pal[j] === k) { n++; break; }
+      }
+    }
+    return n;
+  }
+
+  function seleccionar(pedido) {
+    var pal = palabrasPedido(pedido), names = toolNames(), puntos = [], sinFiltro = [];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      /* v2.14.4 · una herramienta SIN lista de palabras (la recién agregada,
+         que nadie conoce todavía) va SIEMPRE, pero al final: si no, el
+         listado de herramientas la escondería y el modelo no la elegiría
+         nunca. */
+      if (!KW[n]) { sinFiltro.push(n); continue; }
+      var p = cuentaPalabras(pal, KW[n]);
+      if (p > 0) puntos.push({ n: n, p: p, i: i });
+    }
+    if (!puntos.length) return names.concat(sinFiltro);   /* nadie matcheó: sin ejemplo, el modelo decide */
+    puntos.sort(function (a, b) { return (b.p - a.p) || ((PRIORIDAD[b.n] || 0) - (PRIORIDAD[a.n] || 0)) || (a.i - b.i); });
+    /* v2.14.4 · SI EL PEDIDO ES DE LECTURA, PRIMERO LAS DE LECTURA.
+       "qué alarmas tengo" encaja con set_alarm (crear una alarma) y con
+       manage_alarm (ver las alarmas), y el modelo se iba con la que
+       escribía. Cuando el pedido es una consulta, la herramienta que LEE va
+       primera: el ejemplo del prompt es el que el modelo copia. */
+    var esConsulta = /^(que|cuant|cuantas|listar|listame|ver|mostrar|muestrame|buscar|buscame|tengo|tiene|mostrame)/.test(pal.join(' '));
+    if (esConsulta) {
+      puntos.sort(function (a, b) { return ((esLectura(b.n) ? 1 : 0) - (esLectura(a.n) ? 1 : 0)) || (b.p - a.p) || ((PRIORIDAD[b.n] || 0) - (PRIORIDAD[a.n] || 0)) || (a.i - b.i); });
+    }
+    var out = puntos.map(function (x) { return x.n; });
+    for (var s = 0; s < sinFiltro.length; s++) out.push(sinFiltro[s]);
+    return out;
   }
 
   /* ================= esquema → prompt ================= */
@@ -744,7 +828,14 @@ window.KiuAgente = (function () {
       subsets.push(req.concat(opt));
     } else if (opt.length > 2) subsets.push(req.concat(opt));
     var ramas = subsets.map(function (keys) { return branch(t, keys, hermes); });
-    return ruleName(t.name) + ' ::= ' + ramas.join('\n           | ');
+    /* v2.14.4 · LAS ALTERNATIVAS VAN EN LA MISMA LÍNEA.
+       En GBNF un salto de línea TERMINA la regla: poner el "|" al principio de
+       la línea siguiente hace que el parser falle con "expecting name at |".
+       O sea que la gramática NO parseaba y el agente venía funcionando SIN
+       gramática: el modelo tenía que acertar el JSON solo, que es justo lo
+       que un modelo chico no hace. Verificado contra el parser real de
+       llama.cpp ("failed to parse grammar"). */
+    return ruleName(t.name) + ' ::= ' + ramas.join(' | ');
   }
 
   /* Una rama: {"tool":"x","args":{"k":v,"k2":v2}} como secuencia de literales. */
@@ -771,12 +862,20 @@ window.KiuAgente = (function () {
   }
 
   /* La gramática entera: raíz que acepta una herramienta o {"listo":true}. */
-  function grammar(solo, hermes) {
+  function grammar(solo, hermes, conListo) {
     var g = grammarTools(solo, !!hermes);
     var nombres = g.map(function (r) { return r.split(' ::=')[0]; });  /* ya con guiones */
-    g.push('done ::= ' + lit('{"listo":true}'));
+    /* v2.14.4 · "LISTO" SOLO DESPUÉS DE TRABAJAR. El agente entra únicamente
+       para órdenes (el gate del chat ya filtró las preguntas), así que en el
+       PRIMER paso "no necesito ninguna herramienta" nunca es la respuesta
+       correcta: es la salida fácil que toma un modelo chico. Medido con
+       Qwen3-0.6B: sin esto, el 97 % de los pedidos terminaban con
+       {"listo":true} y no se ejecutaba NADA. En el primer paso la gramática
+       no ofrece esa salida; a partir del segundo vuelve, porque ahí sí es
+       la respuesta correcta ("ya hice lo que me pediste"). */
+    if (conListo !== false) g.push('done ::= ' + lit('{"listo":true}'));
     g.push(STR_RULE);
-    g.push('root ::= ' + nombres.concat(['done']).join(' | '));
+    g.push('root ::= ' + nombres.concat(conListo === false ? [] : ['done']).join(' | '));
     return g.join('\n') + '\n';
   }
 
@@ -932,6 +1031,7 @@ window.KiuAgente = (function () {
     var max = o.maxSteps || (harness && harness.maxSteps) || MAX_STEPS;
     var obs = [];
     var hecho = [];
+    var terminado = false;   /* v2.14.3: el bucle ya no acepta respuestas tardías */
     var successfulTools = [];
     var failedTools = false;
     var taskText = s(o.pedido || (o.habla && o.habla.length ? o.habla[o.habla.length - 1] : ''), 300);
@@ -950,6 +1050,11 @@ window.KiuAgente = (function () {
       return;
     }
     if (!cargado) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
+
+    /* v2.14.4 · ¿La selección es confiable? Solo si la herramienta de arriba
+       matcheó alguna palabra clave del pedido. Si no matcheó ninguna, el
+       ejemplo sería del conjunto equivocado. */
+    var herramientasSeguras = herramientasConPalabras(herramientas, (o.habla && o.habla.length) ? o.habla[o.habla.length - 1] : o.pedido);
 
     function seguir(t, out, args) {
       var ok = !!(out && out.ok);
@@ -972,7 +1077,7 @@ window.KiuAgente = (function () {
     function paso() {
       if (n >= max) { finish(); return; }
       n++;
-      var hist = [{ role: 'system', content: systemPrompt(taskText, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''))) }];
+      var hist = [{ role: 'system', content: systemPrompt(taskText, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || '')), herramientasSeguras) }];
       if (o.habla && o.habla.length) {
         for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
       }
@@ -993,9 +1098,14 @@ window.KiuAgente = (function () {
       var gbnf = null;
       var hermesMode = /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''));
       if (o.usarGramatica !== false) {
-        try {
-          if (rawBridge('kiuGenGrammarOk') !== false) gbnf = grammar(herramientas, hermesMode);
-        } catch (eGr) { gbnf = null; }
+        /* v2.14.4 · LA GRAMÁTICA SE PONE SIEMPRE.
+           Antes se ponía solo si `kiuGenGrammarOk()` devolvía true, y ese
+           valor dice si la gramática ANTERIOR se pudo aplicar. Como la
+           primera decisión no tenía ninguna anterior, la primera tampoco la
+           ponía: y como la anterior nunca se aplicó, la segunda tampoco.
+           El agente.enteró JA MÁS con gramática. Ahora se pone siempre (si el
+           nativo la soporta) y el resultado se verifica después. */
+        try { gbnf = grammar(herramientas, hermesMode, obs.length > 0); } catch (eGr) { gbnf = null; }
       }
       /* v2.14.2 · ESPERAR AL MOTOR Y NO QUEDARSE COLGADO.
          Dos cosas que el agente no tenía y el chat normal sí:
@@ -1017,8 +1127,18 @@ window.KiuAgente = (function () {
         if (asking) return;
         asking = true;
         if (reloj) { try { clearTimeout(reloj); } catch (eCl) { } reloj = 0; }
-        K.ask(hist, MAXTOK, function (res) {
+          K.ask(hist, MAXTOK, function (res) {
           asking = false;
+          /* v2.14.4 · ¿la gramática se aplicó de verdad? El nativo lo dice
+             (grammarOk). Si dice que no, el agente está sin red: el modelo
+             puede devolver cualquier cosa. Queda registrado para el
+             diagnóstico, porque un agente sin gramática parece un agente
+             que "no funciona" y la causa es invisible. */
+          try {
+            if (rawBridge('kiuGenGrammarOk') === false) {
+              if (window.KiuHarness2) window.KiuHarness2.record(false, 'grammar');
+            }
+          } catch (eGr2) { }
           if (reloj) { try { clearTimeout(reloj); } catch (eCl2) { } reloj = 0; }
           if (res && !res.ok && /ocupado/i.test(String(res.err || '')) && esperaN < ESPERA_MAX) {
             esperaN++;
@@ -1038,6 +1158,11 @@ window.KiuAgente = (function () {
         }, RELOJ_MAX);
       }
       function onRes(res) {
+        /* v2.14.3 · si el bucle ya terminó, la respuesta que llega tarde se
+           descarta. Con la cola del motor un pedido puede completarse
+           DESPUÉS de que el agente se rindiera: sin esta guarda, el bucle
+           seguiría andando solo. */
+        if (terminado) return;
         if (!res || !res.ok || !res.text) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'generation'); } catch (eH1) { } finish(); return; }
         var d = parseDecision(res.text);
         if (!d) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'json parse'); } catch (eH2) { } avisar('pensando'); obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
@@ -1085,6 +1210,7 @@ window.KiuAgente = (function () {
       preguntar();
     }
     function finish() {
+      terminado = true;
       /* Aprende solo de ejecuciones completas con al menos tres herramientas exitosas.
          Guarda nombres/keywords, nunca argumentos, contactos ni resultados. */
       if (!failedTools && successfulTools.length >= 3 && window.KiuSkills && typeof window.KiuSkills.recordRecipe === 'function') {
@@ -1124,7 +1250,50 @@ window.KiuAgente = (function () {
     paso();
   }
 
-  function systemPrompt(pedido, herramientas, obs, hayHabla, compact, hermes) {
+  /* v2.14.4 · EJEMPLOS PARA EL MODELO.
+     Medido con un modelo real (Qwen3-0.6B) sobre el arnés de evaluación: sin
+     ejemplos, el 97 % de los pedidos terminaban con {"listo": true} — el modelo
+     no llamaba a ninguna herramienta. La instrucción "si no necesitás ninguna"
+     le da al modelo chico una salida MUY fácil, y la toma siempre. Un ejemplo
+     concreto le enseña dos cosas: la forma exacta del JSON y que la respuesta
+     normal es llamar a una herramienta. */
+  var EJEMPLO = {
+    set_alarm: { when: 'a las 7', label: 'despertar' },
+    read_calendar: { day: 'mañana' },
+    find_contact: { name: 'Ana' },
+    call_contact: { who: 'Mamá' },
+    search_docs: { query: 'contrato' },
+    device_action: { what: 'linterna' },
+    send_message: { to: 'Juan', text: 'ya llegué' },
+    remember: { text: 'el dentista es el martes' },
+    recall: { query: 'dentista' },
+    manage_task: { action: 'list' },
+    manage_alarm: { action: 'list' },
+    create_calendar_event: { title: 'turno dentista', when: 'mañana a las 15' },
+    forget: { text: 'dentista' },
+    update_memory: { text: 'martes', new_text: 'jueves' },
+    now: {},
+    web_search: { query: 'precio del dólar' }
+  };
+  function ejemplos(lista, seguro) {
+    /* v2.14.4 · UN SOLO EJEMPLO, el de la herramienta más probable, y SOLO
+       si la selección es CONFIABLE. Con tres ejemplos, el modelo chico copiaba
+       el primero (medido: 4 pedidos de 30 se equivocaban por eso). Con uno
+       solo, el modelo copia el correcto... pero si el ejemplo es del
+       conjunto equivocado, el modelo copia el error. Cuando ninguna palabra
+       clave matchea, NO se muestra ejemplo: es mejor que el modelo piense
+       que enseñarle una respuesta equivocada. */
+    if (seguro === false) return [];
+    var nombres = (lista && lista.length) ? lista : toolNames();
+    for (var i = 0; i < nombres.length; i++) {
+      var n = nombres[i];
+      if (!EJEMPLO[n]) continue;
+      return ['"' + n + '" → {"tool":"' + n + '","args":' + JSON.stringify(EJEMPLO[n]) + '}'];
+    }
+    return [];
+  }
+
+  function systemPrompt(pedido, herramientas, obs, hayHabla, compact, hermes, seguras) {
     /* Si el llamador pasa una lista, el prompt muestra SOLO esas herramientas.
        Importa para un modelo chico: cada línea del manifiesto es contexto que no
        está usando, y cada herramienta de más es una chance más de que elija mal. */
@@ -1137,8 +1306,17 @@ window.KiuAgente = (function () {
          mensaje del usuario YA es la tarea y repetirla acá es tokens de prefill
          tirados a la basura — y en un teléfono, cada token cuenta. */
       (hayHabla ? '' : 'TAREA: ' + s(pedido, 300) + '\n\n') +
+      /* v2.14.4 · los ejemplos van con la lista de herramientas del turno: así
+         el modelo ve el vocabulario Y la forma, sin pagar por las 16. */
+      (function () {
+        var ex = ejemplos(herramientas, seguras);
+        if (!ex.length) return '';
+        return 'EJEMPLOS:\n' + ex.join('\n') +
+          '\n"charla normal" → {"listo":true}\n\n';
+      })() +
       (hermes ? 'Respondé SOLO con una llamada Hermes: <tool_call>{\"name\":\"nombre\",\"arguments\":{\"k\":\"v\"}}</tool_call>. No agregues texto.\n' : 'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' + 'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n') +
-      'Si no necesitás ninguna: {"listo": true}\n\n' +
+      /* v2.14.4 · en el primer paso NO se ofrece "listo" (ver grammar()). */
+      ((obs && obs.length) ? 'Si no necesitás ninguna más: {"listo": true}\n\n' : 'Elegí SIEMPRE una herramienta de la lista. Todavía no hiciste nada.\n\n') +
       'Usá una herramienta por vez. Elegí la más específica que sirva.';
     /* Receta procedural: solo pista de herramientas, nunca argumentos guardados ni ejecución automática. */
     try {

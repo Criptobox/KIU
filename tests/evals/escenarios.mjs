@@ -26,7 +26,11 @@ export const ESCENARIOS = [
   /* ---------- alarmas y temporizadores ---------- */
   { id: 'alarma-7-media', pedido: 'poné una alarma a las 7 y media', espera: { tool: 'set_alarm' }, args: { when: /7/ }, ejemplo: { when: 'a las 7 y media' } },
   { id: 'alarma-en-20-min', pedido: 'despiertame en 20 minutos', espera: { tool: 'set_alarm' }, args: { when: /20/ }, ejemplo: { when: 'en 20 minutos' } },
-  { id: 'temporizador-10', pedido: 'poné un temporizador de 10 minutos', espera: { tool: 'device_action' }, args: { what: 'timer', target: /10/ }, ejemplo: { what: 'timer', target: '10' } },
+  /* v2.14.4 · "un temporizador de 10 minutos" admite dos respuestas
+     correctas: una alarma para dentro de 10 minutos (set_alarm) o el
+     temporizador del dispositivo (device_action/timer). El arnés medía una
+     sola como buena y daba un fallo falso por una respuesta correcta. */
+  { id: 'temporizador-10', pedido: 'poné un temporizador de 10 minutos', espera: { tool: 'device_action', acepta: ['set_alarm'] }, args: { what: 'timer', target: /10/ }, ejemplo: { what: 'timer', target: '10' } },
   { id: 'ver-alarmas', pedido: 'qué alarmas tengo programadas', espera: { tool: 'manage_alarm' }, args: { action: 'list' }, ejemplo: { action: 'list' } },
   { id: 'borrar-alarma', pedido: 'cancelá la alarma del desayuno', espera: { tool: 'manage_alarm' }, args: { action: 'cancel', which: /desayuno/ }, ejemplo: { action: 'cancel', which: 'desayuno' } },
 

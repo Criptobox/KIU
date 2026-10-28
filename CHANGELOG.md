@@ -1,3 +1,27 @@
+## [2.14.5] - 2026-10-28
+
+**El agente, medido de verdad.** Con un llama.cpp compilado y un Qwen3-0.6B real, el arnés de evaluación pasó de **3 % a 93 % de acierto** (28 de 30 pedidos) con el no-op del 97 % al 7 %. Lo que había abajo no son suposiciones: son cuatro bugs comprobados contra el motor real.
+
+- **LA GRAMÁTICA DEL AGENTE NUNCA PARSEÓ.** En GBNF un salto de línea termina la regla, así que el "|" de las alternativas, al principio de la línea siguiente, era un error de sintaxis ("failed to parse grammar", verificado contra el parser real de llama.cpp). Como además el JS solo la mandaba si `kiuGenGrammarOk()` devolvía true —y ese valor dice si la gramática ANTERIOR se aplicó, y en la primera decisión nunca hubo una anterior— el agente NUNCA tuvo gramática: el modelo tenía que acertar el JSON solo.
+- **EL MODELO NO HACÍA NADA.** Con la instrucción "si no necesitás ninguna herramienta: {"listo":true}", el 97 % de los pedidos terminaban con {"listo":true}. Ahora, en el PRIMER paso la gramática no ofrece esa salida (el agente solo entra para órdenes: ahí "listo" nunca es la respuesta correcta) y el prompt lleva un ejemplo del uso correcto. En los pasos siguientes "listo" vuelve, porque ahí sí corresponde.
+- **LAS PALABRAS CLAVE NO MATCHEABAN.** Eran regex demasiado angostas y, además, estaban escritas con acentos mientras el pedido se normaliza sin acentos: la mitad de la lista estaba muerta. "llévame al aeropuerto" no matcheaba nada, y cuando nada matchea se devolvían las 16 herramientas en orden de registro, con lo que el ejemplo del prompt era el de `set_alarm` y el modelo armaba una alarma donde le habían pedido un mapa. Ahora son listas de palabras que se cuentan, con un desempate explícito por prioridad y la regla de que una consulta ("qué alarmas tengo") va primero a las herramientas que LEEN.
+- **EL CEREBRO NO ENTENDÍA LA FORMA DEL MODELO.** El modelo responde "7" y el parser solo entendía "a las 7" → "no entendí el horario". Ahora entiende "7", "09:30" y "9.45".
+- **El mensaje de error del motor pasó de 362 a 162 caracteres**: era un muro de texto y, además, alimentaba el bucle auto-amplificante (el error grande hace que el historial dispare el resumen, que hace fallar la respuesta siguiente).
+- Prueba de regresión nueva: para cada pedido REAL del arnés, la herramienta que va primera tiene que ser la correcta.
+- Cómo reproducir la medición: `node tests/evals/run.mjs --url http://127.0.0.1:8080/v1/chat/completions --model qwen3-0.6b` con un `llama-server` arriba.
+- 545 tests: 540 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin JDK se saltan a la vista; en el CI corren).
+
+## [2.14.4] - 2026-10-28
+
+**"El motor interno no pudo responder (el motor sigue ocupado con una solicitud anterior)".** El error que reportaba la gente en el teléfono. No era una causa: eran tres, y una era auto-amplificante.
+
+- EL RESUMEN DE MEMORIA LE ROBABA EL MOTOR A LA RESPUESTA. `kiuReply()` pide la respuesta en dos pasos: `kiuMsgs()` arma el prompt (y ahí, si el historial es largo, dispara un RESUMEN en segundo plano) y después `Kiu.ask()` pide la respuesta. El resumen se quedaba con el motor y la respuesta del usuario se comía un "ocupado". Ahora el resumen se aparta: espera a que el motor esté libre y en calma, y el usuario le pasa adelante si escribe mientras corre.
+- Y ERA AUTO-AMPLIFICANTE: el mensaje de error ocupa 700 caracteres, con él el historial pasa los 3200 que disparan el resumen, y así cada mensaje posterior repetía el error. Un error se convertía en una condición permanente.
+- EL MOTOR TIENE COLA. El motor tiene una sola puerta: si algo la está usando, el pedido ESPERA en vez de rebotar con un error (con tope de 45 s, para no colgar el chat en silencio).
+- EL CONTROLADOR DE ESTADOS ACUMULABA TEMPORIZADORES. El código prometía "el temporizador es UNO, del controlador" y no era verdad: cada evento armaba un timer nuevo y los viejos no se cancelaban, así que el número de timers crecía con cada mensaje. En un WebView en segundo plano, donde Android además estrangula los timers, eso es un desgaste real de CPU.
+- Si el usuario cancela y la respuesta llega tarde (con la cola), ya no se muestra ni se habla. Y el agente descarta las respuestas que llegan después de que terminó su bucle.
+- 544 tests: 544 en verde, 0 en rojo, 0 omitidas (con JDK 17: los arneses de Java se compilan y se ejecutan de verdad).
+
 ## [2.14.3] - 2026-10-28
 
 - **CAPA PREMIUM EN EL CSS**: la app ya usa el mismo lenguaje visual del mockup: vidrio esmerilado para lo que flota y se lee (portada, motor, proveedores, tip, modal, barra de abajo, burbuja del bot) y tarjetas a relieve para lo que se toca (acciones rápidas, herramientas, interruptores, botones). Va como una capa que SOLO AGREGA al final de `app.css`: si algo se ve mal, se saca la capa y la app vuelve a la de siempre. El blur de verdad solo va en las superficies grandes, porque un `backdrop-filter` en cada tarjeta repetida baja los frames en un WebView de Android.

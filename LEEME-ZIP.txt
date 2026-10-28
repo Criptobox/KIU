@@ -1,4 +1,4 @@
-KIU - Tanda 23: la capa premium y el CI en verde (v2.14.3)
+KIU - Tanda 25: el agente, medido de verdad (v2.14.5)
 ===============================================================================
 
 OJO, LEÉ ESTO PRIMERO
@@ -14,7 +14,7 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
 1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
    dependés de que tu build local funcione. ES LO MÁS SEGURO.
 2) Verificalo ANTES de instalar:
-      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.3
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.5
    Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
    del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
 3) Si igual compilás local: tenés que tener las .so. Se recuperan con
@@ -25,6 +25,46 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
    te obliga a desinstalar y se pierden los datos locales.
 
 LO QUE HAY EN ESTA TANDA
+- App v2.14.5 (versionCode 96).
+- EL AGENTE, MEDIDO DE VERDAD. Con un llama.cpp compilado y un Qwen3-0.6B
+  real, el arnés de evaluacion pasa de 3% a 93% de acierto (28 de 30
+  pedidos) con el no-op del 97% al 7%. Los cuatro bugs:
+  (1) la gramatica GBNF del agente NUNCA PARSEO (en GBNF un salto de linea
+      termina la regla, y el "|" de las alternativas iba al principio de la
+      linea siguiente) y ademas nunca se mandaba (el JS la ponia solo si la
+      ANTERIOR se habia aplicado, y en la primera decision no habia ninguna);
+  (2) el modelo contestaba {"listo":true} en el 97% de los pedidos: ahora,
+      en el primer paso la gramatica no ofrece esa salida y el prompt lleva
+      un ejemplo;
+  (3) las palabras clave no matcheaban (regex angostas, y con acentos contra
+      un pedido normalizado sin acentos): ahora son listas que se cuentan,
+      con desempate explicito;
+  (4) el cerebro no entendia "7" (solo "a las 7").
+- COMO REPRODUCIR LA MEDICION (el paso que faltaba):
+      1) compilar llama.cpp y levantar el servidor:
+         cmake -B build -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF && cmake --build build --target llama-server -j2
+         ./build/bin/llama-server -m modelo.gguf --port 8080 -c 2048 --threads 2
+      2) correr el arnes contra el modelo real:
+         node tests/evals/run.mjs --url http://127.0.0.1:8080/v1/chat/completions --model <nombre>
+      Sale con 1 si no cumple los umbrales (acierto 80%, no-op 10%, 3 pasos).
+- 545 tests: 540 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin
+  JDK se saltan a la vista; en el CI corren).
+
+LO QUE HAY EN ESTA TANDA (v2.14.4, el resto)
+- App v2.14.4 (versionCode 95).
+- EL MOTOR DEJO DE DECIR "OCUPADO". El sintoma era "El motor interno no pudo
+  responder (el motor sigue ocupado con una solicitud anterior)". Tres causas:
+  (1) el resumen de memoria en segundo plano le robaba el motor a la respuesta
+  del usuario, y era AUTO-AMPLIFICANTE (el mensaje de error es enorme, hace
+  que el historial dispare otro resumen, y asi el error se repite para
+  siempre); (2) el motor no tenia cola: el pedido rebotaba con un error en vez
+  de esperar su turno; (3) el controlador de estados del avatar acumulaba
+  temporizadores (prometia "uno solo" y no era cierto), y en un WebView en
+  segundo plano eso desgasta CPU de verdad.
+- 544 tests: 544 en verde, 0 en rojo, 0 omitidas (con JDK: los arneses de Java
+  se compilan y se ejecutan de verdad).
+
+LO QUE HAY EN ESTA TANDA (v2.14.3, el resto)
 - App v2.14.3 (versionCode 94).
 - LA CAPA PREMIUM DEL CSS: vidrio esmerilado para lo que flota y se lee,
   tarjetas a relieve para lo que se toca. Va como una capa que SOLO AGREGA al

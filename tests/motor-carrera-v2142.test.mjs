@@ -123,7 +123,7 @@ function montar() {
       const destino = ahora + ms;
       let vueltas = 0;
       while (vueltas++ < 30000) {
-        const t = timers.filter((x) => !x.cancelado && x.at <= destino).sort((a, b) => a.at - b.at)[0];
+        const t = timers.filter((x) => !x.cancelado && (!x.corrio || x.intervalo) && x.at <= destino).sort((a, b) => a.at - b.at)[0];
         if (!t) break;
         if (t.intervalo) { t.at = ahora + t.ms; } else { t.corrio = true; }
         ahora = Math.max(ahora, t.at);

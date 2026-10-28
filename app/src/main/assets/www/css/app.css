@@ -1202,3 +1202,209 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
 .mtab.on { background:var(--teal); color:#05231F; }
 .mpane { display:none; }
 .mpane.on { display:block; }
+
+/* ============================================================
+   KIU · v2.14.2 · CAPA PREMIUM
+   ------------------------------------------------------------
+   Dos superficies, dos trabajos. Esta es la regla de la casa:
+
+     · VIDRIO   → lo que FLOTA y se LEE (estado, resúmenes, modales,
+                  la barra de abajo, la burbuja del bot). Va con blur
+                  de verdad, pero solo en las superficies GRANDES: un
+                  backdrop-filter en once tarjetas repeats en un
+                  WebView de Android baja los frames, y una app pro
+                  que se traba no es pro.
+
+     · RELIEVE  → lo que se TOCA (acciones rápidas, herramientas,
+                  interruptores, botones). Va con sombra dura abajo-
+                  derecha, luz inversa arriba-izquierda y una línea
+                  de luz interior. Sin blur: el mismo efecto, gratis.
+
+   Todo lo que viene abajo AGREGA. No se borra ni se reescribe una
+   regla de arriba: si algo se ve mal, se saca esta capa y la app
+   vuelve a la de siempre.
+   ============================================================ */
+
+:root {
+  /* vidrio */
+  --p-glass:linear-gradient(180deg,rgba(141,166,255,.085),rgba(141,166,255,.028));
+  --p-glass-2:linear-gradient(180deg,rgba(141,166,255,.12),rgba(141,166,255,.045));
+  --p-line:rgba(126,158,255,.19);
+  /* relieve */
+  --p-raise:linear-gradient(180deg,#151D31 0%,#0B1120 100%);
+  --p-raise-line:rgba(126,158,255,.11);
+  --p-dark:0 7px 18px rgba(2,6,18,.55);
+  --p-light:-4px -4px 12px rgba(255,255,255,.035);
+  --p-shine:inset 0 1px 0 rgba(255,255,255,.07);
+  --p-ease:cubic-bezier(.22,.9,.3,1);
+}
+
+/* ============================================================
+   1 · VIDRIO — superficies grandes (con blur de verdad)
+   ============================================================ */
+.hero-card,
+.motor-card,
+.prov-card,
+.tip-card {
+  background:var(--p-glass);
+  border:1px solid var(--p-line);
+  -webkit-backdrop-filter:blur(18px) saturate(1.25);
+  backdrop-filter:blur(18px) saturate(1.25);
+  box-shadow:0 14px 36px rgba(2,6,18,.46), var(--p-shine);
+}
+.modal-sheet {
+  background:rgba(11,18,34,.93);
+  -webkit-backdrop-filter:blur(24px) saturate(1.2);
+  backdrop-filter:blur(24px) saturate(1.2);
+  box-shadow:0 -22px 64px rgba(0,0,0,.62);
+}
+.bottomnav {
+  box-shadow:0 -8px 34px rgba(2,6,18,.62), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.chat-state {
+  background:rgba(12,19,38,.78);
+  border:1px solid var(--p-line);
+  box-shadow:0 8px 22px rgba(2,6,18,.45), var(--p-shine);
+}
+
+/* ============================================================
+   2 · VIDRIO SUAVE — superficies chicas (mismo look, sin blur)
+   ============================================================ */
+.sys-card,
+.usage-card,
+.set-card,
+.mem-stat,
+.search-wrap,
+.prov-body-in {
+  background:var(--p-glass);
+  border-color:var(--p-line);
+  box-shadow:0 8px 24px rgba(2,6,18,.36), var(--p-shine);
+}
+.sys-card, .usage-card, .mem-stat { border:1px solid var(--p-line); }
+
+/* ============================================================
+   3 · RELIEVE — lo que se toca
+   ============================================================ */
+.quick-card,
+.tool-card,
+.row-card,
+.icon-btn,
+.send-btn,
+.chip-btn,
+.chat-inputbar {
+  background:var(--p-raise);
+  border:1px solid var(--p-raise-line);
+  box-shadow:var(--p-dark), var(--p-light), var(--p-shine);
+  transition:transform .18s var(--p-ease), box-shadow .18s var(--p-ease), background .18s;
+}
+.quick-card:hover, .tool-card:hover, .row-card:hover {
+  transform:translateY(-2px);
+  box-shadow:0 12px 26px rgba(2,6,18,.6), var(--p-light), var(--p-shine);
+}
+.quick-card:active, .tool-card:active, .row-card:active, .icon-btn:active, .send-btn:active {
+  transform:translateY(0) scale(.985);
+  /* al presionar, la sombra dura se va y queda la luz: el botón "baja" */
+  box-shadow:var(--p-light), var(--p-shine);
+}
+.quick-card:active, .tool-card:active { background:#0D1424; }
+
+/* los iconos dentro de las tarjetas también son piezas, no pintados */
+.qc-ic, .tool-ic, .sys-ic, .row-tile {
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07), 0 4px 12px rgba(2,6,18,.4);
+  border-color:rgba(126,158,255,.14);
+}
+
+/* ============================================================
+   4 · INTERRUPTOR Y SEGMENTOS — piezas físicas
+   ============================================================ */
+.toggle {
+  background:linear-gradient(180deg,#0C1322,#121A2E);
+  border-color:rgba(126,158,255,.13);
+  box-shadow:inset 2px 2px 6px rgba(2,6,18,.7), inset -1px -1px 3px rgba(255,255,255,.045);
+}
+.toggle::after {
+  background:linear-gradient(180deg,#8D99B8,#6A7593);
+  box-shadow:0 2px 6px rgba(2,6,18,.65), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.toggle.on {
+  background:linear-gradient(180deg,rgba(45,212,191,.32),rgba(45,212,191,.16));
+  border-color:rgba(45,212,191,.5);
+}
+.toggle.on::after {
+  background:linear-gradient(180deg,#7DF5E6,#2DD4BF);
+  box-shadow:0 2px 9px rgba(45,212,191,.55), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.seg {
+  background:linear-gradient(180deg,rgba(9,15,30,.9),rgba(9,15,30,.62));
+  border-color:rgba(126,158,255,.1);
+  box-shadow:inset 2px 2px 7px rgba(2,6,18,.6), inset -1px -1px 3px rgba(255,255,255,.03);
+}
+.seg-btn.active {
+  background:var(--p-raise);
+  color:var(--txt);
+  box-shadow:0 5px 14px rgba(2,6,18,.55), var(--p-light), var(--p-shine);
+}
+.nav-btn.active {
+  background:rgba(45,212,191,.12);
+  box-shadow:inset 0 0 0 1px rgba(45,212,191,.26), 0 4px 14px rgba(2,6,18,.4);
+}
+
+/* ============================================================
+   5 · EL CHAT
+   ============================================================ */
+.msg.bot .msg-bubble {
+  background:var(--p-glass);
+  border:1px solid var(--p-line);
+  box-shadow:0 6px 18px rgba(2,6,18,.34), var(--p-shine);
+}
+.msg.user .msg-bubble {
+  background:linear-gradient(135deg,rgba(45,212,191,.26),rgba(96,165,250,.2));
+  border:1px solid rgba(45,212,191,.4);
+  box-shadow:0 8px 22px rgba(2,6,18,.42), inset 0 1px 0 rgba(255,255,255,.13);
+}
+.act-btn {
+  border-radius:11px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+/* ============================================================
+   6 · BOTONES Y PÍLDORAS
+   ============================================================ */
+.btn-primary {
+  box-shadow:0 10px 26px color-mix(in srgb,var(--acc) 32%,transparent),
+             inset 0 1px 0 rgba(255,255,255,.3);
+}
+.btn-primary:active { box-shadow:0 4px 12px color-mix(in srgb,var(--acc) 26%,transparent); }
+.btn-ghost {
+  background:var(--p-raise);
+  border-color:var(--p-raise-line);
+  box-shadow:var(--p-dark), var(--p-light), var(--p-shine);
+}
+.chip {
+  background:var(--p-glass);
+  border-color:var(--p-line);
+  box-shadow:var(--p-shine);
+}
+.chip-btn.active {
+  background:linear-gradient(120deg,var(--acc),color-mix(in srgb,var(--acc) 60%,#41C8E4));
+  color:#052722;
+  box-shadow:0 6px 18px color-mix(in srgb,var(--acc) 34%,transparent), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.hero-pill {
+  background:rgba(45,212,191,.11);
+  border-color:rgba(45,212,191,.38);
+  box-shadow:0 8px 22px rgba(2,6,18,.4), inset 0 1px 0 rgba(255,255,255,.09);
+}
+.send-btn.accent {
+  box-shadow:0 8px 20px color-mix(in srgb,var(--acc) 38%,transparent), inset 0 1px 0 rgba(255,255,255,.32);
+}
+
+/* ============================================================
+   7 · ACCESIBILIDAD — el contraste no se negocia
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .quick-card, .tool-card, .row-card, .icon-btn, .send-btn, .chip-btn, .chat-inputbar {
+    transition:none;
+  }
+  .quick-card:hover, .tool-card:hover, .row-card:hover { transform:none; }
+}

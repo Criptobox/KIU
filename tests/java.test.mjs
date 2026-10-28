@@ -189,7 +189,14 @@ test('el arnés del descargador detecta sus propios fallos: no es un test que si
     const roto = path.join(out, 'com/kiu/agent/KiuDlTask.java');
     fs.mkdirSync(path.dirname(roto), { recursive: true });
     const bueno = fs.readFileSync(DL_SRC, 'utf8');
-    fs.writeFileSync(roto, bueno.replace('if (this.sha256.length() != 64) {', 'if (false) {'));
+    /* La mutación tiene que deshacer LAS DOS guardas: la nueva (que avisa que
+       no se puede verificar) y la vieja (que compara contra el hash). Con una
+       sola, la otra sigue atrapando el caso y el arnés pasa igual: el control
+       negativo no controlaría nada. Deshaciendo las dos queda el
+       comportamiento de antes de 2.14.2 (instalar sin poder verificar). */
+    fs.writeFileSync(roto, bueno
+      .replace('if (this.sha256.length() != 64) {', 'if (false) {')
+      .replace('if (!this.expect.equals(this.sha256)) {', 'if (this.sha256.length() == 64 && !this.expect.equals(this.sha256)) {'));
     execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, roto], { encoding: 'utf8' });
     execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DL_HARNESS], { encoding: 'utf8' });
     const r = spawnSync(path.join(tools, 'java'), ['-cp', out, 'com.kiu.agent.KiuDlTaskHarness'], { encoding: 'utf8' });

@@ -1,3 +1,10 @@
+## [2.14.3] - 2026-10-28
+
+- **CAPA PREMIUM EN EL CSS**: la app ya usa el mismo lenguaje visual del mockup: vidrio esmerilado para lo que flota y se lee (portada, motor, proveedores, tip, modal, barra de abajo, burbuja del bot) y tarjetas a relieve para lo que se toca (acciones rápidas, herramientas, interruptores, botones). Va como una capa que SOLO AGREGA al final de `app.css`: si algo se ve mal, se saca la capa y la app vuelve a la de siempre. El blur de verdad solo va en las superficies grandes, porque un `backdrop-filter` en cada tarjeta repetida baja los frames en un WebView de Android.
+- Arreglado el test que rompía el CI: el control negativo del arnés del descargador mutaba una sola guarda y la otra seguía atrapando el caso, así que el arnés pasaba igual y el test fallaba. Ahora deshace las dos guardas, que es lo que reproduce el comportamiento anterior a 2.14.2. El fallo era del test, no de la app.
+- 8 tests nuevos de la capa premium (vigilan que sea aditiva, que el blur no baje a las tarjetas repetidas y que el relieve tenga las dos sombras).
+- 539 tests: 539 en verde, 0 en rojo, 0 omitidas (con JDK 17: los arneses de Java se compilan y se ejecutan de verdad).
+
 ## [2.14.2] - 2026-10-27
 
 **Hacia un agente que sirve.** Diagnóstico completo en `docs/AGENTE_UTIL.md`.
@@ -28,7 +35,7 @@
 - El agente ESPERA al motor ocupado (hasta ~24 s) en vez de rendirse al instante, y tiene un reloj de 2 min por decisión: si el motor no responde, el bucle termina en vez de quedar colgado con la pastilla de "Generando".
 - El motor distingue "no hay motor" de "el motor está ocupado": si el puente no tiene el método, el mensaje lo dice en vez de mentir con un "ocupado" que no es cierto.
 - El comando de la palabra de activación no se pierde más en un arranque en frío: si la actividad existe pero la página todavía no está lista, el comando queda en cola y lo entrega `pageReady()` (antes se descartaba en silencio: la persona decía "Kiu, poné una alarma" y no pasaba nada).
-- 18 tests nuevos. Suite completa: 531 pruebas, 526 en verde, 5 omitidas, 0 en rojo. Los omitidos son los arneses de Java: acá no hay JDK, así que se saltan a la vista (en el CI corren). Los omitidos son los arneses de Java: acá no hay JDK, así que se saltan a la vista (en el CI corren). La compilación de APK y C++ sigue pendiente: este paquete no incluye `vendor/llama.cpp` ni las `.so` del motor.
+- 26 tests nuevos. Suite completa: 539 pruebas, 539 en verde, 0 en rojo, 0 omitidas (con JDK: los arneses de Java se compilan y se ejecutan de verdad). Los omitidos son los arneses de Java: acá no hay JDK, así que se saltan a la vista (en el CI corren). La compilación de APK y C++ sigue pendiente: este paquete no incluye `vendor/llama.cpp` ni las `.so` del motor.
 
 ## [2.14.1] - 2026-10-24
 

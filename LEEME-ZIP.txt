@@ -1,4 +1,4 @@
-KIU - Tanda 22: el agente deja de decir "motor ocupado" (v2.14.2)
+KIU - Tanda 23: la capa premium y el CI en verde (v2.14.3)
 ===============================================================================
 
 OJO, LEÉ ESTO PRIMERO
@@ -14,7 +14,7 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
 1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
    dependés de que tu build local funcione. ES LO MÁS SEGURO.
 2) Verificalo ANTES de instalar:
-      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.2
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.3
    Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
    del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
 3) Si igual compilás local: tenés que tener las .so. Se recuperan con
@@ -25,7 +25,19 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
    te obliga a desinstalar y se pierden los datos locales.
 
 LO QUE HAY EN ESTA TANDA
-Todo esto está en 2.14.2 (versionCode 93). Son cambios de FONDO, no de
+- App v2.14.3 (versionCode 94).
+- LA CAPA PREMIUM DEL CSS: vidrio esmerilado para lo que flota y se lee,
+  tarjetas a relieve para lo que se toca. Va como una capa que SOLO AGREGA al
+  final de app.css: si algo se ve mal, se saca la capa y la app vuelve a la
+  de siempre. El blur de verdad solo va en las superficies grandes, porque un
+  backdrop-filter en cada tarjeta repetida baja los frames en un WebView de
+  Android.
+- EL CI VOLVIÓ A VERDE. El fallo era del control negativo del arnés del
+  descargador (mutaba una guarda y la otra seguía atrapando el caso), no de
+  la app. Con JDK 17 en el sandbox: 539 tests, 539 en verde.
+
+LO QUE HAY EN ESTA TANDA (v2.14.2, el resto)
+Son cambios de FONDO, no de
 cosmética: Kiu deja de ser un enrutador con un modelo al final y empieza a
 comportarse como un agente.
 
@@ -100,8 +112,8 @@ LA CAPA JAVA
 
 CIFRAS
 - App v2.14.2 (versionCode 93).
-- 531 tests: 526 en verde, 0 en rojo, 5 omitidos (los arneses de Java: sin
-  JDK se saltan; en el CI corren).
+- 539 tests: 539 en verde, 0 en rojo, 0 omitidas (con JDK: los arneses de Java
+  se compilan y se ejecutan de verdad).
 - Auditoría del puente JS↔Java: OK.
 - NO se pudo compilar el APK ni el C++: este ZIP no incluye vendor/llama.cpp
   ni las .so del motor. Eso se verifica en el CI (que sí las baja).

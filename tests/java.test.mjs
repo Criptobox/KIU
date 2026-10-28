@@ -148,3 +148,62 @@ test('sin el zip, el arnés lo dice en vez de reportar todo bien', () => {
     'sin el zip tiene que imprimirse SKIP: si no, parecería que se comprobó');
   assert.match(src, /fails=0/, 'y el resumen del skip no puede verse como un fallo');
 });
+
+/* ---- el descargador de modelos (v2.14.2) ----
+   La descarga es la parte de la app donde un error no se ve hasta mucho
+   después: si el SHA-256 no se verifica, se instala un modelo corrupto y el
+   síntoma es "el motor no arranca" tres pasos más tarde. KiuDlTask es Java
+   puro, así que se puede ejecutar en una JVM normal. */
+
+const DL_SRC = path.join(raiz, 'app/src/main/java/com/kiu/agent/KiuDlTask.java');
+const DL_HARNESS = path.join(here, 'java/com/kiu/agent/KiuDlTaskHarness.java');
+
+/** Compila KiuDlTask + el arnés y lo corre. */
+function correrDescarga(tools) {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'kiu-dl-'));
+  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, DL_SRC], { encoding: 'utf8' });
+  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DL_HARNESS], { encoding: 'utf8' });
+  const r = spawnSync(path.join(tools, 'java'), ['-cp', out, 'com.kiu.agent.KiuDlTaskHarness'], { encoding: 'utf8' });
+  const txt = (r.stdout || '') + (r.stderr || '');
+  const m = txt.match(/checks=(\d+) fails=(\d+)/);
+  return { out: txt, checks: m ? Number(m[1]) : 0, fails: m ? Number(m[2]) : -1, code: r.status };
+}
+
+test('el descargador se EJECUTA: verifica el magic y el SHA-256',
+  { skip: tools ? false : 'sin JDK (javac no encontrado)' }, () => {
+    const r = correrDescarga(tools);
+    const fallos = r.out.split('\n').filter((l) => l.startsWith('FAIL'));
+    assert.equal(r.fails, 0,
+      'las aserciones de comportamiento fallaron:\n  ' + fallos.join('\n  ') + '\n' + r.out);
+    assert.ok(r.checks >= 20, 'tiene que haber corrido de verdad, no cero checks: ' + r.checks);
+    assert.equal(r.code, 0, 'el arnés tiene que salir con 0 si todo pasó');
+  });
+
+test('el arnés del descargador detecta sus propios fallos: no es un test que siempre pasa',
+  { skip: tools ? false : 'sin JDK (javac no encontrado)' }, () => {
+    /* Se rompe a propósito la verificación de v2.14.2 (si no se puede hashear,
+       no se instala) y el arnés tiene que FALLAR. Sin este control, un arnés
+       roto pasaría en verde. */
+    assert.ok(tools, 'sin JDK este test se salta: no puede correr');
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'kiu-dl-neg-'));
+    const roto = path.join(out, 'com/kiu/agent/KiuDlTask.java');
+    fs.mkdirSync(path.dirname(roto), { recursive: true });
+    const bueno = fs.readFileSync(DL_SRC, 'utf8');
+    fs.writeFileSync(roto, bueno.replace('if (this.sha256.length() != 64) {', 'if (false) {'));
+    execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, roto], { encoding: 'utf8' });
+    execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DL_HARNESS], { encoding: 'utf8' });
+    const r = spawnSync(path.join(tools, 'java'), ['-cp', out, 'com.kiu.agent.KiuDlTaskHarness'], { encoding: 'utf8' });
+    assert.notEqual(r.status, 0, 'con la verificación rota el arnés tiene que FALLAR, no pasar');
+    const txt = (r.stdout || '') + (r.stderr || '');
+    assert.match(txt, /FAIL/, 'y tiene que decir qué falló:\n' + txt);
+  });
+
+test('el descargador no instala lo que no puede verificar', () => {
+  /* El contrato, escrito para que no se pueda romper por accidente: la
+     verificación tiene que estar en el código, no solo en el arnés. */
+  const src = fs.readFileSync(DL_SRC, 'utf8');
+  assert.match(src, /if \(this\.sha256\.length\(\) != 64\)/,
+    'si el hash no se puede calcular, la descarga tiene que fallar en vez de instalar el archivo');
+  assert.match(src, /no pude verificar el archivo/,
+    'y tiene que explicar por qué');
+});

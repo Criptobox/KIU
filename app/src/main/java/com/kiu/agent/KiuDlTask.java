@@ -103,7 +103,10 @@ public class KiuDlTask implements Runnable {
         }
     }
 
-    private boolean finish(File file, File file2, boolean z) {
+    /* v2.14.2 · VISIBLE AL PAQUETE (como ggufMagic) para que el arnés de
+       ejecución real lo pueda probar. No es una API: es un método con
+       LOGICA DE VERIFICACIÓN que vale la pena cubrir de verdad. */
+    boolean finish(File file, File file2, boolean z) {
         if (z && !ggufMagic(file)) {
             try {
                 file.delete();
@@ -115,15 +118,33 @@ public class KiuDlTask implements Runnable {
         }
         /* v2.4.0: SHA-256 del archivo completo (.part previo + bytes nuevos) */
         this.sha256 = hashFile(file);
-        if (this.expect != null && this.expect.length() == 64 && this.sha256.length() == 64
-                && !this.expect.equals(this.sha256)) {
-            try {
-                file.delete();
-            } catch (Throwable unused2) {
+        if (this.expect != null && this.expect.length() == 64) {
+            /* v2.14.2 · SI NO SE PUEDE VERIFICAR, NO SE INSTALA.
+               Antes, si el hash no se podía calcular (error de I/O, archivo
+               ilegible), la comparación se saltaba por el `length() == 64` y el
+               .part se renombraba al nombre final como si estuviera bien: un
+               modelo posiblemente corrupto instalado en el teléfono, con el
+               síntoma apareciendo mucho después (un motor que no arranca).
+               Un archivo del catálogo que no se puede hashear es un archivo
+               que no se puede dar por bueno: se borra y se avisa. */
+            if (this.sha256.length() != 64) {
+                try {
+                    file.delete();
+                } catch (Throwable unused3) {
+                }
+                this.err = "no pude verificar el archivo (SHA-256 ilegible): se borro, descargalo de nuevo";
+                this.state = "err";
+                return false;
             }
-            this.err = "archivo corrupto: el hash SHA-256 no coincide con el catalogo (se borro); descargalo de nuevo";
-            this.state = "err";
-            return false;
+            if (!this.expect.equals(this.sha256)) {
+                try {
+                    file.delete();
+                } catch (Throwable unused2) {
+                }
+                this.err = "archivo corrupto: el hash SHA-256 no coincide con el catalogo (se borro); descargalo de nuevo";
+                this.state = "err";
+                return false;
+            }
         }
         this.verified = this.expect.length() == 64 && this.sha256.length() == 64 && this.expect.equals(this.sha256);
         try {

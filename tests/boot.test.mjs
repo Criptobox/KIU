@@ -28,6 +28,7 @@ const SCRIPTS = [
   'js/rag.js',
   'js/kiu-secure.js',
   'js/app/env.js',
+  'js/app/memoria.js',
   'js/app/state.js',
   'js/app/catalog.js',
   'js/app/models.js',

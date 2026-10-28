@@ -42,7 +42,7 @@ function cargar(opts = {}) {
   ctx.window = ctx;
   const prompts = [];
   const cola = (opts.respuestas || []).slice();
-  ctx.S = { kiu: { ok: opts.sinModelo ? false : true } };
+  ctx.S = opts.S || { kiu: { ok: opts.sinModelo ? false : true } };
   ctx.Kiu = {
     ask(hist, maxT, cb) {
       prompts.push({ hist, maxT });
@@ -409,16 +409,38 @@ test('el manifiesto entra en presupuesto', () => {
   const A = cargar().A;
   const tok = A.budget().manifiestoTok;
   assert.equal(typeof tok, 'number', 'budget() tiene que devolver un número');
-  /* v2.13.1: techo del manifiesto COMPLETO (10 herramientas, solo se manda entero como
-     respaldo). El caso típico usa seleccionar(): ver agente-v213.test.mjs */
-  assert.ok(tok <= 360, 'manifiesto: ' + tok + ' tokens (bajó de 435), el techo es 360');
+  /* v2.14.2: el techo del manifiesto COMPLETO sube porque hay 14 herramientas
+     (eran 10) y porque se agregaron las de memoria. Pero lo que se PAGA en el
+     móvil es el manifiesto COMPACTO (perfil Harness-Local-Compact, el que
+     corre por defecto): una línea por herramienta, sin descripciones. Ese es
+     el número que importa, y tiene su propio techo, más estricto. */
+  assert.ok(tok <= 620, 'manifiesto (worst case, con descripciones): ' + tok + ' tokens, el techo es 620');
+  /* v2.14.2 · el compacto sube a ~119 tokens porque ahora lleva los VALORES
+     de los enums (manage_task(action: list|add|done)): el modelo ya no tiene
+     que adivinar el vocabulario, y un valor inventado costaba una generación
+     entera. Lo que se paga por turno son solo las herramientas que el turno
+     lleva (ver seleccionar()), así que el costo real es mucho menor que este
+     techo, que es el peor caso. */
+  const comp = A.budget().manifiestoCompactoTok;
+  assert.ok(comp <= 145, 'manifiesto compacto (el que se paga en el móvil): ' + comp + ' tokens, el techo es 145');
 });
 
 test('el prompt completo de una decisión entra en presupuesto', () => {
   const A = cargar().A;
   const tok = A.budget().promptTok;
   assert.equal(typeof tok, 'number');
-  assert.ok(tok <= 450, 'prompt: ' + tok + ' tokens (bajó de 544), el techo es 450');
+  assert.ok(tok <= 760, 'prompt: ' + tok + ' tokens (bajó de 544 pero hay 6 herramientas más), el techo es 760');
+});
+
+test('el perfil del usuario no infla el prompt de la decisión', () => {
+  /* v2.14.2: el perfil (nombre + tareas + recuerdos) entra en CADA decisión.
+     Si no está acotado, el prefill del móvil se dispara. */
+  const { A } = cargar({ S: { kiu: { ok: true }, name: 'Sasha' } });
+  const conPerfil = A.systemPrompt('poné una alarma a las 7', null, [], false);
+  assert.match(conPerfil, /PERFIL DEL USUARIO:/, 'el perfil tiene que estar en el prompt');
+  assert.match(conPerfil, /Sasha/);
+  const largo = A.systemPrompt('x', null, [], false).length;
+  assert.ok(largo < 2600, 'el prompt no puede pasar de ~2600 caracteres: ' + largo);
 });
 
 test('el mensaje del usuario va UNA vez, no dos', () => {

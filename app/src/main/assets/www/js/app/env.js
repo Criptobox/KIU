@@ -139,20 +139,36 @@
   }
 
   /* ================= v1.7.0: PUENTE CRUDO ================= */
+  /* v2.14.2 · EL PUENTE SE RESUELVE EN CADA LLAMADA, NO UNA SOLA VEZ.
+     Antes `BR` se capturaba al cargar este archivo. Si en ese instante
+     window.KiuBridge todavía no estaba, `BR` quedaba en null PARA SIEMPRE y
+     todo lo nativo moría en silencio: `kiuGen` devolvía null, el motor
+     "no arrancaba nunca" y el agente contestaba "el motor sigue ocupado"
+     aunque el modelo estuviera cargado en la memoria. Ahora se resuelve en
+     cada llamada, así que un puente que aparece tarde se usa igual. */
+  var _brCache = null;
+  function puente() {
+    if (_brCache) return _brCache;
+    try {
+      _brCache = (typeof window.KiuBridge !== 'undefined' && window.KiuBridge) ? window.KiuBridge
+        : ((typeof window.NexoBridge !== 'undefined' && window.NexoBridge) ? window.NexoBridge : null);
+    } catch (e) { _brCache = null; }
+    return _brCache;
+  }
   function rawBridge(fn, args) {
-    if (!BR || !BR[fn]) return null;
-    try { return BR[fn].apply(BR, args || []); } catch (e) { return null; }
+    var b = puente();
+    if (!b || !b[fn]) return null;
+    try { return b[fn].apply(b, args || []); } catch (e) { return null; }
   }
   function jparse(s, fb) { try { return JSON.parse(s); } catch (e) { return fb; } }
   /* Migas de contexto para el diagnóstico (SafeBoot las muestra si hay error) */
   function bcrumb(m) { try { if (window.kiuBread) window.kiuBread(m); } catch (e) { } }
 
   /* ================= PUENTE ANDROID ================= */
-  var BR = (typeof window.KiuBridge !== 'undefined') ? window.KiuBridge
-    : (typeof window.NexoBridge !== 'undefined') ? window.NexoBridge : null;
   function bridge(fnName, args) {
-    if (!BR) return false;
-    try { var r = BR[fnName].apply(BR, args || []); return (r === undefined) ? true : !!r; } catch (e) { return false; }
+    var b = puente();
+    if (!b) return false;
+    try { var r = b[fnName].apply(b, args || []); return (r === undefined) ? true : !!r; } catch (e) { return false; }
   }
 
   /* exports del módulo (cross-módulo vía window) */
@@ -170,6 +186,10 @@
   window.rawBridge = rawBridge;
   window.jparse = jparse;
   window.bcrumb = bcrumb;
-  window.BR = BR;
+  /* window.BR sigue siendo el puente, pero resuelto en cada lectura: el código
+     que lo usa (app-ui.js) no tiene que saber que se resuelve solo. */
+  try {
+    Object.defineProperty(window, 'BR', { get: puente, configurable: true });
+  } catch (eBR) { window.BR = puente(); }
   window.bridge = bridge;
 })();

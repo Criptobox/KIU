@@ -27,8 +27,14 @@ test('el camino nativo comprueba reservas críticas', () => {
   assert.match(cpp, /bool kiu_abort_llama\(void\*\) \{ return g_stop\.load\(\); \}/);
 });
 test('versión incrementada sin reutilizar versionCode', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.14\.1"/);
-  assert.match(gradle, /val kiuVersionCode = 92/);
+  /* v2.14.2: no se fija el número exacto (ver cache-prefix-reuse-v2137): la
+     versión no puede retroceder y el versionCode tiene que subir. */
+  const ver = gradle.match(/val kiuVersionName = "(\d+)\.(\d+)\.(\d+)"/);
+  assert.ok(ver, 'la versión tiene que estar declarada en el build');
+  const n = (+ver[1] * 1e6) + (+ver[2] * 1e3) + (+ver[3]);
+  assert.ok(n >= 2014001, 'la versión no puede bajar de 2.14.1');
+  const code = +gradle.match(/val kiuVersionCode = (\d+)/)[1];
+  assert.ok(code > 92, 'el versionCode tiene que subir: ' + code);
 });
 
 test('la carga fallida de libkiullama conserva y muestra su causa', () => {

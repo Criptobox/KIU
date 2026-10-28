@@ -1,6 +1,118 @@
-KIU - Tanda 20: el error siguiente del CI (v2.10.0)
+KIU - Tanda 22: el agente deja de decir "motor ocupado" (v2.14.2)
 ===============================================================================
 
+OJO, LEÉ ESTO PRIMERO
+- Este ZIP es SOLO CÓDIGO. NO es un APK: no se instala, se compila.
+- Y no se puede compilar desde este ZIP tal cual, porque NO trae las librerías
+  nativas del motor (40 MB, están en .gitignore: app/src/main/jniLibs/ y
+  vendor/llama.cpp). El build falla con:
+      KIU: no hay librerías nativas del motor
+- ESO es lo que pasaba: el build fallaba, se instalaba el APK viejo, la app
+  decía 2.7 y nadie veía el error porque se iba al scrollback de Gradle.
+
+LO QUE TIENES QUE HACER (en orden de probabilidad)
+1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
+   dependés de que tu build local funcione. ES LO MÁS SEGURO.
+2) Verificalo ANTES de instalar:
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.2
+   Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
+   del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
+3) Si igual compilás local: tenés que tener las .so. Se recuperan con
+      ./scripts/vendor_llama.sh && ./gradlew :app:assembleDebug
+   y MIRA que termine bien antes de instalar.
+4) OJO CON LA FIRMA: si ya tenés Kiu instalada, usá SIEMPRE la misma keystore
+   (keystore/kiu-release.jks, que NO va en este ZIP). Con otra clave Android
+   te obliga a desinstalar y se pierden los datos locales.
+
+LO QUE HAY EN ESTA TANDA
+Todo esto está en 2.14.2 (versionCode 93). Son cambios de FONDO, no de
+cosmética: Kiu deja de ser un enrutador con un modelo al final y empieza a
+comportarse como un agente.
+
+EL AGENTE (lo que reportaba la gente)
+- "el agente no reconoce cuando hay un modelo cargado y siempre pone motor
+  ocupado". NO era una causa: eran cuatro, encadenadas:
+  1) El puente se capturaba UNA sola vez al cargar el JS. Si la interfaz
+     nativa no estaba en ese instante, moría en silencio para siempre:
+     kiuGen devolvía null y el agente contestaba "ocupado" con el modelo
+     cargado. Ahora se resuelve en cada llamada.
+  2) Un evento de carga tardío liberaba el flag de una generación en vuelo:
+     el JS creía que el motor estaba libre mientras el nativo generaba.
+  3) Un push tardío cerraba la generación SIGUIENTE (le daba el texto viejo
+     al callback nuevo y le borraba el pending): motor en "Generando" para
+     siempre. Ahora el evento lleva el id de la generación y se descarta el
+     que no es suyo.
+  4) El watchdog de 10 minutos mataba la generación que estuviera corriendo
+     diez minutos después de CUALQUIER generación. Ahora compara identidades.
+- El agente ahora ESPERA al motor ocupado (como ya hacía el chat normal) en
+  vez de rendirse al instante, y tiene un reloj de 2 min por decisión.
+- El motor distingue "no hay motor" de "está ocupado": si el puente no tiene
+  el método, lo dice en vez de mentir.
+
+EL DESPERTAR POR VOZ
+- "no funciona para dar instrucciones". El comando se perdía en silencio
+  cuando la actividad existía pero la página todavía no estaba lista
+  (arranque en frío): evaluateJavascript no ejecuta nada sobre una página a
+  medio cargar. Ahora queda en cola hasta pageReady().
+- PENDIENTE, anotado en KNOWN_ISSUES: con la app abierta el comando puede
+  ejecutarse DOS veces (el servicio lo entrega y el micrófono de la app
+  también lo escucha). El antirrebote solo cubre la vía del servicio.
+
+EL AGENTE, PARA SER AGENTE
+- La memoria del usuario sale de app-ui.js a js/app/memoria.js, con búsqueda
+  por palabras de verdad. El agente la CONSULTA (herramienta nueva `recall`):
+  antes la escribía y no la leía nunca.
+- Herramientas nuevas: recall, manage_task, manage_alarm,
+  create_calendar_event, forget, update_memory.
+- El prompt de decisión lleva PERFIL DEL USUARIO (nombre, tareas pendientes,
+  recuerdos): el modelo sabe quién sos antes de elegir la herramienta.
+- El riesgo de una herramienta se calcula con sus argumentos: leer no pide
+  confirmación, escribir sí.
+- El manifiesto compacto lleva los valores de los enums: el modelo no inventa
+  el vocabulario (antes cada valor inventado costaba una generación entera).
+- Observaciones estructuradas y un turno = una generación (si el resultado es
+  único y corto, el texto de la herramienta ES la respuesta).
+- El agente avisa en qué está: la pastilla dice "Busco en tu memoria" en vez
+  de "Enrutando" clavado.
+
+EL ARNÉS DE EVALUACIÓN (nuevo)
+- tests/evals/: 30 pedidos reales con la herramienta que el agente debería
+  elegir y los argumentos que tiene que producir. Mide acierto de
+  herramienta, pasos hasta el éxito, no-op y latencia, con umbrales que
+  hacen FALLAR el arnés si no se cumplen.
+- Corre sin red en el CI:
+      node --test tests/evals.test.mjs
+- Contra un modelo real (llama.cpp server, Ollama, LM Studio):
+      node tests/evals/run.mjs --url http://127.0.0.1:8080/v1/chat/completions
+- YA PAGÓ: encontró dos bugs que los tests de código no veían
+  (device_action con "espacio" y el cancelamiento de una alarma por título
+  parafraseado). Los dos están arreglados.
+
+LA CAPA JAVA
+- El descargador de modelos: si el SHA-256 NO se puede calcular, la descarga
+  ahora falla y borra el archivo. Antes lo instalaba como si estuviera bien
+  (un modelo corrupto, con el síntoma apareciendo mucho después).
+- Arnés de ejecución real del descargador (KiuDlTaskHarness), con control
+  negativo.
+- El CI declara el JDK del job de tests: los arneses de Java se compilan y se
+  EJECUTAN de verdad, en vez de depender de la imagen del runner. Sin JDK se
+  saltan a la vista, nunca en silencio.
+
+CIFRAS
+- App v2.14.2 (versionCode 93).
+- 531 tests: 526 en verde, 0 en rojo, 5 omitidos (los arneses de Java: sin
+  JDK se saltan; en el CI corren).
+- Auditoría del puente JS↔Java: OK.
+- NO se pudo compilar el APK ni el C++: este ZIP no incluye vendor/llama.cpp
+  ni las .so del motor. Eso se verifica en el CI (que sí las baja).
+
+DOCUMENTACIÓN NUEVA
+- docs/AGENTE_UTIL.md: el diagnóstico de por qué Kiu todavía no era un agente
+  de verdad, lo que se hizo y la hoja de ruta que queda (con lo único que
+  falta: correr el arnés contra un GGUF real y publicar los números).
+
+TANDA 20 (v2.10.0): el error siguiente del CI
+===============================================================================
 OJO, LEÉ ESTO PRIMERO
 - Este ZIP es SOLO CÓDIGO. NO es un APK: no se instala, se compila.
 - Y no se puede compilar desde este ZIP tal cual, porque NO trae las librerías

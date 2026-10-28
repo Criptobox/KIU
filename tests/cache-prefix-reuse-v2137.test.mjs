@@ -25,7 +25,15 @@ test('KV prefix reuse: invalidates on memory clearing and context shift', () => 
 });
 
 test('Version is bumped consistently for the KV prefix implementation', () => {
-  assert.match(gradle, /val kiuVersionName = "2\.14\.1"/);
-  assert.match(gradle, /val kiuVersionCode = 92/);
-  assert.match(changelog, /^## \[2\.14\.1\]/);
+  /* v2.14.2: la versión no se fija a un número exacto. Fijarla obliga a
+     tocar este test en cada tanda y un día se olvida y el test mintió: es el
+     mismo anti-patrón que el repo ya se corrigió una vez (ver KNOWN_ISSUES).
+     Lo que importa es que la versión NO retroceda y que el código suba. */
+  const ver = gradle.match(/val kiuVersionName = "(\d+)\.(\d+)\.(\d+)"/);
+  assert.ok(ver, 'la versión tiene que estar declarada en el build');
+  const n = (+ver[1] * 1e6) + (+ver[2] * 1e3) + (+ver[3]);
+  assert.ok(n >= 2014001, 'la versión no puede bajar de 2.14.1');
+  const code = +gradle.match(/val kiuVersionCode = (\d+)/)[1];
+  assert.ok(code > 92, 'el versionCode tiene que subir: ' + code);
+  assert.match(changelog, /^## \[2\.14\./m);
 });

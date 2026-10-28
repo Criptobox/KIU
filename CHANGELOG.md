@@ -1,3 +1,35 @@
+## [2.14.2] - 2026-10-27
+
+**Hacia un agente que sirve.** Diagnóstico completo en `docs/AGENTE_UTIL.md`.
+
+- La memoria del usuario sale de `app-ui.js` (5.500 líneas) a su propio módulo `js/app/memoria.js`, con búsqueda real por palabras (`search`) y un resumen corto (`summary`) para el prompt. La UI se engancha con `hooks` (`onAdd`, `onChange`): el módulo de datos no conoce la pantalla.
+- Herramientas nuevas del agente: `recall` (lee recuerdos, tareas, notas y preferencias), `manage_task` (listar, crear, completar), `manage_alarm` (ver, cancelar) y `create_calendar_event` (abrir el calendario con un evento). Antes `remember` escribía en la memoria y ninguna herramienta la leía: un modelo no escribe regex.
+- El prompt de decisión lleva `PERFIL DEL USUARIO` (nombre, tareas pendientes, recuerdos). Antes esa información solo estaba en el prompt de chat: el bot sabía lo que el usuario le había dicho al charlear, pero no al elegir la herramienta.
+- El riesgo de una herramienta se calcula con sus argumentos (`riskFor`): leer la batería o listar tareas ya no pide confirmación; escribir sí.
+- `maps`, `web` y `youtube` en `device_action` ahora funcionan. Los tres fallaban siempre con "no pude cumplir": eran capacidades que el enum anunciaba y la herramienta no tenía.
+- La búsqueda web quedó en una sola función, compartida por `web_search` y `device_action`.
+- Las preferencias dejan de ser un bucket vacío: "prefiero el mate amargo" ahora llena la pestaña Preferencias (nada la escribía).
+- El presupuesto de prompts se mide en los dos manifests: el compacto (86 tokens, el que se paga en el móvil) y el largo (492, peor caso). Techos actualizados y verificados por test.
+- El manifiesto compacto lleva los valores de los enums (`manage_task(action: list|add|done)`). Antes el modelo solo veía la firma y no tenía forma de saber qué valores eran válidos: se los inventaba, la validación lo rechazaba y se perdía una generación entera. Sube de 86 a 119 tokens en el peor caso, pero el costo real es por turno: `seleccionar()` deja 2-4 herramientas (≤60 tokens).
+- Las observaciones del bucle ahora son estructuradas (`[manage_task ok] …`): el modelo distingue "no encontré nada" de "el dispositivo falló" y no se equivoca de herramienta en el paso siguiente.
+- Un turno con herramientas puede costar una sola generación: si el resultado es único y corto, el texto de la herramienta ES la respuesta y no se redacta otra vez con el modelo. La redacción sigue pasando cuando hay varios resultados, cuando el texto es largo o con forma de lista (`componer: 'siempre'` la fuerza).
+- Arnés de evaluación del agente (`tests/evals/`): 28 pedidos reales con la herramienta esperada, los argumentos que tiene que producir y un modelo enchufable (guionizado o un endpoint OpenAI-compatible). Mide acierto de herramienta, pasos hasta el éxito, no-op y latencia, con umbrales que hacen fallar el arnés si no se cumplen. Corre sin red en el CI y contra un modelo real con `node tests/evals/run.mjs`.
+- El arnés encontró dos bugs que los tests de código no veían: `device_action` con "espacio" (el cerebro no entendía la palabra suelta y la herramienta contestaba "no pude cumplir") y el cancelamiento de una alarma con el título parafraseado ("la alarma del desayuno" contra la alarma "desayunar": el substring no encontraba nada y el agente cancelaba la alarma equivocada o ninguna). Los dos arreglados.
+- El agente avisa en qué está: la pastilla dice qué herramienta está usando ("Busco en tu memoria", "Miro tu agenda") en vez de "Enrutando" clavado. Un turno puede dar 3-4 pasos y cada paso es una generación en la CPU del teléfono.
+- La memoria tiene ciclo de vida: dos herramientas nuevas, `forget` ("olvidá lo del dentista") y `update_memory` ("ya no es el martes, es el jueves"). Antes la memoria solo crecía y el agente contestaba con datos viejos con total confianza.
+- Descargador de modelos: si el SHA-256 NO se puede calcular (error de I/O), la descarga ahora falla y borra el archivo. Antes la comparación se saltaba y el `.part` se renombraba al nombre final como si estuviera bien: un modelo posiblemente corrupto instalado, con el síntoma ("el motor no arranca") apareciendo mucho después.
+- Arnés de ejecución real del descargador (`tests/java/com/kiu/agent/KiuDlTaskHarness.java`): magic de GGUF, SHA-256 real, borrado cuando el hash no coincide y rechazo de lo que no se puede verificar. Con su control negativo (el arnés tiene que fallar si se rompe la verificación).
+- El CI declara el JDK del job de tests: los arneses de Java se compilan y se ejecutan de verdad, en vez de depender de que la imagen del runner lo traiga. Sin JDK se saltan a la vista, nunca en silencio.
+- **Cuatro carreras del motor que dejaban al agente en "motor ocupado" para siempre** (2.14.2):
+  - El watchdog de 10 minutos de `ask()` comprobaba `pending.op === 'gen'` en vez de SU pending: diez minutos después de CUALQUIER generación mataba la que estuviera corriendo, la cortaba y le ponía "tardó demasiado".
+  - Un evento de carga que llegaba tarde liberaba el flag de occupied de una generación en vuelo: el JS creía que el motor estaba libre mientras el nativo generaba, y el pedido siguiente lo rechazaba el nativo.
+  - Un push de generación que llegaba tarde cerraba la generación SIGUIENTE: le entregaba el texto viejo al callback nuevo y le borraba el pending, dejando el motor en "Generando" para siempre. Ahora el evento lleva el id de la generación y el JS descarta el que no es suyo.
+  - El puente se capturaba UNA sola vez al cargar `env.js`: si `window.KiuBridge` no estaba en ese instante, moría en silencio para siempre (kiuGen devolvía null y el agente contestaba "ocupado" con el modelo cargado). Ahora se resuelve en cada llamada.
+- El agente ESPERA al motor ocupado (hasta ~24 s) en vez de rendirse al instante, y tiene un reloj de 2 min por decisión: si el motor no responde, el bucle termina en vez de quedar colgado con la pastilla de "Generando".
+- El motor distingue "no hay motor" de "el motor está ocupado": si el puente no tiene el método, el mensaje lo dice en vez de mentir con un "ocupado" que no es cierto.
+- El comando de la palabra de activación no se pierde más en un arranque en frío: si la actividad existe pero la página todavía no está lista, el comando queda en cola y lo entrega `pageReady()` (antes se descartaba en silencio: la persona decía "Kiu, poné una alarma" y no pasaba nada).
+- 18 tests nuevos. Suite completa: 531 pruebas, 526 en verde, 5 omitidas, 0 en rojo. Los omitidos son los arneses de Java: acá no hay JDK, así que se saltan a la vista (en el CI corren). Los omitidos son los arneses de Java: acá no hay JDK, así que se saltan a la vista (en el CI corren). La compilación de APK y C++ sigue pendiente: este paquete no incluye `vendor/llama.cpp` ni las `.so` del motor.
+
 ## [2.14.1] - 2026-10-24
 
 - Diagnóstico de generación: `genStatus` expone `running` e ID incremental por solicitud; `done` también se marca al finalizar con cero tokens.

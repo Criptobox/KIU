@@ -812,7 +812,20 @@ public class MainActivity extends Activity {
         if (wakeDup(str)) return;
         MainActivity mainActivity = inst;
         if (mainActivity != null) {
-            mainActivity.js("nexoWakeCmd(" + mainActivity.jsStr(str) + ")");
+            /* v2.14.2 · EL COMANDO NO SE PIERDE EN UN ARRANQUE EN FRÍO.
+               `inst` puede existir sin que la página esté lista: la actividad
+               se creó y el WebView todavía está cargando. evaluateJavascript
+               sobre una página a medio cargar no ejecuta nada, así que el
+               comando se descartaba EN SILENCIO: la persona decía "Kiu, poné
+               una alarma" y no pasaba nada.
+               Ahora, si la página no está lista, el comando queda en
+               pendingCmd y lo entrega pageReady(), igual que el extra del
+               Intent. */
+            if (mainActivity.pageReady) {
+                mainActivity.js("nexoWakeCmd(" + mainActivity.jsStr(str) + ")");
+            } else {
+                mainActivity.pendingCmd = str;
+            }
             return;
         }
         try {

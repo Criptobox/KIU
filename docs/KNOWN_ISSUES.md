@@ -1,6 +1,11 @@
 # Pendientes y mejoras sugeridas
 
 ## Resueltas
+- [x] **El agente no podía leer la memoria del usuario** (2.14.2) → `remember` escribía y ninguna herramienta leía: lo único que consultaba lo guardado eran las regex de `brain.js`, y un modelo no escribe regex. Ahora `js/app/memoria.js` tiene `search()` real y el agente tiene la herramienta `recall`, más `manage_task`, `manage_alarm` y `create_calendar_event`. Diagnóstico completo en `docs/AGENTE_UTIL.md`. (2026-10)
+- [x] **El modelo que elegía la herramienta no sabía quién era el usuario** (2.14.2) → el prompt de decisión (`kiu-agente.js`) no inyectaba nombre, tareas ni recuerdos: esa información solo estaba en el prompt de chat (`app-ui.js → kiuMsgs`). Ahora el prompt lleva `PERFIL DEL USUARIO`, acotado a ~240 caracteres porque se paga en cada decisión. (2026-10)
+- [x] **El enum de `device_action` anunciaba capacidades inexistentes** (2.14.2) → `maps`, `web` y `youtube` caían en la cola de `brain.js` con un texto que no reconoce, así que la herramienta contestaba siempre "no pude cumplir" y el modelo perdía un paso. Los tres tienen camino propio; la búsqueda web quedó en una función compartida con `web_search`. (2026-10)
+- [x] **El riesgo de las herramientas era único** (2.14.2) → leer la batería o listar tareas terminaba en un "¿Lo hago?" que no tiene sentido. El riesgo ahora se calcula con los argumentos (`riskFor`). (2026-10)
+- [x] **La pestaña "Preferencias" estaba siempre vacía** (2.14.2) → el bucket `prefs` existía y `addPref` estaba definido, pero nada lo escribía. "Prefiero el mate amargo" ahora llena las preferencias. (2026-10)
 - [x] **No usaba los motores locales** (2.13.0) → con el modelo fuera de memoria o el router apagado, el envío pedía reenviar el mensaje o contestaba «no tengo un modelo». `Kiu.whenReady` carga el modelo y continúa solo; `tryTargets` espera si el motor está ocupado. **Pendiente de confirmar en dispositivo.**
 - [x] **Gramática GBNF del agente inválida** (2.13.0) → nombres con `_`, `}` suelta y JSON sin comillas; llama.cpp la descartaba. Reescrita.
 - [x] **Versión sin subir** (2.13.0) → nueve tests fijaban `2.12.7`/`81` exactos; ahora solo exigen que no retroceda.
@@ -138,6 +143,40 @@
 - [x] **Importación no cancelable**, **notas cortas descartadas por el RAG**, **calculadora con % = módulo**. (v2.7.4)
 
 ## Técnicos
+- [x] **Cuatro carreras del motor dejaban al agente en "motor ocupado"** (2.14.2) → el watchdog de
+      10 minutos mataba la generación siguiente; un evento de carga tardío liberaba el flag de una
+      generación en vuelo; un push tardío cerraba la generación siguiente con el texto viejo; y el
+      puente se capturaba una sola vez al cargar el JS (si no estaba, moría en silencio para
+      siempre). Las cuatro arregladas y con tests de regresión (`tests/motor-carrera-v2142.test.mjs`).
+- [x] **El comando de la palabra de activación se perdía en un arranque en frío** (2.14.2) → si la
+      actividad existía pero la página todavía no estaba lista, `evaluateJavascript` no ejecutaba
+      nada y el comando se descartaba en silencio. Ahora queda en cola hasta `pageReady()`.
+- [ ] **La palabra de activación puede ejecutar el comando DOS veces** → con la app abierta, el
+      servicio entrega el comando y el micrófono de la app también lo escucha: los dos mandan el
+      mensaje. El antirrebote (`wakeDup`) solo cubre la vía del servicio. Habría que coordinar
+      que, cuando la app toma el micrófono, el servicio deje de entregar.
+- [ ] **El manifiesto compacto todavía no dice QUÉ hace cada herramienta** (2.14.2) → ya lleva
+      los valores de los enums (el vocabulario que el modelo tiene que usar), pero no el verbo
+      ("poné una alarma", "creá una tarea"). Son ~40 tokens más por decisión y no hay medición
+      que diga si compensan. Ver `docs/AGENTE_UTIL.md` §2.5.
+- [x] **Un turno con herramientas podía costar dos generaciones** (2.14.2) → la redacción final
+      con el modelo se saltea cuando el resultado es único y corto: el texto de la herramienta
+      ES la respuesta. Con varios resultados, textos largos o listas, se sigue redactando
+      (`componer: 'siempre'` la fuerza).
+- [x] **Las observaciones del bucle no decían qué había pasado** (2.14.2) → el modelo recibía
+      el texto pelado y no distinguía "no encontré nada" de "el dispositivo falló". Ahora son
+      estructuradas: `[manage_task ok] …` / `[manage_task error] …`.
+- [x] **No había evaluación del agente** (2.14.2) → ahora existe el arnés: `tests/evals/` con 28
+      pedidos reales (la herramienta esperada, los argumentos que tiene que producir y un modelo
+      enchufable), midiendo acierto de herramienta, pasos hasta el éxito, no-op y latencia, con
+      umbrales que hacen fallar el arnés si no se cumplen. Corre sin red en el CI y contra un
+      modelo real con `node tests/evals/run.mjs`.
+- [ ] **El arnés todavía no corrió contra un GGUF real** → falta la medición de acierto de un
+      modelo chico de verdad: necesita un teléfono o una máquina con `llama-server`. El arnés
+      está listo; los números no están.
+- [ ] **La memoria no tiene ciclo de vida** → no hay forma de corregir u olvidar un hecho
+      aprendido desde el chat (solo desde la UI), ni de que el agente actualice un recuerdo
+      viejo ("ya no es el martes, es el jueves").
 - [ ] Solo existe la librería `arm64-v8a` precompilada: sin `armeabi-v7a` el motor interno no corre
       en teléfonos de 32 bits (el build desde fuente ya incluye `arm64-v8a` + `x86_64`).
 - [ ] El historial de Git aún contiene los blobs de las `.so` viejas (quitarlas del HEAD no
@@ -169,13 +208,22 @@
       pantalla y sin aviso) → `KiuVoskInstall` + `ZipInstall`: se baja desde el
       diagnóstico, con SHA fijado, zip-slip cortado y comprobación de que el modelo
       quedó donde el motor lo busca. (2026-10, v2.9.8)
-- [ ] **La capa Java casi no tiene tests.** 4.900 líneas y `app/src/test` no existe. Los tres
+- [ ] **La capa Java casi no tiene tests.** 7.050 líneas y `app/src/test` no existe. Los tres
       bugs de audio de la tanda 16 estaban todos ahí, y ninguno lo vio un test: no
       porque no se probara, sino porque no había cómo. Medidas: `Backoff.java` es
       lógica pura sin Android (testeable), `tests/java-estructura.test.mjs` balancea
-      llaves y paréntesis de todo el Java, y el CI ya corre `:app:testDebugUnitTest`
-      (hoy no-op). Falta JUnit de verdad para el ciclo de `AudioRecord`, el init de
-      TTS y el `cycle()` con su watchdog. (2026-10, v2.9.6)
+      llaves y paréntesis de todo el Java. (2026-10, v2.9.6)
+- [x] **El descargador de modelos no tenía ni un test** (2.14.2) → `KiuDlTask` es Java puro
+      y ahora tiene un arnés de ejecución real (`KiuDlTaskHarness`): magic de GGUF, SHA-256
+      real, borrado cuando el hash no coincide y rechazo de lo que no se puede verificar,
+      con control negativo. El arnés encontró un bug: si el hash no se podía calcular, la
+      descarga instalaba el archivo como si estuviera bien. (2026-10)
+- [ ] **Faltan arneses para el resto de la capa Java.** Hoy hay 7 clases sin imports de
+      Android (1.033 líneas) y 2 con arnés (`Backoff`, `KiuDlTask`). Sin arnés siguen
+      `KiuVoskInstall` (258), `KiuGenJob` (172), `ZipInstall` (174) y `KiuDlTask` (236, ya
+      cubierto a medias). Y las 6.000 líneas con Android (`MainActivity` con 3.127) siguen
+      sin poder probarse sin emulador. El camino que funciona es: extraer la lógica pura
+      a clases sin Android y arnésearlas. (2026-10)
 - [ ] Los tests de arranque (`tests/boot.test.mjs` + `helpers.mjs`) usan un DOM falso: cubren
       el cableado cross-módulo, no el render real (para eso hay que probar en el
       teléfono/emulador).

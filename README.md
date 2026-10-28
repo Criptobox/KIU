@@ -1,6 +1,6 @@
 # Kiu — agente personal para Android
 
-Kiu 2.13.5 · paquete `com.kiu.agent` · minSdk 24 · targetSdk 34 · arm64-v8a (+ x86_64 compilando el motor)
+Kiu 2.14.2 · paquete `com.kiu.agent` · minSdk 24 · targetSdk 34 · arm64-v8a (+ x86_64 compilando el motor)
 
 App Android híbrida: interfaz web (HTML/CSS/JS) dentro de un WebView, una capa nativa en Java
 y un motor **llama.cpp** que corre modelos GGUF en el propio teléfono, sin Internet.
@@ -20,6 +20,7 @@ y un motor **llama.cpp** que corre modelos GGUF en el propio teléfono, sin Inte
 | `app/src/main/cpp/` | Wrapper JNI del motor (C++) + CMakeLists | Sí |
 | `app/src/main/assets/www/` | La interfaz web (HTML/CSS/JS) | **Sí**, es el 90 % del trabajo |
 | `app/src/main/assets/www/js/app/` | **app.js dividido en 6 módulos** (env, state, catalog, models, motor, app-ui) | **Sí**, se cargan en orden |
+| `app/src/main/assets/www/js/app/memoria.js` | **La memoria del usuario** (recuerdos, tareas, notas, preferencias): búsqueda y resumen | **Sí** |
 | `app/src/main/assets/www/js/rag-worker.js` | Núcleo RAG compartido (hilo principal + Web Worker: BM25 fuera de la UI) | **Sí** |
 | `app/src/main/res/` | Tema, iconos (sin duplicados) y `network_security_config.xml` | Solo si tocás el look nativo |
 | `app/src/main/jniLibs/` | `.so` del motor — **fuera de Git** (`.gitignore`): las regenera el build con `vendor_llama.sh` o las copiás de un build previo | No (binarios) |
@@ -51,7 +52,9 @@ que estén en verde y provisiona sus herramientas con `scripts/get-tools.sh`.
 
 ## Cómo editar (lo más importante)
 
-* **Interfaz, lógica, textos, modelos del catálogo** → `app/src/main/assets/www/`. El núcleo vive
+* **Interfaz, lógica, textos, modelos del catálogo** → `app/src/main/assets/www/`.
+  La memoria del usuario (recuerdos, tareas, notas) está en `js/app/memoria.js`:
+  `search()` busca por palabras y `summary()` arma el perfil que el agente lee. El núcleo vive
   dividido en `js/app/` (env → state → catalog → models → motor → app-ui, cargados en ese orden por
   `index.html`; los símbolos compartidos van por `window`), más `brain.js`, `tools.js`, `rag.js`
   (RAG en IndexedDB + BM25), `i18n.js` (chrome es/en) y `kiu-*.js`. Es JavaScript normal: se edita
@@ -75,6 +78,25 @@ que estén en verde y provisiona sus herramientas con `scripts/get-tools.sh`.
 
 ## Documentación
 * [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — cómo está armada la app y el flujo de datos.
+* [`docs/AGENTE_UTIL.md`](docs/AGENTE_UTIL.md) — **diagnóstico de por qué Kiu todavía no es un agente de verdad** y hoja de ruta para que lo sea.
+
+## Cómo medir si el agente es bueno
+
+Los tests del repo comprueban que el código haga lo que el código hace; no
+dicen si el agente elige la herramienta correcta. Para eso está el arnés:
+
+```bash
+node --test tests/evals.test.mjs        # en el CI: el arnés y el juego, sin red
+node tests/evals/run.mjs --guion         # el modelo "perfecto": mide el arnés
+node tests/evals/run.mjs --url http://127.0.0.1:8080/v1/chat/completions
+```
+
+Son 28 pedidos reales con la herramienta que el agente debería elegir y los
+argumentos que tiene que producir. El arnés mide **acierto de herramienta**,
+**pasos hasta el éxito**, **no-op** (pedidos que el agente declara resueltos
+sin hacer nada) y **latencia**, y falla si no cumple los umbrales. El segundo
+comando necesita un servidor OpenAI-compatible (`llama-server -m modelo.gguf
+--port 8080`): es la única forma de saber si el modelo elige bien.
 * [`docs/BRIDGE_API.md`](docs/BRIDGE_API.md) — todos los métodos que JS puede llamar (`KiuBridge.*`).
 * [`docs/GRADLE_MIGRATION.md`](docs/GRADLE_MIGRATION.md) — decisiones de la migración y el motor nativo.
 * [`docs/AVATAR_Y_LOGO.md`](docs/AVATAR_Y_LOGO.md) — el bot de 37 estados y la esquina del inicio.

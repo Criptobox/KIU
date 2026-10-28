@@ -37,6 +37,33 @@ public class KiuGenJob implements Runnable {
         }
     }
 
+    /* v2.14.2: el id incremental de generacion que publica el nativo.
+       -1 si no se puede leer: el JS entonces no puede discriminar el evento y
+       usa el criterio viejo (el primero que llega cierra). */
+    private static long currentGenId() {
+        try {
+            String st = KiuNative.genStatus();
+            if (st == null) {
+                return -1L;
+            }
+            int i = st.indexOf("\"id\":");
+            if (i < 0) {
+                return -1L;
+            }
+            int j = i + 5;
+            int k = j;
+            while (k < st.length() && (Character.isDigit(st.charAt(k)) || st.charAt(k) == '-')) {
+                k++;
+            }
+            if (k <= j) {
+                return -1L;
+            }
+            return Long.parseLong(st.substring(j, k));
+        } catch (Throwable ignored) {
+            return -1L;
+        }
+    }
+
     private static void scheduleIdleUnload() {
         java.util.concurrent.ScheduledFuture<?> old = idleUnloadTask;
         if (old != null) old.cancel(false);
@@ -118,10 +145,19 @@ public class KiuGenJob implements Runnable {
                         if (KiuNative.isLoaded()) scheduleIdleUnload();
                     }
                     long currentTimeMillis2 = System.currentTimeMillis() - currentTimeMillis;
+                    /* v2.14.2 · EL EVENTO LLEVA EL ID DE LA GENERACION.
+                       El push puede llegar TARDE: si el sondeo del JS ya habia
+                       cerrado esa generacion y el agente arranco el paso
+                       siguiente, el evento viejo cerraba la generacion nueva
+                       (le daba el texto viejo al callback nuevo y le borraba el
+                       pending): el motor se quedaba en "Generando" para siempre.
+                       Con el id, el JS sabe que ese evento no es de esta
+                       generacion y lo ignora. */
+                    long genId = currentGenId();
                     if (generate != null) {
-                        str = "if(window.kiuNativeDone)window.kiuNativeDone({\"op\":\"gen\",\"ok\":true,\"text\":\"" + String.valueOf(esc(generate)) + "\",\"ms\":" + currentTimeMillis2 + ",\"tps\":" + KiuNative.tokensPerSec() + "})";
+                        str = "if(window.kiuNativeDone)window.kiuNativeDone({\"op\":\"gen\",\"id\":" + genId + ",\"ok\":true,\"text\":\"" + String.valueOf(esc(generate)) + "\",\"ms\":" + currentTimeMillis2 + ",\"tps\":" + KiuNative.tokensPerSec() + "})";
                     } else {
-                        str = "if(window.kiuNativeDone)window.kiuNativeDone({\"op\":\"gen\",\"ok\":false,\"err\":\"" + String.valueOf(esc(KiuNative.lastError())) + "\",\"ms\":" + currentTimeMillis2 + "})";
+                        str = "if(window.kiuNativeDone)window.kiuNativeDone({\"op\":\"gen\",\"id\":" + genId + ",\"ok\":false,\"err\":\"" + String.valueOf(esc(KiuNative.lastError())) + "\",\"ms\":" + currentTimeMillis2 + "})";
                     }
                 } else if (i == 3) {
                     synchronized (MODEL_LOCK) {

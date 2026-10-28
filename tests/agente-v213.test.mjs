@@ -105,19 +105,44 @@ test('run(): si la carga falla, avisa «sin modelo cargado» y no explota', asyn
   assert.equal(r.err, 'sin modelo cargado');
 });
 
-test('run(): el modelo redacta la respuesta final con lo que hizo la herramienta', async () => {
+test('run(): el modelo redacta la respuesta final cuando hay varios resultados', async () => {
+  /* v2.14.2 · la redacción final se hace SOLO cuando aporta: con varios
+     resultados (o uno largo) el modelo los ordena en un par de frases. Con un
+     resultado único y corto, el texto de la herramienta ES la respuesta y
+     redactarlo sería gastar una generación entera (ver el test de abajo). */
   const prompts = [];
-  const respuestas = ['{"tool":"now","args":{}}', '{"listo":true}', 'Son las tres y es viernes.'];
+  const respuestas = ['{"tool":"web_search","args":{"query":"dolar"}}', '{"listo":true}', 'El dólar está a 1000.'];
   const A = agente({
+    app: {
+      webSnippets: (q, cb) => cb([
+        { t: 'Dólar', s: 'cotiza a 1000 pesos', u: '' },
+        { t: 'Blue', s: 'cotiza a 1005 pesos', u: '' },
+        { t: 'MEP', s: 'cotiza a 998 pesos', u: '' },
+      ]),
+    },
     Kiu: { ask(hist, maxT, cb) { prompts.push(hist); cb({ ok: true, text: respuestas.shift() }); } },
   });
-  const r = await new Promise((res) => A.run({ habla: ['¿qué hora es?'] }, res));
+  const r = await new Promise((res) => A.run({ habla: ['busca el dólar'] }, res));
   assert.equal(r.ok, true);
-  assert.equal(r.text, 'Son las tres y es viernes.');
-  assert.match(r.crudo, /Hoy es/, 'conserva el texto crudo de la herramienta');
+  assert.equal(r.text, 'El dólar está a 1000.');
+  assert.match(r.crudo, /cotiza a 1000 pesos/, 'conserva el texto crudo de la herramienta');
   const ultimo = prompts[prompts.length - 1];
   assert.match(ultimo[0].content, /RESULTADOS:/);
-  assert.match(ultimo[0].content, /Hoy es/, 'el modelo ve lo que pasó');
+  assert.match(ultimo[0].content, /Hoy es|cotiza/, 'el modelo ve lo que pasó');
+});
+
+test('run(): un resultado corto y único se muestra tal cual, sin segunda generación', async () => {
+  /* v2.14.2 · UN TURNO = UNA GENERACIÓN. Un resultado corto de una sola
+     herramienta no necesita que el modelo lo redacte: son segundos de
+     prefill en el teléfono para decir lo mismo. */
+  let n = 0;
+  const cola = ['{"tool":"now","args":{}}', '{"listo":true}'];
+  const A = agente({ Kiu: { ask(h, m, cb) { n++; cb({ ok: true, text: cola.shift() }); } } });
+  const r = await new Promise((res) => A.run({ habla: ['¿qué hora es?'] }, res));
+  assert.equal(n, 2, 'decisión + listo: ninguna redacción extra');
+  assert.equal(r.ok, true);
+  assert.match(r.text, /Hoy es/);
+  assert.equal(r.crudo, undefined, 'no hubo redacción, así que no hay texto crudo aparte');
 });
 
 test('run(): si la redacción falla, vale el texto crudo de la herramienta', async () => {
@@ -198,8 +223,8 @@ test('seleccionar(): una herramienta sin palabra clave (nueva) va siempre', () =
   try { assert.ok(A.seleccionar('poneme una alarma').includes('nueva')); } finally { delete A.TOOLS.nueva; }
 });
 
-test('web_search espera la promesa y el modelo ve los resultados', async () => {
-  const cola = ['{"tool":"web_search","args":{"query":"dolar hoy"}}', '{"listo":true}', 'El dólar está a 1000.'];
+test('web_search espera la promesa y el resultado llega al usuario', async () => {
+  const cola = ['{"tool":"web_search","args":{"query":"dolar hoy"}}', '{"listo":true}'];
   const prompts = [];
   const A = agente({
     app: { webSnippets: (q, cb) => setTimeout(() => cb([{ t: 'Dólar', s: 'cotiza a 1000 pesos', u: '' }]), 5) },
@@ -207,8 +232,9 @@ test('web_search espera la promesa y el modelo ve los resultados', async () => {
   });
   const r = await new Promise((res) => A.run({ habla: ['busca el dólar hoy'] }, res));
   assert.equal(r.ok, true);
-  assert.equal(r.text, 'El dólar está a 1000.');
-  assert.match(r.crudo, /cotiza a 1000 pesos/);
+  /* v2.14.2 · un solo resultado corto: se muestra tal cual, sin redactar */
+  assert.match(r.text, /cotiza a 1000 pesos/);
+  assert.match(String(r.obs), /web_search ok/, 'el modelo ve la observación estructurada');
 });
 
 test('web_search sin conexión informa el error al modelo y no cuelga el bucle', async () => {
@@ -262,7 +288,12 @@ test('confirmar(): si dice que sí, se ejecuta; las de solo lectura no preguntan
 });
 
 test('app-ui pasa confirmar al agente y confirm() avisa la cancelación (no cuelga el bucle)', () => {
-  assert.match(uiSrc, /KiuAgente\.run\(\{ habla: \[text\], confirmar:/);
+  /* v2.14.2 · la llamada al agente creció: además de confirmar, le pasa
+     `avanzar` para que la pastilla diga qué está haciendo. El contrato que
+     importa sigue siendo que el llamador pase `confirmar`. */
+  assert.match(uiSrc, /habla: \[text\],/);
+  assert.match(uiSrc, /confirmar: function \(tool, args, cbC\)/);
+  assert.match(uiSrc, /avanzar: function \(que, tool\)/, 'y que le avise en qué está');
   assert.match(uiSrc, /agentConfirm: function \(tool, args, cb\)/);
   assert.match(uiSrc, /if \(!S\.agentConfirm\) \{ cb\(true\); return; \}/, 'apagada por defecto');
   assert.match(uiSrc, /onCancel: function \(\) \{ once\(false\); \}/);

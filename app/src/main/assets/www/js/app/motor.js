@@ -387,8 +387,28 @@
       if (this.busyG && !this.pending) { this.busyG = false; try { rawBridge('kiuResetBusy'); } catch (e) { } }
       if (!S.kiu.ok) { jobOff(); cb({ ok: false, err: 'sin modelo cargado' }); return; }
       if (this.busyG) { jobOff(); cb({ ok: false, err: 'el motor sigue ocupado con una solicitud anterior; esperá a que termine o usá Liberar motor' }); return; }
+      /* Capturar la generación anterior. genStatus conserva su último texto al
+         terminar; sin ID el primer sondeo podía recuperar como nueva una respuesta vieja.
+         v2.14.2: esto va ANTES de armar el pending, porque el pending guarda
+         el id base: con eso se sabe qué evento de cierre es el de ESTA
+         generación y cuál llegó tarde de la anterior. */
+      var genBaselineId = -1;
+      try {
+        var beforeGenStatus = jparse(rawBridge('kiuGenStatus') || '{}', {});
+        var beforeGenId = Number(beforeGenStatus.id);
+        if (isFinite(beforeGenId) && beforeGenId >= 0) genBaselineId = beforeGenId;
+      } catch (eBaseline) { }
       this.busyG = true;
-      this.pending = { op: 'gen', cb: cb, startedAt: Date.now(), lastActivityAt: Date.now() };
+      /* v2.14.2 · IDENTIDAD DE LA SOLICITUD. `myPending` es ESTA generación.
+         Antes, todo lo que cerraba una generación comparaba con `this.pending`
+         (que para entonces puede ser la SIGUIENTE: el agente encadena pasos y
+         arranca el siguiente apenas termina el anterior). Un evento que llega
+         tarde —el push de una generación que el sondeo ya había cerrado— podía
+         entonces cerrar la generación equivocada: le entregaba el texto viejo
+         al callback nuevo, le borraba el pending y el motor quedaba Generating
+         para siempre. Con la identidad, cada cierre solo puede tocar la suya. */
+      var myPending = { op: 'gen', cb: cb, startedAt: Date.now(), lastActivityAt: Date.now(), genBase: genBaselineId };
+      this.pending = myPending;
       jobOn('Generando');
       var genPrompt = this.fmt(msgs);
       var genMaxT = Math.min(maxT || 350, 512);
@@ -405,20 +425,21 @@
          KiuGenJob.busy ahora es volatile (la UI y el worker comparten el estado).
          Si el puente todavía rechaza el inicio, esperamos hasta 8 intentos; no
          llamamos stop/reset a ciegas porque eso podía cortar el modelo anterior. */
-      // Capturar la generación anterior. genStatus conserva su último texto al
-      // terminar; sin ID el primer sondeo podía recuperar como nueva una respuesta vieja.
-      var genBaselineId = -1;
-      try {
-        var beforeGenStatus = jparse(rawBridge('kiuGenStatus') || '{}', {});
-        var beforeGenId = Number(beforeGenStatus.id);
-        if (isFinite(beforeGenId) && beforeGenId >= 0) genBaselineId = beforeGenId;
-      } catch (eBaseline) { }
       var attempt = 0;
       var startGen = function () {
         if (!self.pending || self.pending.op !== 'gen') return;
-        var launched = false;
-        try { launched = rawBridge('kiuGen', [genPrompt, genMaxT, genTemp]); } catch (eG) { launched = false; }
-        if (launched) { afterGen(); return; }
+        /* v2.14.2 · DISTINGUIR "OCUPADO" DE "NO HAY MOTOR".
+           `rawBridge` devuelve null cuando el puente NO TIENE el método (o no
+           está) y false cuando el nativo lo RECHAZÓ porque está ocupado. Los
+           dos se trataban igual: se reintentaba y el mensaje final era "el
+           motor sigue ocupado". Con el puente ausente, el motor jamás iba a
+           arrancar: la respuesta honesta es "no hay motor", no "está ocupado".
+           Y como el puente ahora se resuelve en cada llamada, puede aparecer
+           tarde: por eso se reintenta igual antes de rendirse. */
+        var r = null;
+        try { r = rawBridge('kiuGen', [genPrompt, genMaxT, genTemp]); } catch (eG) { r = null; }
+        if (r) { afterGen(); return; }
+        var sinPuente = (r === null || r === undefined);
         attempt++;
         if (attempt <= 8) {
           setTimeout(startGen, 700);
@@ -433,7 +454,12 @@
         self.pending = null;
         if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
         jobErr('Error', 2600);
-        cb({ ok: false, err: 'el motor sigue ocupado; no interrumpí la tarea anterior. Esperá unos segundos y reintentá' });
+        cb({
+          ok: false,
+          err: sinPuente
+            ? 'el motor interno no está disponible en este teléfono (no se pudo iniciar la generación)'
+            : 'el motor sigue ocupado; no interrumpí la tarea anterior. Esperá unos segundos y reintentá'
+        });
       };
       var afterGen = function () {
       /* v1.9.0: STREAMING — consulta el buffer nativo cada 130 ms y va pintando
@@ -441,7 +467,11 @@
       if (self._genPoll) clearInterval(self._genPoll);
       var lastLen = -1, lastTokN = -1, t0 = Date.now(), lastProg = Date.now();
       self._genPoll = setInterval(function () {
-        if (!self.pending || self.pending.op !== 'gen') {
+        /* v2.14.2: el sondeo cierra SU generación, no la que esté en el
+           pending ahora mismo (que puede ser la SIGUIENTE: el agente encadena
+           pasos). Con la identidad, un sondeo atrasado no puede pisar la que
+           arrancó después. */
+        if (self.pending !== myPending) {
           if (self._genPoll) clearInterval(self._genPoll);
           self._genPoll = null;
           return;
@@ -462,7 +492,7 @@
             try { rawBridge('kiuGenStop'); } catch (eNoStartStop) { }
             try { rawBridge('kiuResetBusy'); } catch (eNoStartReset) { }
             self.busyG = false;
-            var cbNoStart = self.pending.cb;
+            var cbNoStart = myPending.cb;
             self.pending = null;
             jobErr('Error', 2600);
             cbNoStart({ ok: false, err: 'el motor nativo no inició la solicitud (sin cambio de ID en 12 s)', stuck: true });
@@ -492,7 +522,7 @@
         if (st.done && lastTokN > 0) {
           if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
           self.busyG = false;
-          var cbR = self.pending.cb;
+          var cbR = myPending.cb;
           self.pending = null;
           try { rawBridge('kiuGenStop'); } catch (e3) { }
           try { rawBridge('kiuResetBusy'); } catch (e4) { }
@@ -505,7 +535,7 @@
           try { rawBridge('kiuGenStop'); } catch (e5) { }
           try { rawBridge('kiuResetBusy'); } catch (e6) { }
           self.busyG = false;
-          var cbf = self.pending.cb;
+          var cbf = myPending.cb;
           self.pending = null;
           jobErr('Error', 2600);
           cbf({ ok: false, err: (lastTokN > 0 ? 'el motor se quedó sin responder' : 'el motor no arrancó'), stuck: true });
@@ -513,9 +543,15 @@
       }, 130);
       /* Red de seguridad: 10 minutos (el watchdog de arriba actúa mucho antes). */
       setTimeout(function () {
-        if (self.pending && self.pending.op === 'gen') {
+        /* v2.14.2 · ESTE watchdog solo puede matar SU generación. Antes
+           revisaba `self.pending.op === 'gen'`, o sea que SIETE minutos
+           después de CUALQUIER generación (incluso una terminada hace rato)
+           mataba la que estuviera corriendo en ese momento: la cortaba, le
+           ponía "tardó demasiado" y dejaba el motor libre mientras el nativo
+           seguía trabajando. Ahora compara la identidad. */
+        if (self.pending === myPending) {
           if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
-          var cbf2 = self.pending.cb;
+          var cbf2 = myPending.cb;
           self.pending = null;
           /* El timeout de seguridad también debe sincronizar el estado nativo;
              de lo contrario, el siguiente mensaje puede heredar 'busy'. */
@@ -538,7 +574,13 @@
         return;
       }
       if (!p || p.op !== o.op) {
-        if (o.op === 'load') this.busyG = false;
+        /* v2.14.2 · Un evento de CARGA que llega tarde (el sondeo ya había
+           cerrado la carga) no puede liberar el flag de una GENERACIÓN que
+           esté en vuelo: antes lo hacía, y el motor quedaba "libre" para el
+           JS mientras el nativo seguía generando. El siguiente pedido lo
+           rechazaba el nativo y el usuario veía "el motor sigue ocupado".
+           Ahora solo se limpia cuando NO hay ninguna solicitud pendiente. */
+        if (o.op === 'load' && !p) this.busyG = false;
         return;
       }
       if (o.op === 'load') {
@@ -571,6 +613,18 @@
           if (p.cb) p.cb(false);
         }
       } else if (o.op === 'gen') {
+        /* v2.14.2 · UN EVENTO TARDE NO PUEDE CERRAR LA GENERACIÓN SIGUIENTE.
+           El push de una generación que el sondeo ya había cerrado puede
+           llegar después de que el agente arrancara el paso siguiente. Antes
+           ese evento cerraba la generación nueva: le entregaba el texto
+           VIEJO al callback nuevo y le borraba el pending, así que el
+           motor se quedaba en "Generando" para siempre y el agente no
+           respondía nunca más. El nativo manda el id de la generación en el
+           evento: si no es la de este pending, se ignora. */
+        if (p.genBase !== undefined && p.genBase >= 0 && o.id !== undefined && o.id !== null) {
+          var difGen = Number(o.id) - p.genBase;
+          if (difGen !== 1) return;   // es de otra generación: llegó tarde
+        }
         this.busyG = false;
         this.pending = null;
         if (this._genPoll) { clearInterval(this._genPoll); this._genPoll = null; }
@@ -961,7 +1015,22 @@
       ];
       for (var i = 0; i < pats.length; i++) {
         var m = t.match(pats[i][0]);
-        if (m) { this.add(m[1].trim()); return true; }
+        if (m) {
+          this.add(m[1].trim());
+          /* v2.14.2 · las PREFERENCIAS también son un tipo de memoria. El
+             bucket "prefs" existía en la estructura y `addPref` estaba
+             definido, pero NADA lo escribía: la pestaña "Preferencias" de la
+             UI estaba siempre vacía. Un "prefiero el mate amargo" se
+             guardaba como hecho genérico y no como preferencia. */
+          if (i === 2 || i === 3) {
+            try {
+              if (window.KiuMem && typeof window.KiuMem.addPref === 'function') {
+                window.KiuMem.addPref(m[1].trim());
+              }
+            } catch (ePref) { }
+          }
+          return true;
+        }
       }
       return false;
     },

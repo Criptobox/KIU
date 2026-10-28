@@ -79,9 +79,23 @@ window.KiuAgente = (function () {
       args: args || {},
       run: run,
       risk: (opts && opts.risk) || 'read',
+      /* v2.14.2 · riesgo POR ARGUMENTO. Una herramienta que puede leer o
+         escribir (listar tareas, ver alarmas) no puede tener un riesgo único:
+         "list" no pide confirmación y "add" sí. Con `riskFor` el riesgo se
+         decide con los argumentos ya validados. Si el cálculo falla, se asume
+         'write' (preguntar de más es un problema menor; actuar de más no). */
+      riskFor: (opts && opts.riskFor) || null,
       enabled: !opts || opts.enabled !== false
     };
     return TOOLS[name];
+  }
+
+  function riskOf(t, args) {
+    if (!t) return 'write';
+    if (t.riskFor) {
+      try { return t.riskFor(args) || 'read'; } catch (e) { return 'write'; }
+    }
+    return t.risk || 'read';
   }
 
   /* --- 1. alarma ------------------------------------------------------- */
@@ -228,11 +242,47 @@ window.KiuAgente = (function () {
         var okT = app && app.startTimerNative ? app.startTimerNative(mins, 'Temporizador de ' + mins + " minutos") : false;
         return { ok: !!okT, text: okT ? ('Temporizador de ' + mins + ' minutos arrancado.') : 'No pude arrancar el temporizador.' };
       }
+      /* v2.14.2 · los tres valores del enum que NO FUNCIONABAN. "maps", "web" y
+         "youtube" llegaban acá y caían en la cola de brain.js con un texto que
+         brain no reconoce ("maps centro"), así que la herramienta contestaba
+         siempre "no pude cumplir". El modelo los elegía, reintentaba y perdía un
+         paso. Ahora cada uno tiene su camino. */
+      if (what === 'maps') {
+        if (!target) return { ok: false, err: 'decime a dónde querés ir' };
+        var rM = brain && brain.reply ? brain.reply('como llego a ' + target) : null;
+        if (rM && rM.handled) return { ok: true, text: rM.text };
+        return { ok: false, err: 'no pude abrir Mapas con «' + target.slice(0, 40) + '»' };
+      }
+      if (what === 'web') {
+        if (!target) return { ok: false, err: 'decime qué buscar' };
+        return buscarWeb(target);
+      }
+      if (what === 'youtube') {
+        if (!target) return { ok: false, err: 'decime qué buscar en YouTube' };
+        var rY = brain && brain.reply ? brain.reply('busca ' + target + ' en youtube') : null;
+        if (rY && rY.handled) return { ok: true, text: rY.text };
+        return { ok: false, err: 'no pude buscar en YouTube' };
+      }
       /* el resto son lecturas: que las conteste brain.js, que ya las sabe */
-      var r2 = brain && brain.reply ? brain.reply(target ? what + ' ' + target : what) : null;
+      /* v2.14.2 · "espacio" y "bateria" solos NO los entiende brain.js: sus
+         reglas piden la frase entera ("cuánto espacio libre hay"). Con la
+         palabra suelta la herramienta contestaba "no pude cumplir" y el
+         modelo perdía un paso. Se le pasa la frase que el cerebro entiende. */
+      var DEVICE_PHRASE = { espacio: 'cuanto espacio libre hay', bateria: 'cuanta bateria queda' };
+      var r2 = brain && brain.reply ? brain.reply(DEVICE_PHRASE[what] || (target ? what + ' ' + target : what)) : null;
       if (r2 && r2.handled) return { ok: true, text: r2.text };
       return { ok: false, err: 'no pude cumplir "' + what + '"' };
-    }, { risk: 'write' });
+    }, {
+      risk: 'write',
+      /* v2.14.2 · leer la batería o el disco no es una acción con efecto: no
+         puede pedir confirmación. Antes toda device_action era 'write' y un
+         "dame la batería" pedido al agente terminaba en un "¿Lo hago?" que no
+         tiene sentido. */
+      riskFor: function (a) {
+        var w = String(a && a.what || '').toLowerCase();
+        return (w === 'bateria' || w === 'espacio' || w === 'web') ? 'read' : 'write';
+      }
+    });
 
   /* --- 7. mensaje (efecto real, pero lo confirma el usuario) -------------- */
   def('send_message',
@@ -270,6 +320,172 @@ window.KiuAgente = (function () {
       return { ok: true, text: 'Anotado: ' + t };
     }, { risk: 'write' });
 
+  /* --- 8-bis. LEER LA MEMORIA (v2.14.2) -----------------------------------
+     Hasta acá la memoria era un callejón sin salida: `remember` la escribía
+     y NADIE la leía desde el agente. El usuario le decía "acordate de que el
+     dentista es el jueves" y dos turnos después el modelo no lo sabía: lo
+     único que podía recuperar era brain.js, con regex, y un modelo no
+     escribe regex.
+
+     `recall` es esa puerta: buscar por palabras, como lo haría la persona.
+     Sin query devuelve todo lo guardado, para que el agente pueda decir
+     "qué tenés anotado" sin inventar filtros. */
+  def('recall',
+    'Buscar en lo que el usuario me hizo guardar.',
+    {
+      query: { type: 'string', required: false, desc: 'Palabra o frase. Vacío = todo.' },
+      kind: { type: 'string', required: false, enum: ['recuerdos', 'tareas', 'notas', 'prefs'], desc: 'Qué tipo. Vacío = todos.' }
+    },
+    function (a) {
+      var M = window.KiuMem;
+      if (!M || typeof M.search !== 'function') return { ok: false, err: 'no tengo acceso a la memoria' };
+      var q = s(a.query, MAX_ARG_LEN).trim();
+      var kinds = (a.kind && String(a.kind).trim()) ? [String(a.kind).trim()] : null;
+      var hits;
+      try { hits = M.search(q, kinds) || []; } catch (e) { return { ok: false, err: 'la memoria no respondió' }; }
+      if (!hits.length) {
+        return { ok: true, text: q ? ('No encontré nada guardado con «' + q.slice(0, 40) + '».')
+          : 'Todavía no hay nada guardado: ni recuerdos, ni tareas, ni notas.' };
+      }
+      var ETI = { recuerdos: 'recuerdo', tareas: 'tarea', notas: 'nota', prefs: 'preferencia' };
+      var lines = hits.slice(0, 6).map(function (h) {
+        return '- [' + (ETI[h.kind] || h.kind) + '] ' + String(h.text || '').slice(0, 120) + (h.done ? ' (hecha)' : '');
+      });
+      var cola = hits.length > 6 ? (' (te muestro 6 de ' + hits.length + ')') : '';
+      return { ok: true, text: 'Guardado' + cola + ':\n' + lines.join('\n') };
+    });
+
+  /* --- 8-ter. LAS TAREAS (v2.14.2) ----------------------------------------
+     La lista de tareas era de brain.js: "tarea: X" la creaba, "mis tareas" la
+     listaba, "terminé la tarea" la completaba. Todo por regex y con tres
+     frases distintas. Acá es UNA herramienta con tres acciones, que es el
+     estilo que el propio proyecto ya eligió para el resto (device_action). */
+  def('manage_task',
+    'Ver, crear o completar tareas pendientes.',
+    {
+      action: { type: 'string', required: true, enum: ['list', 'add', 'done'], desc: 'list=ver, add=crear, done=hecha.' },
+      text: { type: 'string', required: false, desc: 'La tarea. Para done: cuál (vacío=la primera).' }
+    },
+    function (a) {
+      var M = window.KiuMem;
+      if (!M) return { ok: false, err: 'no tengo acceso a la memoria' };
+      var action = String(a.action || '').toLowerCase();
+      if (action === 'add') {
+        var t = s(a.text, MAX_ARG_LEN).trim();
+        if (!t) return { ok: false, err: 'decime qué tarea agregar' };
+        M.addTarea(t);
+        var pend = M.pendingTasks ? M.pendingTasks().length : M.count('tareas');
+        return { ok: true, text: 'Tarea agregada: "' + t + '". Te quedan ' + pend + ' pendiente' + (pend === 1 ? '' : 's') + '.' };
+      }
+      if (action === 'done') {
+        var q = s(a.text, 80).trim();
+        return { ok: true, text: M.completeTarea(q) };
+      }
+      /* list */
+      var pend2 = M.pendingTasks ? M.pendingTasks() : M.list('tareas').filter(function (x) { return !x.done; });
+      if (!pend2.length) return { ok: true, text: 'No tenés tareas pendientes.' };
+      var lineas = pend2.slice(0, 8).map(function (x, i) { return (i + 1) + '. ' + String(x.text || '').slice(0, 100); });
+      return { ok: true, text: 'Tenés ' + pend2.length + ' pendiente' + (pend2.length === 1 ? '' : 's') + ':\n' + lineas.join('\n') };
+    },
+    { risk: 'write', riskFor: function (a) { return String(a && a.action || '').toLowerCase() === 'list' ? 'read' : 'write'; } });
+
+  /* --- 8-cuater. LAS ALARMAS (v2.14.2) ------------------------------------
+     Ver y cancelar recordatorios. `set_alarm` ya los creaba; no había forma
+     de verlos ni de bajarlos, salvo por la pantalla de Ajustes. */
+  def('manage_alarm',
+    'Ver o cancelar alarmas y recordatorios.',
+    {
+      action: { type: 'string', required: true, enum: ['list', 'cancel'], desc: 'list=ver, cancel=borrar.' },
+      which: { type: 'string', required: false, desc: 'Título a cancelar. Para list, no hace falta.' }
+    },
+    function (a) {
+      var app = window.KiuApp;
+      if (!app || typeof app.reminders !== 'function') return { ok: false, err: 'no tengo acceso a las alarmas' };
+      var action = String(a.action || '').toLowerCase();
+      var lista = app.reminders() || [];
+      if (action === 'cancel') {
+        var q = s(a.which, 60).trim();
+        if (!q) return { ok: false, err: 'decime qué alarma cancelar' };
+        var found = app.cancelReminderByTitle ? app.cancelReminderByTitle(q) : null;
+        if (!found) return { ok: false, err: 'no encontré ninguna alarma con «' + q.slice(0, 40) + '»' };
+        return { ok: true, text: 'Cancelé la alarma "' + String(found.title || '').slice(0, 60) + '".' };
+      }
+      if (!lista.length) return { ok: true, text: 'No tenés alarmas programadas.' };
+      var ls = lista.slice(0, 8).map(function (r) {
+        return '- ' + String(r.title || '(sin título)') + ' — ' + String(r.date || '');
+      });
+      return { ok: true, text: 'Tenés ' + lista.length + ' alarma' + (lista.length === 1 ? '' : 's') + ':\n' + ls.join('\n') };
+    },
+    { risk: 'write', riskFor: function (a) { return String(a && a.action || '').toLowerCase() === 'list' ? 'read' : 'write'; } });
+
+  /* --- 8-quater. CREAR UN EVENTO (v2.14.2) --------------------------------
+     El cerebro sabía crear eventos ("agenda X mañana a las 15") por regex,
+     pero el agente no tenía ninguna herramienta para hacerlo: era la única
+     acción del calendario que faltaba y la más pedida. */
+  def('create_calendar_event',
+    'Crear un evento en el calendario.',
+    {
+      title: { type: 'string', required: true, desc: 'Qué es el evento.' },
+      when: { type: 'string', required: true, desc: '"mañana a las 15", "en 2 horas".' }
+    },
+    function (a) {
+      var app = window.KiuApp, brain = window.KiuBrain;
+      var titulo = s(a.title, 80).trim();
+      if (!titulo) return { ok: false, err: 'falta el título del evento' };
+      var w = null;
+      if (brain && brain.parseWhen) { try { w = brain.parseWhen(String(a.when || '')); } catch (e) { w = null; } }
+      if (!w || !w.when) return { ok: false, err: 'no entendí el horario "' + s(a.when, 40) + '"' };
+      if (!app || typeof app.addCalendarEvent !== 'function') return { ok: false, err: 'no puedo abrir el calendario' };
+      app.addCalendarEvent(titulo, w.when.getTime());
+      return { ok: true, text: 'Te abrí el calendario con el evento "' + titulo + '" para ' + w.whenTxt + '. Confirmalo ahí y queda guardado.' };
+    },
+    { risk: 'write' });
+
+  /* --- 8-seis. OLVIDAR (v2.14.2) -----------------------------------------
+     La memoria tenía `remember` (escribir) y `recall` (leer), pero no
+     tenía forma de BORRAR. Una memoria que solo crece es un archivo: el
+     usuario cambia de opinión ("ya no es el martes") y el agente le sigue
+     contestando lo viejo, con total confianza, hasta que el usuario lo
+     corrige a mano en la pantalla. */
+  def('forget',
+    'Borrar de la memoria algo que el usuario ya no quiere que guarde.',
+    {
+      text: { type: 'string', required: true, desc: 'Lo que hay que olvidar. Una parte del texto alcanza.' }
+    },
+    function (a) {
+      var M = window.KiuMem;
+      if (!M || typeof M.forget !== 'function') return { ok: false, err: 'no tengo acceso a la memoria' };
+      var q = s(a.text, MAX_ARG_LEN).trim();
+      if (!q) return { ok: false, err: 'no sé qué hay que olvidar' };
+      var n = M.forget(q, null);
+      if (!n) return { ok: true, text: 'No encontré nada guardado con «' + q.slice(0, 40) + '» para olvidar.' };
+      return { ok: true, text: 'Olvidé ' + n + ' cosa' + (n === 1 ? '' : 's') + ' con «' + q.slice(0, 40) + '».' };
+    },
+    { risk: 'write' });
+
+  /* --- 8-siete. CORREGIR (v2.14.2) ---------------------------------------
+     "Ya no es el martes, es el jueves": el agente tiene que poder corregir
+     lo que guardó, no agregar un recuerdo nuevo al lado del viejo. */
+  def('update_memory',
+    'Corregir algo que ya está guardado (por ejemplo: el dentista ya no es el martes, es el jueves).',
+    {
+      text: { type: 'string', required: true, desc: 'El texto viejo, o una parte de él.' },
+      new_text: { type: 'string', required: true, desc: 'El texto correcto, completo.' }
+    },
+    function (a) {
+      var M = window.KiuMem;
+      if (!M || typeof M.updateByText !== 'function') return { ok: false, err: 'no tengo acceso a la memoria' };
+      var viejo = s(a.text, MAX_ARG_LEN).trim();
+      var nuevo = s(a.new_text, MAX_ARG_LEN).trim();
+      if (!viejo || !nuevo) return { ok: false, err: 'falta el texto viejo o el nuevo' };
+      var n = 0;
+      var lista = ['recuerdos', 'tareas', 'notas', 'prefs'];
+      for (var i = 0; i < lista.length; i++) n += M.updateByText(lista[i], viejo, nuevo);
+      if (!n) return { ok: true, text: 'No encontré nada guardado con «' + viejo.slice(0, 40) + '» para corregir.' };
+      return { ok: true, text: 'Corregí ' + n + ' cosa' + (n === 1 ? '' : 's') + ': ahora dice «' + nuevo.slice(0, 60) + '».' };
+    },
+    { risk: 'write' });
+
   /* --- 9. fecha y hora (el modelo no tiene reloj) ----------------------- */
   def('now',
     'Fecha y hora de hoy.',
@@ -283,22 +499,38 @@ window.KiuAgente = (function () {
     });
 
   /* --- 10. web (asíncrona: devuelve una promesa; el bucle la espera) ------ */
+  /* v2.14.2 · la búsqueda web vive en UNA función. Antes el enum de
+     device_action ofrecía "web" y "youtube" pero la herramienta no tenía
+     camino para ninguno de los dos: el modelo los elegía y la llamada
+     terminaba siempre en "no pude cumplir". Un valor del enum que no
+     funciona es peor que no ofrecerlo: le enseña al modelo una capacidad
+     que no existe. */
+  function buscarWeb(q) {
+    var app = window.KiuApp;
+    if (!app || typeof app.webSnippets !== 'function') {
+      return Promise.resolve({ ok: false, err: 'no puedo buscar en la web ahora' });
+    }
+    return new Promise(function (resolve) {
+      try {
+        app.webSnippets(q, function (lista) {
+          if (!lista || !lista.length) { resolve({ ok: false, err: 'no encontré nada en la web (¿sin conexión?)' }); return; }
+          resolve({
+            ok: true,
+            text: 'Resultados de la web sobre «' + String(q).slice(0, 40) + '»:\n' +
+              lista.map(function (x, i) { return (i + 1) + ') ' + x.t + ': ' + x.s; }).join('\n')
+          });
+        });
+      } catch (e) { resolve({ ok: false, err: 'la búsqueda falló' }); }
+    });
+  }
+
   def('web_search',
     'Buscar datos actuales en internet (noticias, precios, clima, «quién es…»).',
     { query: { type: 'string', required: true, desc: 'Palabras clave.' } },
     function (a) {
-      var app = window.KiuApp;
       var q = s(a.query, MAX_ARG_LEN).trim();
       if (!q) return { ok: false, err: 'no sé qué buscar' };
-      if (!app || typeof app.webSnippets !== 'function') return { ok: false, err: 'no puedo buscar en la web ahora' };
-      return new Promise(function (resolve) {
-        try {
-          app.webSnippets(q, function (lista) {
-            if (!lista || !lista.length) { resolve({ ok: false, err: 'no encontré nada en la web (¿sin conexión?)' }); return; }
-            resolve({ ok: true, text: 'Resultados de la web sobre «' + q.slice(0, 40) + '»:\n' + lista.map(function (x, i) { return (i + 1) + ') ' + x.t + ': ' + x.s; }).join('\n') });
-          });
-        } catch (e) { resolve({ ok: false, err: 'la búsqueda falló' }); }
-      });
+      return buscarWeb(q);
     });
 
   /* v2.13.1 · REGISTRO de lo que hizo el agente: solo metadatos (herramienta, riesgo,
@@ -324,7 +556,15 @@ window.KiuAgente = (function () {
     send_message: /\b(mensaje|sms|escrib|mand|envi|whatsapp|decile|dile|avisale)/,
     remember: /\b(anota|apunta|acuerdate|acordate|guarda|recuerda que|recorda)/,
     now: /\b(hora|fecha|dia es|que dia|cuando es hoy|hoy es)\b/,
-    web_search: /\b(busca|investiga|noticias?|precio|clima|cotizacion|quien es|quien fue|que es|internet|web|google)/
+    web_search: /\b(busca|investiga|noticias?|precio|clima|cotizacion|quien es|quien fue|que es|internet|web|google)/,
+    /* v2.14.2 · las herramientas de memoria y de datos del usuario. */
+    recall: /\b(recuerda|recuerdos|anot|nota|notas|tarea|tareas|guardad|memor|que se|que me dij|prefer|guarda|guardaste|recorda|recordaste)/,
+    manage_task: /\b(tarea|tareas|pendiente|pendientes|agenda personal|to do|todo)/,
+    manage_alarm: /\b(alarma|alarmas|recordatorio|recordatorios|temporizador)/,
+    create_calendar_event: /\b(evento|agenda|agendar|calendario|reunion|cita|invitacion)/,
+    /* v2.14.2 · olvidar y corregir */
+    forget: /\b(olvid|olvida|olvidate|borra|borralo|elimina|ya no (es|son)|saca|quita|no quiero (guardar|que)|no hace falta)/,
+    update_memory: /\b(correg|cambia|reemplaz|en realidad|ahora es|ya no es|no era|equivoc)/
   };
   function norm(t) {
     t = String(t || '').toLowerCase();
@@ -344,6 +584,29 @@ window.KiuAgente = (function () {
   /* ================= esquema → prompt ================= */
   function toolNames() { return Object.keys(TOOLS); }
   function getTool(n) { return Object.prototype.hasOwnProperty.call(TOOLS, n) ? TOOLS[n] : null; }
+
+  /* v2.14.2 · PERFIL DEL USUARIO. El modelo que ELIGE la herramienta tiene que
+     saber quién es el usuario y qué tiene a mano. Hasta ahora el prompt de
+     decisión no tenía ni el nombre ni las tareas pendientes: esa información
+     solo se inyectaba en el prompt de CHAT (kiuMsgs), o sea que el bot "sabía"
+     lo que el usuario le había dicho al charlear, pero no al decidir qué
+     hacer. Es la diferencia entre un chatbot con memoria y un agente.
+
+     Va corto a propósito: esto se paga en CADA decisión, en la CPU del
+     teléfono, y un prefill largo en un móvil es de segundos. */
+  function perfil() {
+    var out = [];
+    try {
+      if (window.S && window.S.name) out.push('se llama ' + String(window.S.name).slice(0, 24));
+    } catch (e) { }
+    try {
+      if (window.KiuMem && typeof window.KiuMem.summary === 'function') {
+        var s2 = window.KiuMem.summary(240);
+        if (s2) out.push(s2);
+      }
+    } catch (e) { }
+    return out.join(' · ');
+  }
 
   /* El texto que ve el modelo.
    *
@@ -370,7 +633,24 @@ window.KiuAgente = (function () {
       for (var k in t.args) {
         if (!Object.prototype.hasOwnProperty.call(t.args, k)) continue;
         var a = t.args[k];
-        as.push(compact ? (k + (a.required ? '' : '?')) : (k + (a.required ? '' : '?') + ': ' + a.desc));
+        if (compact) {
+          /* v2.14.2 · EN EL COMPACTO VAN LOS VALORES DEL ENUM.
+             El manifiesto compacto es lo que ve el modelo en el móvil, y era
+             solo la firma: `manage_task(action, text?)`. El modelo no tenía
+             forma de saber que action ∈ {list, add, done}: se lo inventaba,
+             la validación lo rechazaba y se perdía una generación entera.
+             Los valores del enum SON el vocabulario que hay que usar, y
+             sacarlos de la gramática (que solo está activa si el nativo la
+             soporta) es lo mismo que sacarlos de la validación (que solo
+             actúa después). En la línea va a costear ~4 tokens por
+             herramienta con enum, y se pagan SOLO por las herramientas que
+             el turno realmente lleva (ver seleccionar()). */
+          var sig = k + (a.required ? '' : '?');
+          if (a.enum && a.enum.length) sig += ': ' + a.enum.join('|');
+          as.push(sig);
+        } else {
+          as.push(k + (a.required ? '' : '?') + ': ' + a.desc);
+        }
       }
       out.push(compact ? (t.name + '(' + as.join(', ') + ')') : (t.name + '(' + as.join(', ') + ') — ' + t.desc));
     }
@@ -384,9 +664,16 @@ window.KiuAgente = (function () {
   function budget() {
     var p = systemPrompt('x', null, [], false);
     var m = manifest();
+    /* v2.14.2 · el caso REAL del móvil es el manifiesto COMPACTO (perfil
+       Harness-Local-Compact, que es el que corre por defecto): una línea por
+       herramienta, sin descripciones. El manifiesto largo es el peor caso
+       (cuando el llamador pide el perfil rico o no hay harness). Los dos se
+       miden: el compacto es el que se paga en cada decisión. */
+    var mc = manifest(null, true);
     return {
       manifiestoChars: m.length,
       manifiestoTok: Math.round(m.length / 3.6),
+      manifiestoCompactoTok: Math.round(mc.length / 3.6),
       promptChars: p.length,
       promptTok: Math.round(p.length / 3.6)
     };
@@ -624,6 +911,18 @@ window.KiuAgente = (function () {
   /* ================= el bucle =================
      Un paso = una consulta al modelo + una decisión validada + su ejecución.
      Se corta en cuanto el modelo dice "listo" o no queda nada por hacer. */
+
+  /* v2.14.2 · ¿El texto de la herramienta ya ES la respuesta?
+     Un resultado corto, de una sola herramienta, sin forma de lista, se puede
+     mostrar tal cual. Uno largo o con varios resultados necesita que el modelo
+     lo redacte (si no, el usuario lee una tabla de crudos). */
+  function directo(crudo, nHerramientas) {
+    if (nHerramientas > 1) return false;
+    if (!crudo) return false;
+    if (crudo.length > 320) return false;
+    if (crudo.split('\n').length > 3) return false;
+    return true;
+  }
   function run(opts, cb) {
     var o = opts || {};
     var K = window.Kiu;
@@ -652,15 +951,23 @@ window.KiuAgente = (function () {
     }
     if (!cargado) { cb({ ok: false, err: 'sin modelo cargado' }); return; }
 
-    function seguir(t, out) {
+    function seguir(t, out, args) {
+      var ok = !!(out && out.ok);
       var txt = (out && (out.text || out.err)) || '';
-      obs.push(txt);
-      if (out && out.ok) successfulTools.push(t.name); else failedTools = true;
-      if (out && out.ok && out.text) hecho.push(out.text);
-      anotar(t, null, !!(out && out.ok), out && out.ok ? '' : txt);
+      /* v2.14.2 · OBSERVACIÓN ESTRUCTURADA. Antes volvía al modelo el texto
+         pelado de la herramienta, sin saber de qué herramienta venía ni si
+         salió bien. Un modelo chico no puede distinguir "no encontré nada" de
+         "el dispositivo falló" si las dos llegan igual: se equivoca de
+         herramienta en el paso siguiente. Con el nombre y el estado, puede.
+         Cuesta 4 tokens por observación y ahorra un paso entero cuando se
+         equivoca. */
+      obs.push('[' + t.name + (ok ? ' ok' : ' error') + '] ' + txt);
+      if (ok) successfulTools.push(t.name); else failedTools = true;
+      if (ok && out.text) hecho.push(out.text);
+      anotar(t, args, ok, ok ? '' : txt);
       paso();
     }
-    function anotar(t, args, ok, nota) { registrar(t.name, t.risk, ok, nota); }
+    function anotar(t, args, ok, nota) { registrar(t.name, riskOf(t, args), ok, nota); }
 
     function paso() {
       if (n >= max) { finish(); return; }
@@ -668,6 +975,15 @@ window.KiuAgente = (function () {
       var hist = [{ role: 'system', content: systemPrompt(taskText, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || ''))) }];
       if (o.habla && o.habla.length) {
         for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
+      }
+      /* v2.14.2 · AVANZAR: que el llamador sepa en qué está el agente.
+         Un turno de agente puede dar hasta 4 pasos y cada paso es una
+         generación en la CPU del teléfono: segundos. Sin esto, el usuario ve
+         "Enrutando" clavado y no sabe si está pensando, trabado o
+         haciendo algo. Con esto, la pastilla dice QUÉ está haciendo. */
+      function avisar(que, tool) {
+        if (typeof o.avanzar !== 'function') return;
+        try { o.avanzar(que, tool || null); } catch (eAv) { }
       }
       /* v2.9.2: se pasa la gramatica SOLO si el motor la acepta. Se consulta
          antes de generar porque si el nativo no la soporta, la decision sale sin
@@ -681,17 +997,59 @@ window.KiuAgente = (function () {
           if (rawBridge('kiuGenGrammarOk') !== false) gbnf = grammar(herramientas, hermesMode);
         } catch (eGr) { gbnf = null; }
       }
-      K.ask(hist, o.maxTokens || (harness && harness.maxTokens) || 120, function (res) {
+      /* v2.14.2 · ESPERAR AL MOTOR Y NO QUEDARSE COLGADO.
+         Dos cosas que el agente no tenía y el chat normal sí:
+         a) ESPERAR: si el motor está ocupado con otra generación, el camino
+            normal reintenta hasta 30 s (app-ui · tryTargets). El agente se
+            rendía al instante y contestaba "el motor está ocupado", que es
+            justo lo que el usuario reportaba.
+         b) UN RELOJ: si el nativo nunca entrega el resultado (un evento
+            perdido, el motor trabado), el bucle del agente se quedaba
+            esperando para siempre, con la pastilla de "Generando" clavada.
+            Ahora hay un tope por decisión. */
+      var esperaN = 0;
+      var ESPERA_MAX = 20;          /* ~24 s esperando que se libere */
+      var RELOJ_MAX = 120000;       /* 2 min por decisión */
+      var reloj = 0;
+      var asking = false;
+      var MAXTOK = o.maxTokens || (harness && harness.maxTokens) || 120;
+      function preguntar() {
+        if (asking) return;
+        asking = true;
+        if (reloj) { try { clearTimeout(reloj); } catch (eCl) { } reloj = 0; }
+        K.ask(hist, MAXTOK, function (res) {
+          asking = false;
+          if (reloj) { try { clearTimeout(reloj); } catch (eCl2) { } reloj = 0; }
+          if (res && !res.ok && /ocupado/i.test(String(res.err || '')) && esperaN < ESPERA_MAX) {
+            esperaN++;
+            avisar('esperando');
+            setTimeout(preguntar, 1200);
+            return;
+          }
+          onRes(res);
+        }, null, gbnf);
+        /* el reloj corre mientras se espera la respuesta */
+        reloj = setTimeout(function () {
+          reloj = 0;
+          if (!asking) return;
+          asking = false;
+          try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'timeout'); } catch (eTo) { }
+          finish();
+        }, RELOJ_MAX);
+      }
+      function onRes(res) {
         if (!res || !res.ok || !res.text) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'generation'); } catch (eH1) { } finish(); return; }
         var d = parseDecision(res.text);
-        if (!d) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'json parse'); } catch (eH2) { } obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
+        if (!d) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'json parse'); } catch (eH2) { } avisar('pensando'); obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
         if (isDone(d)) { finish(); return; }
         var rd = readDecision(d);
-        if (rd.bad) { obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
+        if (rd.bad) { avisar('pensando'); obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
         var v = validate(rd.name, rd.raw);
-        if (!v.ok) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'validation'); } catch (eH3) { } obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
+        if (!v.ok) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'validation'); } catch (eH3) { } avisar('corrigiendo'); obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
         try { if (window.KiuHarness2) window.KiuHarness2.record(true, 'validated'); } catch (eH4) { }
         var t = getTool(rd.name);
+        /* v2.14.2: se avisa QUÉ herramienta se va a usar, antes de ejecutarla */
+        avisar('usando', t.name);
         /* v2.13.1: acciones con efecto pasan por o.confirmar(tool, args, cb) si el llamador
            lo pide; si el usuario dice que no, se informa al modelo y se sigue. */
         function ejecutar() {
@@ -700,14 +1058,18 @@ window.KiuAgente = (function () {
           if (out && typeof out.then === 'function') {
             /* herramienta asíncrona (web_search): se espera, con tope de 10 s */
             var hecho2 = false;
-            var timer = setTimeout(function () { if (!hecho2) { hecho2 = true; seguir(t, { ok: false, err: 'la herramienta tardó demasiado' }); } }, 10000);
-            out.then(function (r) { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, r); },
-              function () { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, { ok: false, err: 'la herramienta falló' }); });
+            var timer = setTimeout(function () { if (!hecho2) { hecho2 = true; seguir(t, { ok: false, err: 'la herramienta tardó demasiado' }, v.args); } }, 10000);
+            out.then(function (r) { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, r, v.args); },
+              function () { if (hecho2) return; hecho2 = true; clearTimeout(timer); seguir(t, { ok: false, err: 'la herramienta falló' }, v.args); });
             return;
           }
-          seguir(t, out);
+          seguir(t, out, v.args);
         }
-        if (t.risk === 'write' && typeof o.confirmar === 'function') {
+        /* v2.14.2: el riesgo se calcula con los argumentos (riskFor), no con
+           el riesgo único de la herramienta: listar tareas no pide confirmación,
+           crearlas sí. */
+        var riesgo = riskOf(t, v.args);
+        if (riesgo === 'write' && typeof o.confirmar === 'function') {
           var resp = false;
           try {
             o.confirmar(t.name, v.args, function (si) {
@@ -719,7 +1081,8 @@ window.KiuAgente = (function () {
           return;
         }
         ejecutar();
-      }, null, gbnf);
+      }
+      preguntar();
     }
     function finish() {
       /* Aprende solo de ejecuciones completas con al menos tres herramientas exitosas.
@@ -733,6 +1096,19 @@ window.KiuAgente = (function () {
          texto de la herramienta. Solo si hubo resultados y el llamador no lo apagó;
          si la redacción falla o sale vacía, vale el texto crudo (siempre correcto). */
       if (!hecho.length || o.componer === false || !o.habla || !o.habla.length) { cb(res); return; }
+      /* v2.14.2 · UN TURNO = UNA GENERACIÓN.
+         Redactar la respuesta final con el modelo es una segunda generación
+         completa: en un teléfono, con un modelo chico, son segundos. Pero
+         muchas herramientas ya devuelven una frase pensada para el usuario
+         ("Listo: alarma a las 7"), y volver a pasar eso por el modelo no
+         agrega nada: gasta un prefill entero para decir lo mismo.
+
+         La redacción se hace SOLO cuando de verdad aporta: más de una
+         herramienta, o un resultado largo o con forma de lista (la web, los
+         documentos). En el caso simple, el texto de la herramienta ES la
+         respuesta. Si el llamador quiere siempre la redacción, puede pedirlo
+         con `componer: 'siempre'`. */
+      if (o.componer !== 'siempre' && o.componer !== true && directo(crudo, hecho.length)) { cb(res); return; }
       var msgs = [
         { role: 'system', content: 'Sos Kiu, el asistente del teléfono. Ya ejecutaste las acciones. Contestale al usuario en español, en 1 o 2 frases cortas, usando SOLO estos resultados; no inventes nada.\nRESULTADOS:\n' + crudo.slice(0, 600) + (typeof window.S === 'object' && window.S.kiu && /qwen3/i.test(String(window.S.kiu.name || '')) ? '\n/no_think' : '') },
         { role: 'user', content: o.habla[o.habla.length - 1] }
@@ -753,8 +1129,10 @@ window.KiuAgente = (function () {
        Importa para un modelo chico: cada línea del manifiesto es contexto que no
        está usando, y cada herramienta de más es una chance más de que elija mal. */
     var lista = manifest(herramientas, !!compact);
+    var per = perfil();
     var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n\n' +
       'HERRAMIENTAS:\n' + lista + '\n\n' +
+      (per ? 'PERFIL DEL USUARIO: ' + per + '\n\n' : '') +
       /* v2.9.2: la TAREA solo va si NO hay historial. Con historial, el último
          mensaje del usuario YA es la tarea y repetirla acá es tokens de prefill
          tirados a la basura — y en un teléfono, cada token cuenta. */
@@ -798,6 +1176,8 @@ window.KiuAgente = (function () {
     isDone: isDone,
     run: run,
     systemPrompt: systemPrompt,
+    perfil: perfil,
+    riskOf: riskOf,
     MAX_STEPS: MAX_STEPS,
     DEVICE_WHAT: DEVICE_WHAT,
     /* para los tests y para el diagnóstico */

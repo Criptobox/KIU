@@ -19,6 +19,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # v2.14.2: la suite incluye arneses de Java que se compilan y se EJECUTAN
+      # (tests/java.test.mjs). Sin JDK se saltan a la vista, y un salto se ve
+      # en el log como salto: no como verde. Con el JDK del runner dependiamos
+      # de que la imagen de GitHub lo trajera; ahora queda declarado.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Correr la suite completa
         run: node --test tests/*.test.mjs
       - name: Auditar el puente JavaScript ↔ Android

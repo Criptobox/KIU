@@ -5,47 +5,13 @@
 (function () {
   'use strict';
 
-  /* ================= MEMORIA (API pública) ================= */
+  /* ================= MEMORIA (API pública) =================
+     v2.14.2: la memoria vive ahora en su propio módulo (js/app/memoria.js),
+     con búsqueda por palabras y un resumen para el agente. Acá no queda la
+     definición: queda el ENGANCHE con la UI —registrar la actividad y refrescar
+     la pantalla de Memoria cuando algo cambia— para que el módulo de datos no
+     sepa qué es un toast. */
   var App;
-  window.KiuMem = {
-    data: store('nexo_mem') || { recuerdos: [], tareas: [], notas: [], prefs: [] },
-    save: function () { store('nexo_mem', this.data); },
-    add: function (type, text) {
-      if (!this.data[type]) this.data[type] = [];
-      this.data[type].unshift({ text: text, ts: Date.now(), date: todayStr(), done: false });
-      if (this.data[type].length > 200) this.data[type].pop();
-      this.save();
-      App.addActivity(type, text);
-      App.refreshMem();
-      if (type === 'notas' || type === 'recuerdos') App.track('notas');
-    },
-    addRecuerdo: function (t) { this.add('recuerdos', t); },
-    addTarea: function (t) { this.add('tareas', t); },
-    addNota: function (t) { this.add('notas', t); },
-    addPref: function (t) { this.add('prefs', t); },
-    list: function (type) { return this.data[type] || []; },
-    count: function (type) { return (this.data[type] || []).length; },
-    remove: function (type, ts) {
-      this.data[type] = this.data[type].filter(function (x) { return x.ts !== ts; });
-      this.save(); App.refreshMem();
-    },
-    toggleTarea: function (ts) {
-      this.data.tareas.forEach(function (x) { if (x.ts === ts) x.done = !x.done; });
-      this.save(); App.refreshMem();
-    },
-    completeTarea: function (q) {
-      q = (q || '').trim().toLowerCase();
-      var found = null;
-      for (var i = 0; i < this.data.tareas.length; i++) {
-        var t = this.data.tareas[i];
-        if (!t.done && (!q || t.text.toLowerCase().indexOf(q) >= 0)) { found = t; break; }
-      }
-      if (!found) return 'No encontré esa tarea pendiente. Mirá la lista en Memoria.';
-      found.done = true; this.save(); App.refreshMem();
-      var left = this.data.tareas.filter(function (x) { return !x.done; }).length;
-      return 'Listo, marqué "' + found.text + '" como hecha. Te quedan ' + left + ' pendiente' + (left === 1 ? '' : 's') + '.';
-    }
-  };
 
   /* ================= SISTEMA EN VIVO (datos reales del teléfono) ================= */
   var Sys = {
@@ -2046,7 +2012,15 @@
           this.showTyping(true);
           stSet('ruta', 'Enrutando', 30000);
           var selfA = this;
-          KiuAgente.run({ habla: [text], confirmar: function (tool, args, cbC) { selfA.agentConfirm(tool, args, cbC); } }, function (ag) {
+          KiuAgente.run({
+            habla: [text],
+            confirmar: function (tool, args, cbC) { selfA.agentConfirm(tool, args, cbC); },
+            /* v2.14.2 · el agente AVISA en qué está. Un turno puede dar 3-4 pasos
+               y cada paso es una generación en la CPU del teléfono: sin esto el
+               usuario ve "Enrutando" clavado y no sabe si está pensando,
+               trabado o haciendo algo. */
+            avanzar: function (que, tool) { selfA.agentAvanz(que, tool); }
+          }, function (ag) {
             if (selfA._cancelled) return;
             if (ag && ag.ok && ag.text) {
               stClear('ruta'); stSet('tool', 'Acción del dispositivo');
@@ -2082,6 +2056,27 @@
       if (/^(explic|escrib|reescrib|redact|resum|traduc|compar|analiz|gener|invent|defin|describ|ensen|sugier|suger|recomend|corrig|parafras|cuentame|contame|dime|decime|crea un (cuento|poema|texto))/.test(n)) return false;
       return true;
     },
+    /* v2.14.2 · QUÉ ESTÁ HACIENDO EL AGENTE. La pastilla de estado no dice
+       "Enrutando" a secas: dice qué herramienta está usando. Es la diferencia
+       entre "se trabó" y "está buscando en tu memoria". */
+    agentAvanz: function (que, tool) {
+      var ETIQUETA = {
+        set_alarm: 'Pongo la alarma', read_calendar: 'Miro tu agenda',
+        find_contact: 'Busco el contacto', call_contact: 'Marco el teléfono',
+        search_docs: 'Busco en tus documentos', device_action: 'Toco el teléfono',
+        send_message: 'Preparo el mensaje', remember: 'Guardo en tu memoria',
+        recall: 'Busco en tu memoria', manage_task: 'Miro tus tareas',
+        manage_alarm: 'Miro tus alarmas', create_calendar_event: 'Creo el evento',
+        now: 'Miro la hora', web_search: 'Busco en la web', forget: 'Olvido eso'
+      };
+      var txt = ETIQUETA[tool] || '';
+      if (!txt) {
+        if (que === 'pensando') txt = 'Pensando…';
+        else if (que === 'corrigiendo') txt = 'Corrijo…';
+      }
+      if (!txt) return;
+      stSet('tool', txt, 60000);
+    },
     /* v2.13.1 · confirmación de acciones con efecto (S.agentConfirm, apagada por defecto:
        llamar y mandar SMS ya abren el marcador/los mensajes y ahí se confirma). Con el
        ajuste encendido, el agente pregunta ANTES de ejecutar. Sin respuesta en 60 s se
@@ -2094,7 +2089,17 @@
         call_contact: 'Llamar a ' + (a.who || 'ese contacto') + '.',
         remember: 'Guardar esta nota: «' + String(a.text || '').slice(0, 80) + '».',
         set_alarm: 'Programar una alarma (' + (a.when || '') + ').',
-        device_action: 'Hacer en el teléfono: ' + (a.what || '') + (a.target ? ' ' + a.target : '') + '.'
+        device_action: 'Hacer en el teléfono: ' + (a.what || '') + (a.target ? ' ' + a.target : '') + '.',
+        /* v2.14.2 · las herramientas nuevas: el texto tiene que decir QUÉ va a
+           pasar, no el nombre de la función. "¿Ejecutar manage_task?" no le
+           dice nada a nadie. */
+        manage_task: (a.action === 'add')
+          ? 'Agregar la tarea: «' + String(a.text || '').slice(0, 80) + '».'
+          : (a.action === 'done' ? 'Marcar una tarea como hecha.' : 'Ver tus tareas pendientes.'),
+        manage_alarm: (a.action === 'cancel')
+          ? 'Cancelar la alarma: «' + String(a.which || '').slice(0, 60) + '».'
+          : 'Ver tus alarmas programadas.',
+        create_calendar_event: 'Crear el evento "' + String(a.title || '').slice(0, 60) + '" (' + (a.when || '') + ').'
       }[tool] || ('Ejecutar ' + tool + '.');
       var fin = false;
       function once(v) { if (fin) return; fin = true; cb(v); }
@@ -3636,8 +3641,29 @@
       q = (q || '').trim().toLowerCase();
       var list = this.reminders();
       var found = null;
-      for (var i = 0; i < list.length; i++) {
+      var i;
+      for (i = 0; i < list.length; i++) {
         if (!q || list[i].title.toLowerCase().indexOf(q) >= 0) { found = list[i]; break; }
+      }
+      /* v2.14.2 · EL MODELO PARAFRASEA. El título de la alarma es
+         "desayunar" y el usuario (y el modelo) dicen "la alarma del
+         desayuno": el substring no encuentra y el cancelamiento falla
+         aunque la alarma exista y se vea en la lista. Segunda pasada: se
+         comparan los INICIOS de palabra ("desayuno" y "desayunar" comparten
+         "desay"). Sin esto, el agente cancela la alarma equivocada o
+         ninguna y contesta "no encontré ninguna alarma". */
+      if (!found && q) {
+        var palabras = q.split(/[^a-z0-9ñüáéíóú]+/).filter(function (w) { return w.length >= 4; });
+        for (i = 0; i < list.length && !found; i++) {
+          var t = String(list[i].title || '').toLowerCase();
+          var tw = t.split(/[^a-z0-9ñüáéíóú]+/).filter(function (w) { return !!w; });
+          for (var p = 0; p < palabras.length && !found; p++) {
+            var pre = palabras[p].slice(0, Math.min(5, palabras[p].length));
+            for (var w2 = 0; w2 < tw.length; w2++) {
+              if (tw[w2].length >= 4 && tw[w2].slice(0, pre.length) === pre) { found = list[i]; break; }
+            }
+          }
+        }
       }
       if (!found) return null;
       bridge('cancelReminder', [found.id]);
@@ -5414,6 +5440,16 @@
   };
 
   window.KiuApp = App;
+  /* v2.14.2 · ENGANCHE memoria ↔ UI. El módulo de memoria (js/app/memoria.js)
+     no conoce la pantalla: avisa por acá. `onAdd` mantiene la línea de tiempo
+     de la app; `onChange` refresca la pestaña de Memoria. */
+  if (window.KiuMem && window.KiuMem.hooks) {
+    window.KiuMem.hooks.onAdd = function (type, text) {
+      App.addActivity(type, text);
+      if (type === 'notas' || type === 'recuerdos') App.track('notas');
+    };
+    window.KiuMem.hooks.onChange = function () { App.refreshMem(); };
+  }
   /* v1.7.0: módulos expuestos para diagnóstico y pruebas */
   window.KiuRtr = Rtr;
   window.KiuMod = Mod;

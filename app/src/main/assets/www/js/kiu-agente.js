@@ -1070,6 +1070,10 @@ window.KiuAgente = (function () {
       if (ok) successfulTools.push(t.name); else failedTools = true;
       if (ok && out.text) hecho.push(out.text);
       anotar(t, args, ok, ok ? '' : txt);
+      /* v2.14.8 · el llamador se entera del RESULTADO de la herramienta, no
+         solo de que empezó. Con eso el chat puede mostrar lo que Kiu hizo como
+         una tarjeta ("Linterna ✓ · Acción ejecutada") en vez de un párrafo. */
+      try { if (typeof o.resultado === 'function') o.resultado(t.name, ok, txt); } catch (eRes) { }
       paso();
     }
     function anotar(t, args, ok, nota) { registrar(t.name, riskOf(t, args), ok, nota); }

@@ -1,3 +1,13 @@
+## [2.14.8] - 2026-10-28
+
+**LA PANTALLA, POR FIN.** Lo anterior fueron tokens y un caso de error: la pantalla seguía igual. Esto es el rediseño entrando en la app de verdad.
+
+- **LA TARJETA DEL MOTOR** (Inicio): ahora es una columna — la fila de estado, el **modelo en monoespaciado** y la **RAM como barra**. El nombre del modelo deja de ser ruido al final de cada respuesta y pasa a donde sirve: la respuesta a «¿qué está corriendo?». Y la RAM deja de ser un número suelto.
+- **LAS ACCIONES DEL AGENTE SON TARJETAS** (Chat): cada herramienta que usa Kiu deja una tarjeta con su ícono, su ✓ y su resultado — «Alarma ✓ · Listo: alarma a las 7». Antes era un párrafo más, mezclado con la respuesta, y no se distinguía «Kiu lo hizo» de «Kiu lo dice». Para eso el agente ahora avisa el RESULTADO de cada herramienta, no solo que empezó.
+- La tarjeta de error (2.14.7) entra en el chat con su botón, y la acción del agente queda a la vista mientras trabaja.
+- Preview con el CSS real de la app (no un maqueto) en `docs/` y en la entrega, para ver el cambio sin instalar.
+- 567 tests: 562 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin JDK se saltan a la vista; en el CI corren).
+
 ## [2.14.7] - 2026-10-28
 
 **EL REDISEÑO, POR PARTES, Y LA VISIÓN QUE NO FUNCIONABA.**

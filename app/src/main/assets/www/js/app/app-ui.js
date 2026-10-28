@@ -734,6 +734,28 @@
       var m = document.getElementById('status-meta');
       var sub = document.getElementById('home-sub');
       var mm = document.getElementById('motor-mode');
+      /* v2.14.8 · el modelo en monoespaciado y la RAM como barra. Antes el
+         nombre del modelo aparecía al final de cada respuesta (ruido) y la RAM
+         era un número suelto en el diagnóstico. */
+      try {
+        var mdl = document.getElementById('motor-model');
+        var nombre = (S.kiu && S.kiu.name) ? String(S.kiu.name) : '';
+        if (mdl) mdl.textContent = nombre || 'sin modelo cargado';
+        var fill = document.getElementById('motor-ram-fill');
+        var txt = document.getElementById('motor-ram-txt');
+        if (fill && txt) {
+          var d = Sys.d || {};
+          var tot = d.ramTotal || 0, av = d.ramAvail || 0;
+          if (tot) {
+            var usado = Math.max(0, tot - av);
+            fill.style.width = Math.min(100, Math.round(usado / tot * 100)) + '%';
+            txt.textContent = 'RAM ' + (usado / 1073741824).toFixed(1) + '/' + (tot / 1073741824).toFixed(1) + ' GB';
+          } else {
+            fill.style.width = '0%';
+            txt.textContent = 'RAM —';
+          }
+        }
+      } catch (eRam) { }
       var act = this.activeProvs();
       var first = act.length ? act[0] : null;
       if (S.mode !== 'local' && first) {
@@ -2065,7 +2087,8 @@
                y cada paso es una generación en la CPU del teléfono: sin esto el
                usuario ve "Enrutando" clavado y no sabe si está pensando,
                trabado o haciendo algo. */
-            avanzar: function (que, tool) { selfA.agentAvanz(que, tool); }
+            avanzar: function (que, tool) { selfA.agentAvanz(que, tool); },
+            resultado: function (tool, ok, txt) { selfA.agentResultado(tool, ok, txt); }
           }, function (ag) {
             if (selfA._cancelled) return;
             if (ag && ag.ok && ag.text) {
@@ -2122,6 +2145,55 @@
       }
       if (!txt) return;
       stSet('tool', txt, 60000);
+      /* v2.14.8 · Y ADEMÁS SE VE. La pastilla de arriba es un instante: la
+         acción que Kiu está haciendo se queda en el chat como una TARJETA,
+         que es lo que faltaba (el rediseño: "acciones, no logs"). */
+      if (que === 'usando' && tool) this.insertToolCard(tool);
+    },
+    /* ---------- tarjeta de acción en el chat ---------- */
+    TOOL_NOMBRE: {
+      set_alarm: 'Alarma', read_calendar: 'Agenda', find_contact: 'Contacto',
+      call_contact: 'Llamada', search_docs: 'Documentos', device_action: 'Acción del teléfono',
+      send_message: 'Mensaje', remember: 'Memoria', recall: 'Memoria',
+      manage_task: 'Tareas', manage_alarm: 'Alarmas', create_calendar_event: 'Evento',
+      forget: 'Memoria', update_memory: 'Memoria', now: 'Hora', web_search: 'Web'
+    },
+    TOOL_ICONO: {
+      set_alarm: 'alarm', read_calendar: 'receipt', find_contact: 'users',
+      call_contact: 'phone', search_docs: 'bookmark', device_action: 'flash',
+      send_message: 'mail', remember: 'memory', recall: 'memory',
+      manage_task: 'check', manage_alarm: 'alarm', create_calendar_event: 'receipt',
+      forget: 'trash', update_memory: 'pencil', now: 'cal', web_search: 'grid'
+    },
+    insertToolCard: function (tool) {
+      var el = document.getElementById('chat-messages');
+      if (!el) return;
+      var nombre = this.TOOL_NOMBRE[tool] || tool;
+      var ic = this.TOOL_ICONO[tool] || 'bolt';
+      var div = document.createElement('div');
+      div.className = 'toolcard haciendo';
+      div.innerHTML = '<span class="ti">' + icon(ic, 14) + '</span>' +
+        '<span class="tc"><b>' + esc(nombre) + '</b><span>en curso…</span></span>';
+      /* la tarjeta va ANTES del indicador de escritura: el orden es
+         "tu pregunta" → "la acción" → "la respuesta" */
+      var typing = document.getElementById('typing-ind');
+      if (typing && typing.parentNode === el) el.insertBefore(div, typing);
+      else el.appendChild(div);
+      this._toolCard = div;
+      this.scrollBottom();
+    },
+    agentResultado: function (tool, ok, txt) {
+      var div = this._toolCard;
+      if (!div) return;
+      this._toolCard = null;
+      div.className = 'toolcard' + (ok ? '' : ' falló');
+      var nombre = this.TOOL_NOMBRE[tool] || tool;
+      var ic = this.TOOL_ICONO[tool] || 'bolt';
+      var resumen = String(txt || '').replace(/\s+/g, ' ').trim();
+      if (resumen.length > 72) resumen = resumen.slice(0, 70) + '…';
+      div.innerHTML = '<span class="ti">' + icon(ic, 14) + '</span>' +
+        '<span class="tc"><b>' + esc(nombre) + '<span class="ok">' + (ok ? '✓' : '✕') + '</span></b>' +
+        '<span>' + esc(resumen || (ok ? 'Listo' : 'No se pudo')) + '</span></span>';
     },
     /* v2.13.1 · confirmación de acciones con efecto (S.agentConfirm, apagada por defecto:
        llamar y mandar SMS ya abren el marcador/los mensajes y ahí se confirma). Con el

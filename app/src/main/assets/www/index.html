@@ -110,16 +110,26 @@
       </div>
 
       <!-- Motor local / API conectada -->
+      <!-- v2.14.8 · la tarjeta del motor, como en el rediseño: una fila de
+           estado, el MODELO en monoespaciado (acá va bien: es donde sirve; antes
+           estaba al final de cada respuesta) y la RAM como barra. -->
       <button class="motor-card" id="status-card" data-go="api">
-        <span class="motor-ic ic" data-ic="brain"></span>
-        <div class="status-txt">
-          <strong id="status-title" data-i18n="home.status.title">Motor local</strong>
-          <span class="motor-meta"><i class="status-dot" id="status-dot"></i><em id="status-meta" data-i18n="home.status.ready">Listo</em></span>
-        </div>
-        <div class="motor-right">
-          <strong id="motor-mode" data-i18n="home.status.mode">100% local</strong>
-          <span id="motor-device" data-i18n="home.status.device">Tu teléfono</span>
-        </div>
+        <span class="motor-row">
+          <span class="motor-ic ic" data-ic="brain"></span>
+          <div class="status-txt">
+            <strong id="status-title" data-i18n="home.status.title">Motor local</strong>
+            <span class="motor-meta"><i class="status-dot" id="status-dot"></i><em id="status-meta" data-i18n="home.status.ready">Listo</em></span>
+          </div>
+          <div class="motor-right">
+            <strong id="motor-mode" data-i18n="home.status.mode">100% local</strong>
+            <span id="motor-device" data-i18n="home.status.device">Tu teléfono</span>
+          </div>
+        </span>
+        <span class="motor-model" id="motor-model">—</span>
+        <span class="motor-ram">
+          <span class="bar"><i id="motor-ram-fill" style="width:0%"></i></span>
+          <em id="motor-ram-txt">RAM —</em>
+        </span>
       </button>
 
       <!-- Cuadrícula 2×2 -->

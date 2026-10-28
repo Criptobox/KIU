@@ -13,6 +13,9 @@ import android.content.IntentFilter;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.media.ToneGenerator;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -619,9 +622,39 @@ public class MainActivity extends Activity {
     public void pickBestVoice() {
         /* v2.11.4 · Kiu daba +10 a las voces «network» de Google, que necesitan Internet de Google. Con
            una VPN o sin datos esas voces fallan y Kiu se quedaba MUDO sin avisar. Ahora se prefiere
-           una voz instalada en el teléfono; la de red solo si no hay ninguna local. */
+           una voz instalada en el teléfono; la de red solo si no hay ninguna local.
+           *
+           * v2.14.6 · SE INVIERTE: PRIMERO LA DE RED.
+           El miedo era infundado: el TTS YA REINTENTA con una voz local cuando la
+           de red falla (onError → ttsRetried → pickVoice(false) → speakNow). O sea
+           que se podía usar la voz buena sin riesgo de dejar a Kiu mudo.
+           Y la diferencia se oye muchísimo: las voces «network»/«neural» de
+           Google suenan como una persona; la del sistema suena a robot. Con
+           internet: la mejor. Sin internet: la local, como antes. */
+        if (hayRed() && pickVoice(true)) {
+            return;   /* la que suena natural */
+        }
         if (!pickVoice(false)) {
             pickVoice(true);
+        }
+    }
+
+    /* v2.14.6 · ¿ESTÁ EL TELÉFONO CONECTADO? Para decidir si se puede usar
+       una voz de red (que necesita internet) o hay que quedarse con la local. */
+    private boolean hayRed() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                return false;
+            }
+            Network n = cm.getActiveNetwork();
+            if (n == null) {
+                return false;
+            }
+            NetworkCapabilities c = cm.getNetworkCapabilities(n);
+            return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Throwable t) {
+            return false;
         }
     }
 

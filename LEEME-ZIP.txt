@@ -1,4 +1,4 @@
-KIU - Tanda 25: el agente, medido de verdad (v2.14.5)
+KIU - Tanda 26: pie de diagnostico, cierre forzado y voz (v2.14.6)
 ===============================================================================
 
 OJO, LEÉ ESTO PRIMERO
@@ -14,7 +14,7 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
 1) Bajá el APK del RELEASE de GitHub. El CI publica Kiu-APK-release; ahí no
    dependés de que tu build local funcione. ES LO MÁS SEGURO.
 2) Verificalo ANTES de instalar:
-      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.5
+      ./scripts/verificar-apk.sh el-apk-bajado.apk --esperar 2.14.6
    Sale con 0 si es el que esperabas, 1 si no. Lee el sello de build de adentro
    del APK con unzip: no necesita Android SDK, ni aapt, ni apkanalyzer.
 3) Si igual compilás local: tenés que tener las .so. Se recuperan con
@@ -25,6 +25,27 @@ LO QUE TIENES QUE HACER (en orden de probabilidad)
    te obliga a desinstalar y se pierden los datos locales.
 
 LO QUE HAY EN ESTA TANDA
+- App v2.14.6 (versionCode 97).
+- EL PIE DE DIAGNOSTICO SE FUE: cada respuesta del motor terminaba con
+  "(motor interno - modelo - 6,3 tok/s en tu telefono)". Media pantalla de
+  ruido. Ahora esta APAGADO por defecto y se enciende en Ajustes -> Motor local
+  -> "Detalles del motor en el chat".
+- EL CIERRE FORZADO: el motor vive dentro del proceso de la app, asi que los
+  pesos, el contexto y el WebView comparten la RAM; cuando eso se desborda
+  Android mata la app entera ("le pedi que creara una web y se cerro"). Ahora
+  hay una guarda de memoria: si no hay RAM, Kiu no genera y lo dice con los
+  megas que faltan; si la RAM se hunde durante una generacion larga, se corta
+  y se devuelve el parcial. El arreglo de fondo (motor en un proceso aparte)
+  esta anotado en KNOWN_ISSUES.
+- LA VOZ: se preferia la voz local (robotica) porque las de red necesitan
+  internet y, si fallaban, Kiu quedaba mudo. Como el TTS ya reintenta con una
+  local si la de red falla, ahora con internet se usa la que suena a persona
+  (network/neural) y sin internet se cae a la local. Ademas lo que se habla
+  va limpio: las URLs no se leen y los simbolos sueltos se traducen.
+- 550 tests: 545 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin
+  JDK se saltan a la vista; en el CI corren).
+
+LO QUE HAY EN ESTA TANDA (v2.14.5, el resto)
 - App v2.14.5 (versionCode 96).
 - EL AGENTE, MEDIDO DE VERDAD. Con un llama.cpp compilado y un Qwen3-0.6B
   real, el arnés de evaluacion pasa de 3% a 93% de acierto (28 de 30

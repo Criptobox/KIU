@@ -17,6 +17,18 @@
   }
   function jobErr(state, ms) { var k = KS(); if (!k) return; k.clear('job'); k.warn(state, ms || 2800); }
 
+  /* v2.14.6 · MEMORIA LIBRE. Debajo de esto el sistema mata la app (el motor
+     está dentro del proceso). 300 MB es el piso para arrancar; 180 MB, el
+     piso para seguir. */
+  var RAM_MINIMA = 300 * 1048576;
+  var RAM_CORTE = 180 * 1048576;
+  function ramLibre() {
+    try {
+      var d = jparse(rawBridge('sysInfo') || '{}', {});
+      return (d && typeof d.ramAvail === 'number') ? d.ramAvail : 0;
+    } catch (e) { return 0; }
+  }
+
   /* ================= v1.7.0: MOTOR INTERNO (llama.cpp en el teléfono) ================= */
   var Kiu = {
     avail: null,
@@ -433,6 +445,23 @@
       /* Si busy quedó sin solicitud asociada, es un estado huérfano recuperable. */
       if (this.busyG && !this.pending) { this.busyG = false; try { rawBridge('kiuResetBusy'); } catch (e) { } this._pumpWaiters(); }
       if (!S.kiu.ok) { jobOff(); cb({ ok: false, err: 'sin modelo cargado' }); return; }
+      /* v2.14.6 · GUARDA DE MEMORIA.
+         El motor vive DENTRO del proceso de la app: los pesos del modelo, el
+         contexto y el WebView comparten la memoria del teléfono. Cuando eso
+         se desborda, Android mata la app entera y el usuario ve un cierre
+         forzado sin explicación ("le pedí que creara una web y se cerró").
+         Antes de generar, se mira cuánta RAM hay: si no alcanza, se dice la
+         verdad y se le pide que libere el motor o use un modelo más chico, en
+         vez de dejar que el sistema mate la app. */
+      var libre = ramLibre();
+      if (libre && libre < RAM_MINIMA) {
+        jobOff();
+        cb({
+          ok: false,
+          err: 'no hay memoria suficiente para generar con este modelo (quedan ' + Math.round(libre / 1048576) + ' MB). Tocá «Liberar motor» en Modelos o usá uno más chico.'
+        });
+        return;
+      }
       if (this.busyG) {
         /* v2.14.3 · ENCOLAR, NO REBOTAR. El motor está ocupado: el pedido
            espera su turno en vez de devolver un error que el usuario ve como
@@ -537,7 +566,7 @@
       /* v1.9.0: STREAMING — consulta el buffer nativo cada 130 ms y va pintando
          la respuesta palabra por palabra mientras el modelo genera. */
       if (self._genPoll) clearInterval(self._genPoll);
-      var lastLen = -1, lastTokN = -1, t0 = Date.now(), lastProg = Date.now();
+      var lastLen = -1, lastTokN = -1, t0 = Date.now(), lastProg = Date.now(), lastMemCheck = Date.now();
       self._genPoll = setInterval(function () {
         /* v2.14.2: el sondeo cierra SU generación, no la que esté en el
            pending ahora mismo (que puede ser la SIGUIENTE: el agente encadena
@@ -551,6 +580,32 @@
         /* v2.3.0: push vivo (<1,3 s desde el último parcial) = no golpear el puente;
            si el nativo se cuelga de verdad, el push se corta, el sondeo vuelve y
            el watchdog de abajo actúa como siempre. */
+        /* v2.14.6 · SI LA MEMORIA SE HUNDE, SE CORTA.
+           El motor está dentro del proceso de la app: si la RAM se queda
+           sin aire, Android mata la app entera (el "cierre forzado" que
+           reportó la gente al pedir una web larga). Acá se corta la
+           generación y se devuelve el parcial, que es infinitamente mejor
+           que morirse. Se mira la RAM cada 2 s: llamar al puente en cada
+           tick de 130 ms sería gastar en lo que se vigila. */
+        if (Date.now() - lastMemCheck > 2000) {
+          lastMemCheck = Date.now();
+          var libreAhora = ramLibre();
+          if (libreAhora && libreAhora < RAM_CORTE) {
+            if (self._genPoll) { clearInterval(self._genPoll); self._genPoll = null; }
+            try { rawBridge('kiuGenStop'); } catch (eMem) { }
+            try { rawBridge('kiuResetBusy'); } catch (eMem2) { }
+            self.busyG = false;
+            var cbMem = myPending.cb;
+            self.pending = null;
+            jobErr('Error', 2600);
+            cbMem({
+              ok: false,
+              err: 'corté la respuesta: el teléfono se quedó sin memoria (quedan ' + Math.round(libreAhora / 1048576) + ' MB). Liberá el motor o usá un modelo más chico.',
+              stuck: true
+            });
+            return;
+          }
+        }
         if (self._pushT && Date.now() - self._pushT < 1300) { lastProg = Date.now(); return; }
         var st = null;
         try { st = jparse(rawBridge('kiuGenStatus') || '{}', {}); } catch (e) { }
@@ -782,6 +837,26 @@
       try { App.speak(part); return true; } catch (e) { busy = false; return false; }
     }
     function begin(on) { q = []; last = ''; buffer = ''; busy = false; enabled = !!on; disabled = false; }
+    /* v2.14.6 · LO QUE SE HABLA, LIMPIO.
+       El TTS leía las URLs ("https punto punto ejemplo com barra") y los
+       símbolos sueltos. Ahora: las URLs se sacan (no aportan nada hablado),
+       los símbolos se traducen a palabras y se limitan las palabras sueltas
+       que no son frases. */
+    function limpiarParaVoz(txt) {
+      var s = String(txt == null ? '' : txt);
+      s = s.replace(/https?:\/\/\S+/gi, ' ');            /* URLs: no se hablan */
+      s = s.replace(/\bwww\.\S+/gi, ' ');
+      s = s.replace(/[`*_#>|]/g, ' ');                       /* markdown */
+      s = s.replace(/→/g, ' hacia ').replace(/←/g, ' desde ');
+      s = s.replace(/&/g, ' y ').replace(/\+/g, ' mas ').replace(/=/g, ' igual a ');
+      s = s.replace(/~/g, ' hasta ').replace(/@/g, ' arroba ');
+      s = s.replace(/\.{3,}/g, '.');                        /* puntos suspensivos */
+      s = s.replace(/\s+/g, ' ').trim();
+      /* una frase que sea solo un símbolo o un número suelto no se habla */
+      if (s.length < 3) return '';
+      if (/^[\d\W]+$/.test(s)) return '';
+      return s;
+    }
     function push(text) {
       if (!enabled || disabled || typeof text !== 'string') return;
       if (/```|<\/?tool_call>|<\|im_start\|>/i.test(text)) { disabled = true; q = []; buffer = ''; return; }
@@ -790,7 +865,7 @@
       buffer += delta;
       var m;
       while ((m = buffer.match(/^([\s\S]*?(?:[.!?](?:[ \t]+|$)|\n+))/))) {
-        var sentence = m[1].replace(/[`*_#>]/g, '').replace(/\s+/g, ' ').trim();
+        var sentence = limpiarParaVoz(m[1]);
         buffer = buffer.slice(m[1].length);
         if (sentence.length >= 3 && sentence.length <= 600) q.push(sentence);
       }
@@ -814,7 +889,7 @@
       return false;
     }
     function cancel() { begin(false); }
-    return { begin: begin, push: push, finish: finish, onDone: onDone, cancel: cancel };
+    return { begin: begin, push: push, finish: finish, onDone: onDone, cancel: cancel, limpiar: limpiarParaVoz };
   })();
 
   window.kiuNativeDone = function (o) { try { Kiu.handle(o); } catch (e) { } };

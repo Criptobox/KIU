@@ -183,6 +183,11 @@
        (gratis). */
     agentOn: true,
     agentConfirm: false,   /* v2.13.1: preguntar antes de ejecutar acciones con efecto */
+    /* v2.14.6 · El pie "(motor interno · modelo · 6,3 tok/s)" al final de cada
+       respuesta era ruido: el usuario no lo pidió y ocupaba media pantalla.
+       Ahora está APAGADO por defecto y se enciende en Ajustes → Motor local
+       cuando uno quiere ver qué motor respondió. */
+    detalles: false,
     prov: {},
     persona: 'normal', personaX: '', temp: 0.7, maxTok: 700,
     acc: '', chatFs: 'm',

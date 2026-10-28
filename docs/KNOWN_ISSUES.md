@@ -143,6 +143,17 @@
 - [x] **Importación no cancelable**, **notas cortas descartadas por el RAG**, **calculadora con % = módulo**. (v2.7.4)
 
 ## Técnicos
+- [ ] **El motor corre en el mismo proceso que la app** (2.14.6) → los pesos del modelo, el
+      contexto KV y el WebView comparten la RAM del teléfono: cuando eso se desborda, Android mata
+      la app entera y el usuario ve un cierre forzado sin explicación. En 2.14.6 se puso una guarda
+      de memoria (no se genera por debajo de 300 MB libres y se corta la generación si la RAM se
+      hunde), pero el arreglo de fondo es correr el motor en un proceso aparte
+      (`android:process="kiu-engine"` para el servicio) para que el WebView pueda morir sin
+      matar al motor. Es un cambio grande y no se puede probar sin un teléfono real.
+- [x] **La voz sonaba robótica** (2.14.6) → se prefería la voz local del sistema porque las de red
+      necesitan internet y, si fallaban, Kiu quedaba mudo. Como el TTS ya reintenta con una local
+      si la de red falla, ahora se usa la que suena humana (network/neural) y se cae a la local sin
+      internet. Lo que se habla también va limpio: sin URLs ni símbolos sueltos.
 - [x] **Cuatro carreras del motor dejaban al agente en "motor ocupado"** (2.14.2) → el watchdog de
       10 minutos mataba la generación siguiente; un evento de carga tardío liberaba el flag de una
       generación en vuelo; un push tardío cerraba la generación siguiente con el texto viejo; y el

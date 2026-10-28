@@ -583,6 +583,12 @@
             <div><strong data-i18n="set.thermal">Protección térmica</strong><span data-i18n="set.thermal.sub">Corta la generación del motor si el teléfono pasa de 46°</span></div>
             <button class="toggle" id="tg-thermal" aria-label="Protección térmica"></button>
           </div>
+          <!-- v2.14.6: el pie "(motor interno · modelo · tok/s)" al final de cada
+               respuesta era ruido. Apagado por defecto; se enciende acá. -->
+          <div class="set-row">
+            <div><strong>Detalles del motor en el chat</strong><span>Al final de cada respuesta, qué modelo respondió y a qué velocidad</span></div>
+            <button class="toggle" id="tg-detalles" aria-label="Detalles del motor en el chat"></button>
+          </div>
           <button class="set-row as-btn" id="btn-vcmds">
             <div><strong>Comandos de voz</strong><span>Mirá todo lo que podés pedirle hablando</span></div>
             <span class="ic row-ic" data-ic="mic"></span>

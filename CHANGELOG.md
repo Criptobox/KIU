@@ -1,3 +1,12 @@
+## [2.14.6] - 2026-10-28
+
+**Tres cosas que la gente pidió en voz alta.**
+
+- **EL PIE DE DIAGNÓSTICO SE FUE.** Cada respuesta del motor interno terminaba con «(motor interno · qwen2.5-0.5b-instruct-q4_k_m · Auto: para conversar · 6,3 tok/s en tu teléfono)»: media pantalla de ruido que nadie pidió. Ahora está **apagado por defecto** y se enciende en Ajustes → Motor local → «Detalles del motor en el chat» (el detalle real sigue en el diagnóstico, que siempre está).
+- **EL CIERRE FORZADO.** «Le pedí que creara una web y se cerró»: el motor vive DENTRO del proceso de la app, así que los pesos del modelo, el contexto y el WebView comparten la RAM del teléfono; cuando eso se desborda, Android mata la app entera y el usuario no ve por qué. Ahora hay una **guarda de memoria**: si no hay RAM, Kiu no arranca la generación y lo dice con el número de megas que faltan y qué hacer («Liberar motor» o un modelo más chico); y si la memoria se hunde durante una generación larga, se corta y se devuelve el parcial, en vez de morirse. El arreglo de fondo (correr el motor en un proceso aparte) queda anotado en KNOWN_ISSUES.
+- **LA VOZ SUENA MÁS NATURAL.** Se prefería la voz local del sistema (la robótica) porque las de red necesitan internet y, si fallaban, Kiu se quedaba mudo. Pero el TTS ya reintenta con una voz local si la de red falla, así que el miedo era infundado: ahora, **con internet se usa la mejor voz (network/neural, que suenan a persona)** y sin internet se cae a la local. Además, lo que se habla va limpio: las URLs ya no se leen ("https punto punto ejemplo com") y los símbolos sueltos se traducen.
+- 550 tests: 545 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin JDK se saltan a la vista; en el CI corren).
+
 ## [2.14.5] - 2026-10-28
 
 **El agente, medido de verdad.** Con un llama.cpp compilado y un Qwen3-0.6B real, el arnés de evaluación pasó de **3 % a 93 % de acierto** (28 de 30 pedidos) con el no-op del 97 % al 7 %. Lo que había abajo no son suposiciones: son cuatro bugs comprobados contra el motor real.

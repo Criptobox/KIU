@@ -2267,7 +2267,11 @@
           var vis = img ? ' · la foto todavía no la puedo ver (usá Servidor o API para visión real)' : '';
           var rec = out.recovered ? ' · respuesta recuperada' : '';
           var mdlTag = (S.kiu && S.kiu.name) ? ' · ' + String(S.kiu.name).replace(/\.gguf$/i, '').slice(0, 28) : '';
-          self.botSay(out.text + '\n\n*(motor interno' + mdlTag + vis + au + rec + tps + ')*', live);
+          /* v2.14.6 · El pie de diagnóstico es OPCIONAL (S.detalles). Por
+             defecto no se escribe: era ruido al final de cada respuesta.
+             El detalle real vive en el diagnóstico, que siempre está. */
+          var pie = S.detalles ? ('\n\n*(motor interno' + mdlTag + vis + au + rec + tps + ')*') : '';
+          self.botSay(out.text + pie, live);
           KB.reinforce(text);
         } else {
           clearInterval(elTimer);
@@ -4529,6 +4533,18 @@
       }
       /* v2.9.1: el agente. Encenderlo sin modelo cargado no sirve de nada, así que
          el toggle lo avisa en vez de fingir que quedó activo. */
+      /* v2.14.6 · interruptor de los detalles del motor */
+      var tgDet = document.getElementById('tg-detalles');
+      if (tgDet) {
+        tgDet.classList.toggle('on', !!S.detalles);
+        tgDet.addEventListener('click', function () {
+          S.detalles = !S.detalles; saveS();
+          tgDet.classList.toggle('on', S.detalles);
+          self.toast(S.detalles
+            ? 'Cada respuesta va a mostrar qué modelo respondió'
+            : 'Listo: sin detalles al final de las respuestas');
+        });
+      }
       var tgAgentCf = document.getElementById('tg-agent-confirm');
       if (tgAgentCf) {
         tgAgentCf.classList.toggle('on', !!S.agentConfirm);

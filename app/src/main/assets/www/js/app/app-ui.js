@@ -4436,7 +4436,7 @@
           h = '<div class="k2-model">' + ring(0) + '<div class="k2-mid"><p class="k2-name">0% · Kiu ' + esc(tag) + '</p><p class="k2-sub">Empezando…</p></div>' +
             '<div class="k2-acts" style="flex-direction:row"><button class="k2-iconbtn danger" data-u="stop" aria-label="Cancelar">' + icon('xmark', 13) + '</button></div></div>';
         } else if (st === 'done') {
-          h = '<div class="k2-model"><span class="k2-tile big tl-green">' + icon('check', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + ' · listo</p><p class="k2-sub">Descargado' + (total ? ' · ' + mb(total) : '') + (verif ? ' · huella SHA-256 verificada ✓' : (apk.digest ? '' : ' · sin huella para comparar')) + '</p></div>' +
+          h = '<div class="k2-model"><span class="k2-tile big tl-green">' + icon('check', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + ' · listo</p><p class="k2-sub">Descargado' + (total ? ' · ' + mb(total) : '') + (verif ? ' · huella SHA-256 verificada ✓' : (apk.digest ? ' · sin verificar (Android la verifica al instalar)' : ' · sin huella para comparar')) + '</p></div>' +
             '<div class="k2-acts"><button class="k2-pill solid" data-u="inst">Instalar</button></div></div>';
         } else {
           h = '<div class="k2-model' + (st === 'err' ? ' err' : '') + '"><span class="k2-tile big tl-violet">' + icon('save', 19) + '</span><div class="k2-mid"><p class="k2-name">Kiu ' + esc(tag) + '</p><p class="k2-sub">' + (st === 'err' ? esc(msg || 'No se pudo bajar') : 'Actualización · ' + sizeTxt) + '</p></div>' +

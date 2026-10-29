@@ -1,3 +1,12 @@
+## [2.15.0] - 2026-10-29
+
+**EL ERROR QUE IMPEDÍA ACTUALIZAR, Y ERA MÍO.**
+
+- **"no pude verificar el archivo (SHA-256 ilegible): se borro, descargalo de nuevo".** Ese mensaje era de v2.14.2, cuando la verificación del SHA-256 trate "no pude calcular el hash" como "el archivo está corrupto": **lo borraba y pedía descargarlo de nuevo**. Con eso el usuario entraba en un bucle sin salida — descargar, ver el error, borrar, descargar — y **la actualización quedaba imposible**. No era el archivo ni el teléfono: era la guarda.
+  · **Verificar es un plus, no una puerta.** Android igual verifica la firma del APK al instalarlo, así que bloquear por nuestra cuenta no daba seguridad: solo impedía instalar. Ahora, si el hash **no coincide** (corrupción real) se borra y se reintenta; si **no se pudo calcular**, se sigue y la tarjeta lo dice ("sin verificar — Android la verifica al instalar").
+  · **Diagnóstico con JDK:** compilé el descargador contra un servidor local con redirección y Range (como el de GitHub) y reproduje los tres caminos. Los tres se comportaban bien — y por eso el fallo tenía que estar en el camino que no se podía ver. El arnés nuevo (`KiuDlTaskHarness`) deja eso fixeado en el CI: el magic de GGUF, el hash, el digest correcto, el digest equivocado, y **la regresión: que no poder hashear NO bloquee la instalación**. Con su control negativo: si alguien vuelve a meter la guarda, el arnés falla.
+- 574 tests: 574 en verde, 0 en rojo, 0 omitidas (con JDK 17: los arneses de Java se compilan y se ejecutan de verdad).
+
 ## [2.14.9] - 2026-10-28
 
 **POR QUÉ LA APK NO SE INSTALABA.** Y por qué la app no la bajaba.

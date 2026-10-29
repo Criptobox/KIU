@@ -155,14 +155,14 @@ test('sin el zip, el arnés lo dice en vez de reportar todo bien', () => {
    síntoma es "el motor no arranca" tres pasos más tarde. KiuDlTask es Java
    puro, así que se puede ejecutar en una JVM normal. */
 
-const DL_SRC = path.join(raiz, 'app/src/main/java/com/kiu/agent/KiuDlTask.java');
-const DL_HARNESS = path.join(here, 'java/com/kiu/agent/KiuDlTaskHarness.java');
+const DLT_SRC = path.join(raiz, 'app/src/main/java/com/kiu/agent/KiuDlTask.java');
+const DLT_HARNESS = path.join(here, 'java/com/kiu/agent/KiuDlTaskHarness.java');
 
 /** Compila KiuDlTask + el arnés y lo corre. */
 function correrDescarga(tools) {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'kiu-dl-'));
-  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, DL_SRC], { encoding: 'utf8' });
-  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DL_HARNESS], { encoding: 'utf8' });
+  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, DLT_SRC], { encoding: 'utf8' });
+  execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DLT_HARNESS], { encoding: 'utf8' });
   const r = spawnSync(path.join(tools, 'java'), ['-cp', out, 'com.kiu.agent.KiuDlTaskHarness'], { encoding: 'utf8' });
   const txt = (r.stdout || '') + (r.stderr || '');
   const m = txt.match(/checks=(\d+) fails=(\d+)/);
@@ -181,36 +181,49 @@ test('el descargador se EJECUTA: verifica el magic y el SHA-256',
 
 test('el arnés del descargador detecta sus propios fallos: no es un test que siempre pasa',
   { skip: tools ? false : 'sin JDK (javac no encontrado)' }, () => {
-    /* Se rompe a propósito la verificación de v2.14.2 (si no se puede hashear,
-       no se instala) y el arnés tiene que FALLAR. Sin este control, un arnés
+    /* Se ROMPE A PROPÓSITO la verificación de v2.15.0 (si no se puede hashear,
+       NO se bloquea) y el arnés tiene que FALLAR. Sin este control, un arnés
        roto pasaría en verde. */
     assert.ok(tools, 'sin JDK este test se salta: no puede correr');
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'kiu-dl-neg-'));
     const roto = path.join(out, 'com/kiu/agent/KiuDlTask.java');
     fs.mkdirSync(path.dirname(roto), { recursive: true });
-    const bueno = fs.readFileSync(DL_SRC, 'utf8');
-    /* La mutación tiene que deshacer LAS DOS guardas: la nueva (que avisa que
-       no se puede verificar) y la vieja (que compara contra el hash). Con una
-       sola, la otra sigue atrapando el caso y el arnés pasa igual: el control
-       negativo no controlaría nada. Deshaciendo las dos queda el
-       comportamiento de antes de 2.14.2 (instalar sin poder verificar). */
-    fs.writeFileSync(roto, bueno
-      .replace('if (this.sha256.length() != 64) {', 'if (false) {')
-      .replace('if (!this.expect.equals(this.sha256)) {', 'if (this.sha256.length() == 64 && !this.expect.equals(this.sha256)) {'));
+    const bueno = fs.readFileSync(DLT_SRC, 'utf8');
+    /* La mutación devuelve el comportamiento de v2.14.2: si el hash no se
+       puede calcular, se borra el archivo y se corta la instalación. Eso es lo
+       que dejaba al usuario en un bucle sin salida. */
+    fs.writeFileSync(roto, bueno.replace(
+      'if (this.expect != null && this.expect.length() == 64 && this.sha256.length() == 64) {',
+      'if (this.expect != null && this.expect.length() == 64) {\n' +
+      '                if (this.sha256.length() != 64) {\n' +
+      '                    try { file.delete(); } catch (Throwable unused9) { }\n' +
+      '                    this.err = "no pude verificar el archivo (SHA-256 ilegible): se borro, descargalo de nuevo";\n' +
+      '                    this.state = "err";\n' +
+      '                    return false;\n' +
+      '                }'));
     execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-d', out, roto], { encoding: 'utf8' });
-    execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DL_HARNESS], { encoding: 'utf8' });
+    execFileSync(path.join(tools, 'javac'), ['-encoding', 'UTF-8', '-cp', out, '-d', out, DLT_HARNESS], { encoding: 'utf8' });
     const r = spawnSync(path.join(tools, 'java'), ['-cp', out, 'com.kiu.agent.KiuDlTaskHarness'], { encoding: 'utf8' });
     assert.notEqual(r.status, 0, 'con la verificación rota el arnés tiene que FALLAR, no pasar');
     const txt = (r.stdout || '') + (r.stderr || '');
     assert.match(txt, /FAIL/, 'y tiene que decir qué falló:\n' + txt);
   });
 
-test('el descargador no instala lo que no puede verificar', () => {
-  /* El contrato, escrito para que no se pueda romper por accidente: la
-     verificación tiene que estar en el código, no solo en el arnés. */
-  const src = fs.readFileSync(DL_SRC, 'utf8');
-  assert.match(src, /if \(this\.sha256\.length\(\) != 64\)/,
-    'si el hash no se puede calcular, la descarga tiene que fallar en vez de instalar el archivo');
-  assert.match(src, /no pude verificar el archivo/,
-    'y tiene que explicar por qué');
+test('el descargador NO bloquea lo que no puede verificar', () => {
+  /* v2.15.0 · el contrato, escrito para que no se pueda romper por accidente.
+     Antes (v2.14.2) el contrato era al revés: si el hash no se podía
+     calcular, se BORRABA el archivo y la instalación se cortaba con un
+     "SHA-256 ilegible". Eso dejaba al usuario en un bucle sin salida
+     (descargar → error → borrar → descargar) y hacía la actualización
+     IMPOSIBLE. Android verifica la firma del APK al instalarlo, así que
+     verificar es un plus, no una puerta. */
+  const src = fs.readFileSync(DLT_SRC, 'utf8');
+  assert.doesNotMatch(src, /SHA-256 ilegible/,
+    'ese mensaje borraba el archivo y hacía imposible actualizar');
+  assert.match(src, /this\.expect != null && this\.expect\.length\(\) == 64 && this\.sha256\.length\(\) == 64/,
+    'la comparación de hashes solo se hace si los dos se pudieron calcular');
+  assert.match(src, /if \(!this\.expect\.equals\(this\.sha256\)\)/,
+    'y la corrupción REAL (el hash no coincide) sí tiene que cortar y borrar');
+  assert.match(src, /archivo corrupto: el hash SHA-256 no coincide/,
+    'y explica el motivo');
 });

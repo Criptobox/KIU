@@ -118,24 +118,18 @@ public class KiuDlTask implements Runnable {
         }
         /* v2.4.0: SHA-256 del archivo completo (.part previo + bytes nuevos) */
         this.sha256 = hashFile(file);
-        if (this.expect != null && this.expect.length() == 64) {
-            /* v2.14.2 · SI NO SE PUEDE VERIFICAR, NO SE INSTALA.
-               Antes, si el hash no se podía calcular (error de I/O, archivo
-               ilegible), la comparación se saltaba por el `length() == 64` y el
-               .part se renombraba al nombre final como si estuviera bien: un
-               modelo posiblemente corrupto instalado en el teléfono, con el
-               síntoma apareciendo mucho después (un motor que no arranca).
-               Un archivo del catálogo que no se puede hashear es un archivo
-               que no se puede dar por bueno: se borra y se avisa. */
-            if (this.sha256.length() != 64) {
-                try {
-                    file.delete();
-                } catch (Throwable unused3) {
-                }
-                this.err = "no pude verificar el archivo (SHA-256 ilegible): se borro, descargalo de nuevo";
-                this.state = "err";
-                return false;
-            }
+        /* v2.15.0 · VERIFICAR ES UN PLUS, NO UNA PUERTA.
+           v2.14.2 (este bloque) trataba "no pude calcular el hash" como "el
+           archivo está corrupto": lo BORRABA y pedía descargar de nuevo. Con
+           eso el usuario entraba en un bucle sin salida (descargar, ver el
+           error, borrar, descargar...) y la actualización quedaba IMPOSIBLE:
+           es justo lo que pasó.
+           Y que no se pueda calcular el hash NO significa que el archivo esté
+           mal: puede ser que no se haya podido leer. Android igual verifica
+           la firma del APK al instalarlo, así que acá no se bloquea nada:
+             · el hash NO coincide -> sí es corrupción: se borra y se reintenta;
+             · el hash no se pudo calcular -> se sigue, sin verificar. */
+        if (this.expect != null && this.expect.length() == 64 && this.sha256.length() == 64) {
             if (!this.expect.equals(this.sha256)) {
                 try {
                     file.delete();

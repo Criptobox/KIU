@@ -6,6 +6,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -55,6 +58,45 @@ public class KiuUpdate {
         }
     }
 
+    /* v2.14.9: la huella SHA-256 del certificado de firma. Sirve para
+       comparar la app instalada con el APK que se quiere poner encima:
+       si no coinciden, Android rechaza la instalación. Vacío si no se pudo
+       leer (no se puede afirmar nada, y no se debe inventar). */
+    private static String certDe(Context c, String apkPath) {
+        try {
+            android.content.pm.PackageManager pm = c.getPackageManager();
+            int flags = (Build.VERSION.SDK_INT >= 28)
+                    ? android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+                    : android.content.pm.PackageManager.GET_SIGNATURES;
+            android.content.pm.PackageInfo pi = (apkPath == null)
+                    ? pm.getPackageInfo(c.getPackageName(), flags)
+                    : pm.getPackageArchiveInfo(apkPath, flags);
+            if (pi == null) {
+                return "";
+            }
+            android.content.pm.Signature[] sigs = null;
+            if (Build.VERSION.SDK_INT >= 28 && pi.signingInfo != null) {
+                sigs = pi.signingInfo.hasMultipleSigners()
+                        ? pi.signingInfo.getApkContentsSigners()
+                        : pi.signingInfo.getSigningCertificateHistory();
+            } else {
+                sigs = pi.signatures;
+            }
+            if (sigs == null || sigs.length == 0) {
+                return "";
+            }
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            md.update(sigs[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     /* devuelve «ok», «perm» (falta permitir instalar desde Kiu) o «err:motivo» */
     public static String install(Context c, String path) {
         try {
@@ -64,6 +106,18 @@ public class KiuUpdate {
                     || f.getParentFile() == null
                     || !f.getParentFile().getCanonicalPath().equals(d.getCanonicalPath())) {
                 return "err:archivo no valido";
+            }
+            /* v2.14.9 · ¿LA FIRMA ES LA MISMA?
+               Android NO deja instalar un APK encima de la app instalada si
+               están firmados con claves distintas. El error del sistema es
+               críptico ("no se pudo instalar") y no dice por qué: la persona
+               cree que el archivo está roto y desinstala la app, perdiendo la
+               memoria y los documentos. Acá se compara el certificado ANTES
+               de abrir el instalador y se explica el motivo. */
+            String propia = certDe(c, null);
+            String nueva = certDe(c, f.getAbsolutePath());
+            if (!propia.isEmpty() && !nueva.isEmpty() && !propia.equals(nueva)) {
+                return "err:firma distinta: este APK está firmado con otra clave y Android no lo deja instalar encima del que ya tenés. Instalalo con la misma clave de siempre, o desinstalá Kiu primero (perdés la memoria y los documentos).";
             }
             if (Build.VERSION.SDK_INT >= 26 && !c.getPackageManager().canRequestPackageInstalls()) {
                 Intent s = new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES", Uri.parse("package:" + c.getPackageName()));

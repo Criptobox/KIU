@@ -12,6 +12,7 @@
 #
 #   ./scripts/verificar-apk.sh app/build/outputs/apk/debug/app-debug.apk
 #   ./scripts/verificar-apk.sh lo que sea.apk --esperar 2.9.4
+#   ./scripts/verificar-apk.sh nuevo.apk --firma el-que-tenes-instalado.apk
 #
 # Salida: 0 si el APK es el que esperabas, 1 si no.
 
@@ -27,11 +28,15 @@ gris()  { printf '\033[2m%s\033[0m\n' "$*"; }
 # archivo equivocado. El for parecía correcto y no lo era.
 ESPERADA=""
 APK=""
+FIRMA_REF=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --esperar)
       if [ $# -lt 2 ]; then rojo "--esperar necesita un valor (ej: 2.9.4)"; exit 2; fi
       ESPERADA="$2"; shift 2 ;;
+    --firma)
+      if [ $# -lt 2 ]; then rojo "--firma necesita el APK con el que comparar"; exit 2; fi
+      FIRMA_REF="$2"; shift 2 ;;
     -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --*) rojo "Opción desconocida: $1"; exit 2 ;;
     *) [ -n "$APK" ] && { rojo "Sobraron argumentos: $1"; exit 2; }; APK="$1"; shift ;;
@@ -87,6 +92,36 @@ fi
 
 # ¿el modelo de voz? no va en el APK, pero se verifica instalado
 [ "$SO" -eq 0 ] && rojo "  SIN librerías nativas: este APK no puede generar. No lo instales."
+
+# v2.14.9 · LA FIRMA. Android NO deja instalar un APK encima de la app ya
+# instalada si están firmados con claves distintas: el error del sistema es
+# críptico ("no se pudo instalar") y parece que el archivo esté roto. Esto
+# compara el certificado de los dos APK y lo dice claro.
+if [ -n "$FIRMA_REF" ]; then
+  if [ ! -f "$FIRMA_REF" ]; then rojo "  No existe el APK de referencia: $FIRMA_REF"; exit 1; fi
+  cert_de() {
+    if command -v apksigner >/dev/null 2>&1; then
+      apksigner verify --print-certs "$1" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1
+    else
+      keytool -printcert -jarfile "$1" 2>/dev/null | sed -n 's/^SHA256: //p' | head -1
+    fi
+  }
+  A=$(cert_de "$APK"); B=$(cert_de "$FIRMA_REF")
+  echo
+  if [ -z "$A" ] || [ -z "$B" ]; then
+    gris "  No pude leer los certificados (falta apksigner). No los comparo."
+  elif [ "$A" = "$B" ]; then
+    verde "  MISMA firma: este APK se instala encima del que tenés, sin perder tus datos."
+    gris "  certificado: $A"
+  else
+    rojo "  FIRMA DISTINTA: este APK NO se puede instalar encima del que tenés."
+    gris "  Android rechaza la actualización entre apps con claves distintas."
+    gris "  este:      $A"
+    gris "  el otro:   $B"
+    gris "  Se arregla firmando este build con la MISMA clave del anterior."
+    exit 1
+  fi
+fi
 
 if [ -n "$ESPERADA" ]; then
   # Sin sello no se puede confirmar nada, y "no pude confirmar" NO es lo mismo que

@@ -4371,7 +4371,15 @@
       if (manual) this.toast('Buscando versión nueva…');
       fetch('https://api.github.com/repos/Criptobox/KIU/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
         .then(function (r) {
-          if (r.status === 404) { var e404 = new Error('todavía no hay versiones publicadas'); e404.soft = true; throw e404; }
+          if (r.status === 404) {
+            /* v2.14.9: el CI publica una release SOLO cuando hay un tag (v*).
+               Sin tag no hay release y no hay de dónde bajar: decirlo con las
+               palabras exactas, porque "no descarga" sin explicación hace
+               pensar que la app está rota. */
+            var e404 = new Error('todavía no hay versiones publicadas: el CI solo publica una release cuando hay un tag (v2.14.8, por ejemplo)');
+            e404.soft = true;
+            throw e404;
+          }
           if (!r.ok) throw new Error('GitHub respondió ' + r.status);
           return r.json();
         })
@@ -4399,7 +4407,12 @@
           body.querySelector('#upd-gh').addEventListener('click', function () { if (!self.openUrl(rel.html_url)) self.copyText(rel.html_url); });
         })
         .catch(function (err) {
-          if (manual) self.toast('No pude buscar: ' + (err && err.message ? err.message : 'sin conexión'));
+          if (manual) {
+            self.toast('No pude buscar: ' + (err && err.message ? err.message : 'sin conexión'));
+          } else if (err && err.soft) {
+            /* sin red o sin releases: no es un fallo de la app */
+            self.toast(err.message);
+          }
         });
     },
 
@@ -4495,7 +4508,20 @@
           var r = rawBridge('updInstall', [path]);
           if (r === 'ok') self.toast('Android te pide confirmar la instalación');
           else if (r === 'perm') { if (hint) hint.textContent = 'Activá «Permitir de esta fuente» para Kiu y volvé a tocar Instalar.'; self.toast('Permití instalar apps desde Kiu y volvé a tocar Instalar'); }
-          else self.toast('No pude abrir el instalador' + (r ? ': ' + String(r).replace(/^err:/, '').slice(0, 60) : ''));
+          else {
+            var msg = String(r == null ? '' : r).replace(/^err:/, '').trim();
+            /* v2.14.9 · la FIRMA DISTINTA es el error clásico de "no me deja
+               instalar". No es un archivo roto: es que el APK está firmado
+               con otra clave y Android no deja ponerlo encima del que ya
+               tenés. Se dice con palabras, no con un toast críptico. */
+            if (/firma/i.test(msg)) {
+              if (hint) hint.textContent = msg;
+              self.botSay('!! **No se puede instalar encima**\n!! ' + msg.replace(/\n/g, ' ') +
+                '\n!! → [Ver las versiones](https://github.com/Criptobox/KIU/releases/latest)', null, true);
+            } else {
+              self.toast('No pude abrir el instalador' + (msg ? ': ' + msg.slice(0, 60) : ''));
+            }
+          }
         }
       });
       show('idle');

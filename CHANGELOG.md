@@ -1,3 +1,14 @@
+## [2.14.9] - 2026-10-28
+
+**POR QUÉ LA APK NO SE INSTALABA.** Y por qué la app no la bajaba.
+
+- **"Al instalar da error"**: Android **no deja instalar un APK encima de la app instalada si los dos están firmados con claves distintas**. El error del sistema es críptico ("no se pudo instalar") y parece que el archivo está roto; la reacción natural es desinstalar Kiu, y con eso se pierden la memoria, los documentos y las conversaciones.
+  · **La app ahora compara el certificado** antes de abrir el instalador y, si no coinciden, lo dice con palabras: "este APK está firmado con otra clave y Android no lo deja instalar encima del que ya tenés. Instalalo con la misma clave de siempre, o desinstalá Kiu primero (perdés la memoria y los documentos)". Aparece como tarjeta de error, no como un toast.
+  · **El CI ahora CORTA el build si la firma cambió**, antes de publicar: compara el certificado del APK nuevo con el del último release. Antes solo avisaba y publicaba igual — y la clave de respaldo (la debug) sale de una caché de GitHub: si esa caché se expulsa, la clave cambia y toda la app instalada queda sin poder actualizarse. Ahora el release no sale.
+  · **El script de verificación puede comparar dos APK en local**: `./scripts/verificar-apk.sh nuevo.apk --firma el-que-tenes-instalado.apk`.
+- **"Dentro de la app no descarga"**: no era la app: el CI publica una release **solo cuando hay un tag (`v*`)**. Si el push fue a `main` sin tag, no hay release de la que bajar y la app no tenía nada que decir. Ahora lo dice con el motivo exacto ("el CI solo publica una release cuando hay un tag") en vez de un error genérico.
+- 574 tests: 569 en verde, 0 en rojo, 5 omitidas (los arneses de Java: sin JDK se saltan a la vista; en el CI corren).
+
 ## [2.14.8] - 2026-10-28
 
 **LA PANTALLA, POR FIN.** Lo anterior fueron tokens y un caso de error: la pantalla seguía igual. Esto es el rediseño entrando en la app de verdad.

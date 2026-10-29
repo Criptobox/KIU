@@ -199,6 +199,40 @@ jobs:
           path: build.log
           if-no-files-found: ignore
 
+      # v2.14.9 · LA FIRMA NO PUEDE CAMBIAR ENTRE VERSIONES.
+      # Si la clave cambia, NADIE puede actualizar: Android rechaza el APK
+      # nuevo encima del viejo ("no se pudo instalar") y el reporte llega
+      # como "la APK está rota". Se compara el certificado del APK nuevo con
+      # el del último release ANTES de publicar: si no coinciden, el build
+      # corta acá, con el motivo a la vista.
+      - name: La firma no puede cambiar entre versiones
+        shell: bash
+        run: |
+          set -uo pipefail
+          nuevo=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          if [ -z "$nuevo" ]; then echo "::warning::No encontré el APK release para comparar firmas."; exit 0; fi
+          apksigner_bin=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | head -1 || true)
+          if [ -z "$apksigner_bin" ]; then echo "::warning::Sin apksigner: no comparo firmas."; exit 0; fi
+          prev_url=$(curl -sS "https://api.github.com/repos/Criptobox/KIU/releases/latest"             | sed -n 's/.*"browser_download_url": *"\([^"]*\.apk\)".*/\1/p' | head -1 || true)
+          if [ -z "$prev_url" ]; then echo "::notice::Primer release: no hay con qué comparar la firma."; exit 0; fi
+          prev=$(mktemp --suffix=.apk)
+          curl -sSL -o "$prev" "$prev_url" || { echo "::warning::No pude bajar el APK anterior."; exit 0; }
+          cert() { "$apksigner_bin" verify --print-certs "$1" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
+          a=$(cert "$nuevo"); b=$(cert "$prev")
+          rm -f "$prev"
+          if [ -z "$a" ] || [ -z "$b" ]; then echo "::warning::No pude leer los certificados."; exit 0; fi
+          if [ "$a" != "$b" ]; then
+            echo "::error::LA FIRMA CAMBIÓ. Este APK no se puede instalar encima del que la gente ya tiene."
+            echo "::error::nuevo: $a"
+            echo "::error::anterior: $b"
+            echo "::error::Firmá este build con la MISMA clave (KIU_KEYSTORE_BASE64 / KIU_KEYSTORE_PASSWORD) o avisá que hay que desinstalar."
+            exit 1
+          fi
+          echo "Firma igual a la del release anterior: se actualiza sin desinstalar."
+          echo "### Firma del APK" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA-256 del certificado: \`$a\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Subir APK release
         uses: actions/upload-artifact@v4
         with:

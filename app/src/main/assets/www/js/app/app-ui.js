@@ -164,6 +164,10 @@
         } else if (what === 'calendar') {
           App.toast(ok ? 'Permiso de agenda concedido: ya sé qué tenés'
                        : 'Sin permiso de agenda: no puedo leer tus eventos');
+        } else if (what === 'sms') {
+          App.toast(ok ? 'Permiso de SMS concedido: volvé a preguntarme' : 'Sin permiso de SMS: no puedo leer tus mensajes');
+        } else if (what === 'location') {
+          App.toast(ok ? 'Permiso de ubicación concedido: volvé a preguntarme' : 'Sin permiso de ubicación: decime la ciudad');
         }
       };
       window.nexoTimerDone = function (label) {
@@ -332,8 +336,11 @@
       /* Onboarding: primera vez, preguntamos el nombre */
       setTimeout(function () { self2.onboard(); }, 800);
       document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) { self2.syncReminders(); Sys.refresh(); self2.kiuReschedule(); }
+        if (!document.hidden) { self2.syncReminders(); Sys.refresh(); self2.kiuReschedule(); self2.rutinasTick(); }
       });
+      /* v2.18.0 · rutinas: un tick por minuto mientras la app vive, y uno al arrancar */
+      setTimeout(function () { self2.rutinasTick(); }, 3000);
+      setInterval(function () { self2.rutinasTick(); }, 60000);
       setTimeout(function () { self2.kiuReschedule(); }, 1400);
       /* v1.7.0: descargar lista real de modelos + auto-cargar motor interno */
       setTimeout(function () {
@@ -346,6 +353,7 @@
          Son los estados 'Disparado' y 'Reprogramado al reiniciar', que antes no
          los disparaba nadie. */
       window.nexoAlarmFired = function (title) {
+        try { setTimeout(function () { self.rutinasTick(); }, 800); } catch (eRu) { }
         stFlash('Disparado', 3500);
         try { self.refreshMem(); } catch (eR) { }
         if (title) self.toast(title);
@@ -1204,6 +1212,38 @@
       });
       var bf = document.getElementById('mdl-free');
       if (bf) bf.addEventListener('click', function () { Kiu.forceReset(); Kiu.unload(); self.toast('Motor liberado'); });
+      /* v2.19.0 · PROBAR AGENTE: mide, en este teléfono y con el modelo cargado, si elige bien las
+         herramientas. Rápida = 8 pedidos; completa = los 21. No ejecuta nada. */
+      var self3 = this;
+      function probarAgente(completa) {
+        var res = document.getElementById('mdl-agent-res');
+        var b1 = document.getElementById('mdl-agent-test'), b2 = document.getElementById('mdl-agent-full');
+        if (!window.KiuAutoprueba) return;
+        if (!S.kiu.ok) { self3.toast('Cargá un modelo primero'); return; }
+        if (self3._probandoAgente) { self3._cancelarAgente = true; self3.toast('Cancelando…'); return; }
+        self3._probandoAgente = true; self3._cancelarAgente = false;
+        var etq1 = b1 ? b1.textContent : '', etq2 = b2 ? b2.textContent : '';
+        (completa ? b2 : b1).textContent = 'Cancelar';
+        KiuAutoprueba.correr({
+          completa: completa,
+          cancelar: function () { return self3._cancelarAgente; },
+          progreso: function (i, n) { if (res) res.textContent = 'Probando ' + (i + 1) + ' de ' + n + '… (un modelo chico tarda unos segundos por pedido)'; }
+        }, function (r) {
+          self3._probandoAgente = false;
+          if (b1) b1.textContent = etq1; if (b2) b2.textContent = etq2;
+          if (!res) return;
+          if (!r.ok) { res.textContent = r.err || 'No se pudo probar.'; return; }
+          if (r.tps && window.KiuBench) { try { KiuBench.rec(S.kiu.name, r.tps); } catch (eB) { } }
+          var pct = Math.round(r.acierto * 100);
+          res.textContent = (r.parcial ? '(cancelada) ' : '') + prettyName(r.modelo) + ': ' + r.aciertos + ' de ' + r.total + ' bien (' + pct + ' %) · ' +
+            (r.msPromedio / 1000).toFixed(1).replace('.', ',') + ' s por decisión' + (r.tps ? ' · ' + r.tps.toFixed(1).replace('.', ',') + ' tok/s' : '') +
+            '\n' + r.texto +
+            (r.fallos.length ? '\nFalló: ' + r.fallos.slice(0, 4).map(function (f) { return '«' + f.pedido + '» → ' + f.motivo; }).join(' · ') : '');
+        });
+      }
+      var ba = document.getElementById('mdl-agent-test'), bb = document.getElementById('mdl-agent-full');
+      if (ba) ba.addEventListener('click', function () { probarAgente(false); });
+      if (bb) bb.addEventListener('click', function () { probarAgente(true); });
       this.bindOrch();
     },
     /* ---------- v1.8.0: panel del Orquestador — v2.0 mapa de roles ---------- */
@@ -2136,7 +2176,8 @@
         send_message: 'Preparo el mensaje', remember: 'Guardo en tu memoria',
         recall: 'Busco en tu memoria', manage_task: 'Miro tus tareas',
         manage_alarm: 'Miro tus alarmas', create_calendar_event: 'Creo el evento',
-        now: 'Miro la hora', web_search: 'Busco en la web', forget: 'Olvido eso'
+        now: 'Miro la hora', web_search: 'Busco en la web', forget: 'Olvido eso',
+        get_weather: 'Miro el clima', manage_routine: 'Miro tus rutinas', read_notifications: 'Miro tus notificaciones', read_sms: 'Leo tus SMS', media_control: 'Controlo la música', summarize_url: 'Leo la página', daily_briefing: 'Preparo tu resumen', log_expense: 'Anoto el gasto'
       };
       var txt = ETIQUETA[tool] || '';
       if (!txt) {
@@ -2156,14 +2197,16 @@
       call_contact: 'Llamada', search_docs: 'Documentos', device_action: 'Acción del teléfono',
       send_message: 'Mensaje', remember: 'Memoria', recall: 'Memoria',
       manage_task: 'Tareas', manage_alarm: 'Alarmas', create_calendar_event: 'Evento',
-      forget: 'Memoria', update_memory: 'Memoria', now: 'Hora', web_search: 'Web'
+      forget: 'Memoria', update_memory: 'Memoria', now: 'Hora', web_search: 'Web',
+      get_weather: 'Clima', manage_routine: 'Rutinas', read_notifications: 'Notificaciones', read_sms: 'SMS', media_control: 'Música', summarize_url: 'Página', daily_briefing: 'Resumen', log_expense: 'Gastos'
     },
     TOOL_ICONO: {
       set_alarm: 'alarm', read_calendar: 'receipt', find_contact: 'users',
       call_contact: 'phone', search_docs: 'bookmark', device_action: 'flash',
       send_message: 'mail', remember: 'memory', recall: 'memory',
       manage_task: 'check', manage_alarm: 'alarm', create_calendar_event: 'receipt',
-      forget: 'trash', update_memory: 'pencil', now: 'cal', web_search: 'grid'
+      forget: 'trash', update_memory: 'pencil', now: 'cal', web_search: 'grid',
+      get_weather: 'pulse', manage_routine: 'timer', read_notifications: 'mail', read_sms: 'mail', media_control: 'flash', summarize_url: 'bookmark', daily_briefing: 'cal', log_expense: 'receipt'
     },
     insertToolCard: function (tool) {
       var el = document.getElementById('chat-messages');
@@ -3820,6 +3863,17 @@
       bridge('cancelReminder', [id]);
       store('nexo_alarmas', this.reminders().filter(function (r) { return r.id !== id; }));
       this.refreshMem();
+    },
+    /* v2.18.0 · corre las rutinas que ya les toca y pone el resultado en el chat. Nunca lanza. */
+    rutinasTick: function () {
+      var self = this;
+      try {
+        if (!window.KiuRutinas || !window.KiuAgente) return;
+        window.KiuRutinas.tick(function (texto, r) {
+          self.botSay('**' + r.name + '**\n' + texto);
+          self.toast(r.name);
+        });
+      } catch (e) { }
     },
     syncReminders: function () {
       if (!BR) return;
@@ -5529,6 +5583,88 @@
           }
         }).catch(function () { });
       Promise.all([p1, p2]).then(done, done);
+    },
+    /* v2.16.0 · CLIMA. Open-Meteo no pide clave: geocodifica el nombre y devuelve el pronóstico.
+       cb({place, cur:{temp,code,wind}, days:[{max,min,rain,code}]}) o cb(null) si no hay red,
+       el lugar no existe o tardó más de 8 s. Nunca lanza. */
+    weatherQuery: function (place, cb) {
+      var fin = false;
+      function done(v) { if (fin) return; fin = true; cb(v); }
+      var coords = (place && typeof place === 'object' && isFinite(place.lat) && isFinite(place.lon)) ? place : null;
+      var q = coords ? '' : String(place || '').trim().slice(0, 80);
+      if ((!q && !coords) || typeof fetch !== 'function') { done(null); return; }
+      var c = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      setTimeout(function () { if (c) c.abort(); done(null); }, 8000);
+      var opt = c ? { signal: c.signal } : {};
+      function pronostico(lat, lon, nombre) {
+        return fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+          '&current=temperature_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3', opt)
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (f) {
+            if (!f || !f.current || !f.daily) { done(null); return; }
+            var d = f.daily, days = [];
+            for (var i = 0; i < (d.time || []).length; i++) {
+              days.push({ max: d.temperature_2m_max[i], min: d.temperature_2m_min[i], rain: d.precipitation_probability_max[i], code: d.weather_code[i] });
+            }
+            done({ place: nombre, cur: { temp: f.current.temperature_2m, code: f.current.weather_code, wind: f.current.wind_speed_10m }, days: days });
+          });
+      }
+      if (coords) { pronostico(coords.lat, coords.lon, 'tu ubicación').catch(function () { done(null); }); return; }
+      fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=es&name=' + encodeURIComponent(q), opt)
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (g) {
+          var r0 = g && g.results && g.results[0];
+          if (!r0) { done(null); return null; }
+          return pronostico(r0.latitude, r0.longitude, r0.name + (r0.country ? ', ' + r0.country : ''));
+        }).catch(function () { done(null); });
+    },
+    /* v2.17.0 · TANDA 2. Las cuatro lecturas del teléfono siguen el molde de contactSearch():
+       lista, 'NEED_PERM' (y se abre el permiso/pantalla para que el usuario lo dé) o null. */
+    notifQuery: function (q, max) {
+      if (!BR || !BR.notifList) return null;
+      try {
+        var r = BR.notifList(String(q || ''), max || 8);
+        if (r === 'NEED_PERM') { this.askPerm('notif'); return 'NEED_PERM'; }
+        return JSON.parse(r || '[]');
+      } catch (e) { return null; }
+    },
+    smsQuery: function (q, max) {
+      if (!BR || !BR.smsList) return null;
+      try {
+        var r = BR.smsList(String(q || ''), max || 5);
+        if (r === 'NEED_PERM') { this.askPerm('sms'); return 'NEED_PERM'; }
+        return JSON.parse(r || '[]');
+      } catch (e) { return null; }
+    },
+    /* {lat, lon, acc} | 'NEED_PERM' | null (sin ubicación guardada) */
+    locationNow: function () {
+      if (!BR || !BR.locationGet) return null;
+      try {
+        var r = BR.locationGet();
+        if (r === 'NEED_PERM') { this.askPerm('location'); return 'NEED_PERM'; }
+        if (!r || r === 'NONE') return null;
+        var o = JSON.parse(r);
+        return (isFinite(o.lat) && isFinite(o.lon)) ? o : null;
+      } catch (e) { return null; }
+    },
+    mediaKey: function (action) {
+      if (!BR || !BR.mediaKey) return false;
+      try { return !!BR.mediaKey(String(action || '')); } catch (e) { return false; }
+    },
+    /* v2.16.0 · TEXTO DE UNA PÁGINA, para que el agente la resuma. cb(texto|null).
+       Solo https y nunca hosts locales/privados. Pasa por r.jina.ai (ya usado en la búsqueda web)
+       para no depender de CORS ni de HTML crudo. Tope 12 s y 6000 caracteres. */
+    pageText: function (url, cb) {
+      var fin = false;
+      function done(v) { if (fin) return; fin = true; cb(v); }
+      var u = String(url || '').trim();
+      if (!/^https:\/\/[^\s\/]+/i.test(u) || /^https:\/\/(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[|0\.)/i.test(u) || typeof fetch !== 'function') { done(null); return; }
+      var c = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      setTimeout(function () { if (c) c.abort(); done(null); }, 12000);
+      fetch('https://r.jina.ai/' + u, c ? { signal: c.signal } : {})
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (t) { done(t ? String(t).slice(0, 6000) : null); })
+        .catch(function () { done(null); });
     },
     contactSearch: function (q) {
       if (!BR || !BR.contacts) return null;

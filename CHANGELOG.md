@@ -1,3 +1,46 @@
+## [Sin publicar] - 2026-10-29 (autoprueba en el teléfono)
+
+**«PROBAR AGENTE»: medir, con el modelo cargado EN el teléfono, si sirve de agente. Sin PC.**
+
+- Ajustes → Modelos: botones **Probar agente** (8 pedidos) y **Prueba completa** (21). Cada pedido pasa por el mismo prompt, la misma selección de herramientas y la misma gramática GBNF que el agente real (`KiuAgente.probarDecision`), pero **no ejecuta nada**: no suena ninguna alarma ni se manda ningún mensaje.
+- Muestra aciertos, segundos por decisión y tokens por segundo, qué pedidos fallaron y por qué ("eligió now", "dijo listo sin hacer nada", "when = …"), y un veredicto con los mismos umbrales del arnés de la PC: ≥ 80 % sirve, 50–80 % anda a medias, < 50 % el modelo es demasiado chico. Guarda el último resultado por modelo; una corrida cancelada no pisa el resultado completo.
+- `js/kiu-autoprueba.js` + 12 tests (modelo de mentira con el prompt y la gramática reales; control de que no ejecuta herramientas; un test impide que sus casos se desincronicen de `tests/evals/escenarios.mjs`). 615 tests en verde.
+- Los botones antiguos `mdl-load/mdl-test/mdl-free` ya no existen en `index.html` (código huérfano en `app-ui.js`); no se tocaron.
+
+## [Sin publicar] - 2026-10-29 (rutinas)
+
+**RUTINAS: "todos los días a las 8 dame el resumen", "los domingos a las 20 avisame si llueve mañana".**
+
+- Módulo nuevo `js/kiu-rutinas.js` + herramienta `manage_routine` (ver / crear / borrar; crear y borrar piden confirmación, ver no). Hora, días ("lunes y jueves", "lunes a viernes", "fines de semana"), condición opcional de lluvia (hoy o mañana, umbral 50 %) y una acción.
+- **Solo pueden LEER**: resumen del día, clima, agenda de hoy, tareas, o decir un texto. Mandar mensajes, llamar o borrar no son acciones de rutina, y al ejecutar se vuelve a comprobar el riesgo real de la herramienta.
+- **Cuándo corren**: un tick por minuto mientras la app vive, al volver a primer plano y cuando suena una alarma. Con la app cerrada **no se ejecuta nada por cuenta propia**: se programa una alarma normal de Android ("Rutina: <nombre>") y al tocarla se abre Kiu y la rutina corre. Sin servicio ni permiso nuevo; está dicho en la respuesta al crearla.
+- Corre una vez por día, solo hasta 6 h después de su hora (un buen día a las 15 no sirve), y una rutina recién creada no corre de inmediato si su hora de hoy ya pasó. Si falta red para la condición de lluvia no se marca el día: reintenta.
+- 11 tests propios + 3 pedidos en el arnés de evaluación. Techos de presupuesto de tokens subidos otra vez (compacto 200→240, peor caso 900→1000, prompt 1050→1150). 603 tests en verde.
+
+## [Sin publicar] - 2026-10-29 (tanda 2)
+
+**SEGUNDA TANDA "JARVIS": que Kiu vea lo que pasa en el teléfono.**
+
+- **`read_notifications`** — "¿qué me llegó?", "¿escribió Ana?". Nuevo `KiuNotifService` (NotificationListenerService) + `KiuNotifStore`: **solo en RAM**, tope de 40 entradas y 280 caracteres, descarta notificaciones en curso, resúmenes de grupo y las propias; las republicadas no se duplican. Requiere que el usuario active "Acceso a notificaciones" (la herramienta abre esa pantalla).
+- **`read_sms`** — últimos SMS recibidos o filtrados por texto/número. Permiso `READ_SMS` pedido en el momento. Solo lectura, tope de 10.
+- **`media_control`** — pausa/seguir/siguiente/anterior con teclas multimedia (`AudioManager`), sin permisos.
+- **Ubicación en el clima** — `get_weather` sin ciudad usa la última ubicación conocida (`ACCESS_COARSE_LOCATION`, aproximada, sin encender el GPS) y va directo al pronóstico por coordenadas.
+- Puente nuevo: `notifAccess`, `notifList`, `smsList`, `locationGet`, `mediaKey`; `requestPerm` entiende `sms`, `location` y `notif`.
+- Privacidad: lo que estas herramientas leen lo ve el modelo LOCAL; el bucle del agente no corre con proveedores en la nube.
+- Tests: 592 en verde. `KiuNotifStore` (Java puro) se ejecuta de verdad con su arnés y un control negativo. **El resto del Java (servicio, puente, manifiesto) no se pudo compilar acá por no haber Android SDK: queda para el CI y para probar en un teléfono.**
+- Presupuesto de tokens: los techos del manifiesto subieron otra vez (compacto 170→200, peor caso 760→900, prompt 900→1050) por las 3 herramientas nuevas. Lo que se paga por turno sigue siendo `seleccionar()` (≤60). Con 21 herramientas conviene medir en dispositivo antes de agregar más.
+
+## [Sin publicar] - 2026-10-29
+
+**PRIMERA TANDA "JARVIS": que Kiu consulte el mundo y lleve tu día.**
+
+- **`get_weather`** — clima y pronóstico de 3 días con Open-Meteo (sin clave). Antes el clima iba por `web_search`, que solo devuelve el resumen de DuckDuckGo. La última ciudad nombrada queda como predeterminada.
+- **`summarize_url`** — lee una página `https://` y el modelo la resume. Rechaza `http` y hosts locales/privados.
+- **`log_expense`** — "gasté 12 en almuerzo", "cuánto gasté este mes". Local; leer no pide confirmación, anotar sí.
+- **`daily_briefing`** — fecha, agenda de hoy, tareas, alarmas y clima en UNA decisión del modelo; cada pieza falla por separado.
+- Ayudantes `KiuApp.weatherQuery` y `KiuApp.pageText`; etiquetas, iconos y palabras clave de las herramientas nuevas; 6 pedidos nuevos en el arnés de evaluación (el de clima ahora espera `get_weather`) y la red del arnés responde con la forma real de cada servicio.
+- Nota: las palabras clave descartan palabras de 1 letra, así que las frases se escriben sin ellas ("va llover", no "va a llover").
+
 ## [2.15.0] - 2026-10-29
 
 **EL ERROR QUE IMPEDÍA ACTUALIZAR, Y ERA MÍO.**

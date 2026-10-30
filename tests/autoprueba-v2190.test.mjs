@@ -14,6 +14,7 @@ const WWW = path.join(process.cwd(), 'app/src/main/assets/www');
 const J = (x) => JSON.parse(JSON.stringify(x));
 const corrida = (U, o) => new Promise((r) => U.correr(o, r));
 
+let ULTIMO = null;   /* lo último que recibió el modelo de mentira (prompt y compuestos) */
 /* un modelo que contesta lo que dice `responder(pedido)`; guarda lo que recibió */
 function conModelo(responder, extra = {}) {
   const r = cargarAgente();
@@ -23,13 +24,22 @@ function conModelo(responder, extra = {}) {
     ask(hist, maxT, cb, onTok, gbnf) {
       const pedido = hist[hist.length - 1].content;
       visto.push({ hist, gbnf, pedido });
-      const out = responder(pedido, visto.length);
+      ULTIMO = { hist, comp: r.ctx.KiuAutoprueba.COMPUESTOS };
+      const out = responder(pedido, visto.length, hist);
       if (extra.async) setTimeout(() => cb(out), 0); else cb(out);
     },
   };
   return { ...r, visto, U: r.ctx.KiuAutoprueba };
 }
-const perfecto = (ctx) => (pedido) => {
+const ARGS_COMPUESTO = { set_alarm: { when: 'a las 7' }, get_weather: { place: 'Córdoba' }, manage_task: { action: 'add', text: 'comprar pan' }, remember: { text: 'el dentista es el martes' }, device_action: { what: 'linterna' }, media_control: { action: 'pause' } };
+const perfecto = () => (pedido) => {
+  const comp = ULTIMO.comp, hist = ULTIMO.hist;
+  const c = comp && comp.find((x) => x.pedido === pedido);
+  if (c) {
+    const paso2 = /YA INTENTASTE/.test(hist[0].content);
+    const t = c.partes[paso2 ? 1 : 0].tool;
+    return { ok: true, tps: 7.5, text: JSON.stringify({ tool: t, args: ARGS_COMPUESTO[t] }) };
+  }
   const esc = ESCENARIOS.find((e) => e.pedido === pedido);
   return { ok: true, tps: 7.5, text: JSON.stringify({ tool: esc.espera.tool, args: esc.ejemplo || {} }) };
 };
@@ -37,7 +47,7 @@ const perfecto = (ctx) => (pedido) => {
 test('un modelo que acierta saca 100 % en la prueba completa y se guarda el resultado', async () => {
   const { U, ctx } = conModelo((p) => perfecto()(p));
   const r = J(await corrida(U, { completa: true }));
-  assert.equal(r.total, U.CASOS.length);
+  assert.equal(r.total, U.CASOS.length + U.COMPUESTOS.length);
   assert.equal(r.aciertos, r.total, JSON.stringify(r.fallos));
   assert.equal(r.nivel, 'bien');
   assert.match(r.texto, /sirve como agente/);
@@ -64,15 +74,16 @@ test('un modelo que siempre dice "listo" saca 0 % y el motivo es claro', async (
 
 test('un modelo que se equivoca de herramienta o de argumento lo dice', async () => {
   const { U } = conModelo((p) => {
-    if (p.includes('alarma a las 7')) return { ok: true, text: JSON.stringify({ tool: 'set_alarm', args: { when: 'mañana a las 9' } }) };   // argumento sin 7
-    if (p.includes('linterna')) return { ok: true, text: JSON.stringify({ tool: 'now', args: {} }) };                                       // herramienta mala
+    const simple = ESCENARIOS.some((e) => e.pedido === p);   // los compuestos tienen su propio test
+    if (simple && p.includes('alarma a las 7')) return { ok: true, text: JSON.stringify({ tool: 'set_alarm', args: { when: 'mañana a las 9' } }) };   // argumento sin 7
+    if (simple && p.includes('linterna')) return { ok: true, text: JSON.stringify({ tool: 'now', args: {} }) };                                       // herramienta mala
     return perfecto()(p);
   });
   const r = J(await corrida(U, { completa: true }));
   assert.equal(r.fallos.length, 2);
   assert.ok(r.fallos.some((f) => /con when/.test(f.motivo)));
   assert.ok(r.fallos.some((f) => /eligió now/.test(f.motivo)));
-  assert.equal(r.nivel, 'bien', '19 de 21 sigue siendo ≥ 80 %');
+  assert.equal(r.nivel, 'bien', '19 de 21 (+3 compuestos) sigue siendo ≥ 80 %');
 });
 
 test('NO ejecuta ninguna herramienta: no suena ninguna alarma ni se manda nada', async () => {
@@ -237,4 +248,45 @@ test('v2.19.4: el veredicto avisa si el modelo acierta pero es lento', () => {
   assert.equal(v.lento, true);
   assert.match(v.texto, /lento/);
   assert.equal(U.veredicto(0.3, 43700).nivel, 'mal');
+});
+
+/* ---------- v2.20.0 · pedidos compuestos ---------- */
+test('v2.20.0: la selección deja pasar las DOS herramientas de cada pedido compuesto', () => {
+  const { U, ctx } = conModelo(() => ({}));
+  for (const c of U.COMPUESTOS) {
+    const sel = ctx.KiuAgente.seleccionar(c.pedido).slice(0, 4);
+    for (const parte of c.partes) assert.ok(sel.includes(parte.tool), c.pedido + ' → falta ' + parte.tool + ' en ' + sel);
+  }
+});
+
+test('v2.20.0: un modelo que hace las dos partes acierta, y el 2.º paso se mide con el 1.º hecho', async () => {
+  const { U, visto } = conModelo((p) => perfecto()(p));
+  const r = J(await corrida(U, { completa: true }));
+  assert.equal(r.aciertos, r.total, JSON.stringify(r.fallos));
+  const p2 = visto.filter((v) => /YA INTENTASTE/.test(v.hist[0].content));
+  assert.equal(p2.length, U.COMPUESTOS.length);
+  for (const v of p2) {
+    assert.match(v.hist[0].content, /otra parte sin hacer/);
+    assert.match(v.gbnf, /listo|done/, 'en el 2.º paso la gramática admite terminar');
+  }
+  assert.ok(visto.filter((v) => !/YA INTENTASTE/.test(v.hist[0].content)).every((v) => !/otra parte sin hacer/.test(v.hist[0].content)));
+});
+
+test('v2.20.0: decir "listo" en el 2.º paso es un fallo de la 2.ª parte', async () => {
+  const { U } = conModelo((p) => {
+    if (U0().COMPUESTOS.some((c) => c.pedido === p) && /YA INTENTASTE/.test(ULTIMO.hist[0].content)) return { ok: true, text: '{"listo":true}' };
+    return perfecto()(p);
+  });
+  const U0 = () => U;
+  const r = J(await corrida(U, { completa: true }));
+  assert.equal(r.aciertos, r.total - U.COMPUESTOS.length);
+  assert.equal(r.fallos.length, U.COMPUESTOS.length);
+  assert.match(r.fallos[0].motivo, /2\.ª parte.*listo/);
+});
+
+test('v2.20.0: «Probar agente» (rápida) no corre compuestos ni ejecuta nada', async () => {
+  const { U, visto } = conModelo((p) => perfecto()(p));
+  const r = J(await corrida(U, { completa: false }));
+  assert.equal(r.total, U.CASOS.filter((c) => c.rapido).length);
+  assert.ok(!visto.some((v) => U.COMPUESTOS.some((c) => c.pedido === v.pedido)));
 });

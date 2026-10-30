@@ -813,12 +813,15 @@ window.KiuAgente = (function () {
     var hermes = /hermes/i.test(nombre);
     var herr = seleccionar(pedido), harness = null;
     try { harness = window.KiuHarness2 && window.KiuHarness2.choose({ modelName: nombre }); } catch (e) { harness = null; }
+    /* v2.20.0: opts.obs = lo que "ya hizo" el agente (pedidos compuestos: el 2.º paso se mide
+       con el 1.º ya hecho). Sin obs es la decisión inicial de siempre. */
+    var obs = (opts && opts.obs && opts.obs.length) ? opts.obs : [];
     var hist = [
-      { role: 'system', content: systemPrompt(s(pedido, 300), herr, [], 1, harness && harness.id === 'Harness-Local-Compact', hermes, herramientasConPalabras(herr, pedido)) },
+      { role: 'system', content: systemPrompt(s(pedido, 300), herr, obs, 1, harness && harness.id === 'Harness-Local-Compact', hermes, herramientasConPalabras(herr, pedido)) },
       { role: 'user', content: s(pedido, 300) }
     ];
     var gb = null;
-    if (!(opts && opts.sinGramatica)) { try { gb = grammar(herr, hermes, false); } catch (e2) { gb = null; } }
+    if (!(opts && opts.sinGramatica)) { try { gb = grammar(herr, hermes, obs.length > 0); } catch (e2) { gb = null; } }
     var t0 = Date.now(), espera = 0;
     (function pedir() {
       K.ask(hist, (harness && harness.maxTokens) || 120, function (res) {
@@ -1649,7 +1652,7 @@ window.KiuAgente = (function () {
     try { if (window.S && S.kiu && /qwen3/i.test(String(S.kiu.name || ''))) p += '\n/no_think'; } catch (eNt) { }
     if (obs && obs.length) {
       p += '\n\nYA INTENTASTE:\n' + obs.map(function (o, i2) { return (i2 + 1) + ') ' + o; }).join('\n') +
-        '\nCon eso decidí si falta algo o si ya está listo.';
+        '\nSi el pedido tenía otra parte sin hacer, hacela ahora; si no, listo.';
     }
     return p;
   }

@@ -1,3 +1,16 @@
+## [2.20.0] - 2026-10-30
+
+**PEDIDOS COMPUESTOS: «poné una alarma a las 7 y decime qué tiempo hace».**
+
+Lo que ya había: el bucle del agente encadena decisiones (hasta 3 por turno, cada una ve lo anterior) y la selección de herramientas deja pasar las dos de un pedido compuesto. Lo que faltaba era empujar al modelo a no decir «listo» con la mitad hecha, y **poder medir** si lo hace. Sigue siendo una decisión (una generación) por herramienta: no se cambió el formato de la respuesta del modelo, para no arriesgar el acierto de un modelo chico.
+
+- **Prompt del 2.º paso en adelante:** «Si el pedido tenía otra parte sin hacer, hacela ahora; si no, listo.» (reemplaza «Con eso decidí si falta algo o si ya está listo.»; mismo tamaño). El 1.er paso no cambia, y su gramática sigue sin admitir «listo».
+- **Prueba completa (Ajustes → Modelos):** 3 pedidos compuestos más, de dos decisiones cada uno. La 1.ª tiene que ser una de las dos herramientas (en cualquier orden); la 2.ª, medida con la 1.ª ya hecha, la otra (no «listo»). Fallos se muestran como «2.ª parte: dijo "listo" sin hacer …». «Probar agente» (rápida, 7) no cambia. Sigue sin ejecutar ninguna herramienta.
+- `KiuAgente.probarDecision(pedido, cb, {obs})` mide una decisión con pasos previos ya hechos.
+- Tests: `tests/compuestos-v2200.test.mjs` (el bucle real ejecuta las dos partes en un turno, el paso 2 ve la 1.ª) y 4 más en `autoprueba-v2190.test.mjs`.
+- **Sin verificar:** nada de esto se midió en un teléfono; los tests usan un modelo guionizado. El valor real está en correr la Prueba completa y ver si el 1B completa la 2.ª parte. Cada herramienta extra cuesta ~6 s (1B), y con más de una herramienta el turno suma una redacción final.
+- Versión 2.20.0 (versionCode 107).
+
 ## [2.19.4] - 2026-10-30
 
 **PRIMERAS MEDICIONES REALES EN UN TELÉFONO** (2.19.3 instalada; ya no se cierra la app):

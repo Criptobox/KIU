@@ -1221,7 +1221,7 @@
         if (ev) ev.textContent = dv.version ? ('Kiu instalada: ' + dv.version + ' (código ' + dv.versionCode + ')') : '';
       } catch (eV) { }
       /* v2.19.0 · PROBAR AGENTE: mide, en este teléfono y con el modelo cargado, si elige bien las
-         herramientas. Rápida = 7 pedidos; completa = los 21. No ejecuta nada. */
+         herramientas. Rápida = 7 pedidos; completa = los 21 + 3 compuestos (2 decisiones cada uno). No ejecuta nada. */
       var self3 = this;
       function probarAgente(completa, sinGram) {
         var res = document.getElementById('mdl-agent-res');

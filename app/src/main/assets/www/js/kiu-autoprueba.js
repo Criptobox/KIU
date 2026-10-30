@@ -43,6 +43,14 @@ window.KiuAutoprueba = (function () {
     { pedido: 'todos los días a las 8 dame el resumen', tool: 'manage_routine', args: { action: 'add', at: { re: '8' } } }
   ];
 
+  /* v2.20.0 · PEDIDOS COMPUESTOS (solo en la prueba completa). Dos partes, en cualquier orden:
+     la 1.ª decisión tiene que ser una de las dos; la 2.ª, con la 1.ª ya hecha, la otra (no "listo"). */
+  var COMPUESTOS = [
+    { pedido: 'poné una alarma a las 7 y decime qué tiempo hace en Córdoba', partes: [{ tool: 'set_alarm', args: { when: { re: '7' } } }, { tool: 'get_weather' }] },
+    { pedido: 'agregá una tarea: comprar pan, y anotá que el dentista es el martes', partes: [{ tool: 'manage_task', args: { action: 'add', text: { re: 'pan' } } }, { tool: 'remember' }] },
+    { pedido: 'encendé la linterna y pausá la música', partes: [{ tool: 'device_action', args: { what: 'linterna' } }, { tool: 'media_control', args: { action: 'pause' } }] }
+  ];
+
   function coincide(valor, esperado) {
     if (esperado && typeof esperado === 'object' && esperado.re) {
       return new RegExp(esperado.re, esperado.i ? 'i' : '').test(String(valor == null ? '' : valor));
@@ -98,6 +106,29 @@ window.KiuAutoprueba = (function () {
     try { var d = JSON.parse(window.rawBridge('sysInfo') || '{}'); return typeof d.ramAvail === 'number' ? Math.round(d.ramAvail / 1048576) : null; } catch (e) { return null; }
   }
 
+  function compuesto(caso, opcs, vista, fin) {
+    var A = window.KiuAgente, P = caso.partes;
+    A.probarDecision(caso.pedido, function (d1) {
+      vista(d1);
+      var i1 = -1;
+      for (var k = 0; k < P.length; k++) if (evaluar(P[k], d1).ok) { i1 = k; break; }
+      if (i1 < 0) {
+        var e1 = evaluar(P[0], d1);
+        var m = d1 && d1.tool && (d1.tool === P[1].tool) ? evaluar(P[1], d1).motivo : e1.motivo;
+        fin({ ok: false, motivo: '1.ª parte: ' + (m || 'eligió ' + (d1 && d1.tool)) }, d1 && d1.ms || 0);
+        return;
+      }
+      var otra = P[1 - i1];
+      A.probarDecision(caso.pedido, function (d2) {
+        vista(d2);
+        var ms = (d1.ms || 0) + (d2 && d2.ms || 0);
+        if (d2 && d2.ok && !d2.tool && d2.listo) { fin({ ok: false, motivo: '2.ª parte: dijo "listo" sin hacer ' + otra.tool }, ms); return; }
+        var e2 = evaluar(otra, d2);
+        fin(e2.ok ? { ok: true, motivo: '' } : { ok: false, motivo: '2.ª parte: ' + e2.motivo }, ms);
+      }, { sinGramatica: opcs.sinGramatica, obs: ['[' + P[i1].tool + ' ok] Listo.'] });
+    }, opcs);
+  }
+
   /* opts: {completa:bool, sinGramatica:bool, progreso:fn(i, n, caso), cancelar:fn()->bool}
      cb({ok, modelo, total, aciertos, acierto, msPromedio, tps, fallos:[{pedido, motivo}], nivel, texto}) */
   function correr(opts, cb) {
@@ -107,20 +138,21 @@ window.KiuAutoprueba = (function () {
     var cargado = !!(window.S && window.S.kiu && window.S.kiu.ok);
     if (!A || typeof A.probarDecision !== 'function' || !K) { cb({ ok: false, err: 'el agente no está disponible' }); return; }
     if (!cargado) { cb({ ok: false, err: 'cargá un modelo primero (Ajustes → Modelos)' }); return; }
-    var casos = CASOS.filter(function (c) { return o.completa || c.rapido; });
+    var casos = CASOS.filter(function (c) { return o.completa || c.rapido; }).concat(o.completa ? COMPUESTOS : []);
     var filas = [], i = 0, tpsSum = 0, tpsN = 0;
     (function sig() {
       if ((typeof o.cancelar === 'function' && o.cancelar()) || i >= casos.length) { fin(); return; }
       var caso = casos[i];
       try { if (typeof o.progreso === 'function') o.progreso(i, casos.length, caso); } catch (e) { }
       miga({ pedido: caso.pedido, n: i + 1, de: casos.length, modelo: String(window.S.kiu.name || ''), gram: !o.sinGramatica, ramMB: ramLibreMB(), at: Date.now() });
+      var opcs = { sinGramatica: !!o.sinGramatica };
+      function listo(ev, ms) { filas.push({ pedido: caso.pedido, ok: ev.ok, motivo: ev.motivo, ms: ms }); i++; sig(); }
+      if (caso.partes) { compuesto(caso, opcs, function (dec) { if (dec && dec.tps) { tpsSum += dec.tps; tpsN++; } }, listo); return; }
       A.probarDecision(caso.pedido, function (dec) {
         var ev = evaluar(caso, dec);
         if (dec && dec.tps) { tpsSum += dec.tps; tpsN++; }
-        filas.push({ pedido: caso.pedido, ok: ev.ok, motivo: ev.motivo, ms: dec && dec.ms || 0 });
-        i++;
-        sig();
-      }, { sinGramatica: !!o.sinGramatica });
+        listo(ev, dec && dec.ms || 0);
+      }, opcs);
     })();
     function fin() {
       miga(null);   /* terminó (bien o cancelada): no murió */
@@ -141,5 +173,5 @@ window.KiuAutoprueba = (function () {
     }
   }
 
-  return { migasPendientes: migasPendientes, limpiarMigas: limpiarMigas, CASOS: CASOS, correr: correr, evaluar: evaluar, veredicto: veredicto, ultima: ultima, UMBRAL_BIEN: UMBRAL_BIEN, LENTO_MS: LENTO_MS };
+  return { migasPendientes: migasPendientes, limpiarMigas: limpiarMigas, CASOS: CASOS, COMPUESTOS: COMPUESTOS, correr: correr, evaluar: evaluar, veredicto: veredicto, ultima: ultima, UMBRAL_BIEN: UMBRAL_BIEN, LENTO_MS: LENTO_MS };
 })();

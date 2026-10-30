@@ -42,3 +42,26 @@ test('en el 1.er paso la gramática no admite "listo"; en el 2.º sí', async ()
   assert.doesNotMatch(raiz(x.prompts[0].gbnf), /\bdone\b/);
   assert.match(raiz(x.prompts[1].gbnf), /\bdone\b/);
 });
+
+test('v2.20.1: en el 2.º paso el ejemplo del prompt NO es el de la herramienta que ya salió bien', async () => {
+  const ej = (sys) => (sys.match(/EJEMPLOS:\n"(\w+)"/) || [])[1];
+  /* como en el teléfono: la 1.ª decisión copia el ejemplo (remember) y la 2.ª lo repetía */
+  const x = await correr([
+    JSON.stringify({ tool: 'remember', args: { text: 'el dentista es el martes' } }),
+    JSON.stringify({ tool: 'manage_task', args: { action: 'add', text: 'comprar pan' } }),
+    JSON.stringify({ listo: true }),
+  ]);
+  const primera = ej(x.prompts[0].sys), segunda = ej(x.prompts[1].sys);
+  assert.equal(primera, 'remember');
+  assert.notEqual(segunda, primera, 'el 2.º paso mostraba el mismo ejemplo y el modelo lo copiaba');
+  assert.ok(x.prompts[1].sys.lastIndexOf('remember') > x.prompts[1].sys.indexOf('manage_task'), 'lo ya hecho va al final de la lista');
+});
+
+test('v2.20.1: la herramienta ya usada sigue disponible (se puede repetir, p. ej. dos alarmas)', async () => {
+  const x = await correr([
+    JSON.stringify({ tool: 'manage_task', args: { action: 'add', text: 'comprar pan' } }),
+    JSON.stringify({ listo: true }),
+  ]);
+  assert.match(x.prompts[1].sys, /manage_task/);
+  assert.match(x.prompts[1].gbnf, /manage_task/);
+});

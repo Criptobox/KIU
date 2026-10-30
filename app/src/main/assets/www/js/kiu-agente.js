@@ -1617,6 +1617,14 @@ window.KiuAgente = (function () {
     /* Si el llamador pasa una lista, el prompt muestra SOLO esas herramientas.
        Importa para un modelo chico: cada línea del manifiesto es contexto que no
        está usando, y cada herramienta de más es una chance más de que elija mal. */
+    /* v2.20.0 · PEDIDOS COMPUESTOS: a partir del 2.º paso, las herramientas que ya salieron bien van
+       al final de la lista. El ejemplo del prompt es el de la PRIMERA herramienta y el modelo chico
+       lo copia: medido en el teléfono (1B), repetía la herramienta que acababa de usar en vez de
+       hacer la otra parte. Las ya usadas no se quitan: repetir una (dos alarmas) sigue siendo válido. */
+    var hechas = {}, pendientes = [], usadas = [];
+    for (var oi = 0; obs && oi < obs.length; oi++) { var mo = /^\[(\w+) ok\]/.exec(String(obs[oi])); if (mo) hechas[mo[1]] = 1; }
+    for (var hi = 0; herramientas && hi < herramientas.length; hi++) (hechas[herramientas[hi]] ? usadas : pendientes).push(herramientas[hi]);
+    if (pendientes.length && usadas.length) herramientas = pendientes.concat(usadas);
     var lista = manifest(herramientas, !!compact);
     var per = perfil();
     var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n\n' +

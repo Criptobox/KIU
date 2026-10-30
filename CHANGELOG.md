@@ -1,3 +1,13 @@
+## [2.20.1] - 2026-10-30
+
+**PRIMERA MEDICIÓN DE PEDIDOS COMPUESTOS EN EL TELÉFONO** (2.20.0, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 6,6 s por decisión, 3,5 tok/s. Los 21 pedidos simples siguen bien; fallaron los 3 compuestos, por dos causas distintas:
+
+- **Repetía la herramienta recién usada (2 de 3).** «alarma a las 7 y decime el tiempo» → 2.ª decisión `set_alarm` otra vez; «tarea… y anotá…» → `remember` otra vez. Causa: el prompt muestra UN ejemplo, el de la herramienta más probable, y el modelo chico lo copia; en el 2.º paso ese ejemplo era justo el de lo que ya se había hecho. Ahora, desde el 2.º paso, las herramientas que ya salieron bien pasan al final de la lista (no se quitan: repetir una, p. ej. dos alarmas, sigue siendo válido), así que el ejemplo es de una herramienta pendiente.
+- **Fallo falso de la prueba (1 de 3).** «encendé la linterna y pausá la música» → `media_control` con `play`; la prueba exigía `pause`, pero en `media_control` play y pause son la misma acción (alternan). El caso compuesto ya no exige ese argumento. (El caso simple «pausá la música» de la prueba y del arnés sí lo exige; no se tocó.)
+- Tests: el 2.º paso no repite el ejemplo del 1.º; la herramienta usada sigue disponible.
+- **Sin verificar:** el arreglo de «repite la herramienta» no se midió en el teléfono; hay que repetir la Prueba completa.
+- Versión 2.20.1 (versionCode 108).
+
 ## [2.20.0] - 2026-10-30
 
 **PEDIDOS COMPUESTOS: «poné una alarma a las 7 y decime qué tiempo hace».**

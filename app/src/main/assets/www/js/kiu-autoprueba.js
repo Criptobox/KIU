@@ -48,7 +48,7 @@ window.KiuAutoprueba = (function () {
   var COMPUESTOS = [
     { pedido: 'poné una alarma a las 7 y decime qué tiempo hace en Córdoba', partes: [{ tool: 'set_alarm', args: { when: { re: '7' } } }, { tool: 'get_weather' }] },
     { pedido: 'agregá una tarea: comprar pan, y anotá que el dentista es el martes', partes: [{ tool: 'manage_task', args: { action: 'add', text: { re: 'pan' } } }, { tool: 'remember' }] },
-    { pedido: 'encendé la linterna y pausá la música', partes: [{ tool: 'device_action', args: { what: 'linterna' } }, { tool: 'media_control', args: { action: 'pause' } }] }
+    { pedido: 'encendé la linterna y pausá la música', partes: [{ tool: 'device_action', args: { what: 'linterna' } }, { tool: 'media_control' }] }   /* sin args: play y pause son lo mismo (alternan) */
   ];
 
   function coincide(valor, esperado) {

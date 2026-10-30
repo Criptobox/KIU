@@ -1746,9 +1746,17 @@ window.KiuAgente = (function () {
     if (pendientes.length && usadas.length) herramientas = pendientes.concat(usadas);
     var lista = manifest(herramientas, !!compact);
     var per = perfil();
-    var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n\n' +
-      'HERRAMIENTAS:\n' + lista + '\n\n' +
+    /* v2.21.1 · ORDEN PARA LA CACHÉ DEL MOTOR. El motor reutiliza el PRINCIPIO del prompt si es igual al de la generación
+       anterior (v2.13.7) y solo vuelve a leer desde donde cambia. Medido en el teléfono (2.21.0, Qwen2.5-Coder 1.5B): leer el
+       pedido es el 72 % de cada decisión (6,3 de 8,7 s). Antes la lista de herramientas, que cambia en cada pedido, iba segunda
+       y cortaba la reutilización enseguida: solo el 19 % del texto se reutilizaba. Ahora va primero todo lo que NO cambia
+       (quién es, formato de la respuesta, una herramienta por vez), después el perfil (cambia poco) y al final lo que cambia
+       en cada pedido. Lo que decide el paso («Todavía no hiciste nada» / «listo») sigue siendo la última línea. */
+    var p = 'Sos Kiu, un asistente que usa herramientas para responder.\n' +
+      (hermes ? 'Respondé SOLO con una llamada Hermes: <tool_call>{\"name\":\"nombre\",\"arguments\":{\"k\":\"v\"}}</tool_call>. No agregues texto.\n' : 'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' + 'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n') +
+      'Usá una herramienta por vez. Elegí la más específica que sirva.\n\n' +
       (per ? 'PERFIL DEL USUARIO: ' + per + '\n\n' : '') +
+      'HERRAMIENTAS:\n' + lista + '\n\n' +
       /* v2.9.2: la TAREA solo va si NO hay historial. Con historial, el último
          mensaje del usuario YA es la tarea y repetirla acá es tokens de prefill
          tirados a la basura — y en un teléfono, cada token cuenta. */
@@ -1761,10 +1769,8 @@ window.KiuAgente = (function () {
         return 'EJEMPLOS:\n' + ex.join('\n') +
           '\n"charla normal" → {"listo":true}\n\n';
       })() +
-      (hermes ? 'Respondé SOLO con una llamada Hermes: <tool_call>{\"name\":\"nombre\",\"arguments\":{\"k\":\"v\"}}</tool_call>. No agregues texto.\n' : 'Respondé SOLO con un objeto JSON, sin texto alrededor, sin markdown.\n' + 'Si necesitás una herramienta: {"tool": "nombre", "args": {"k": "v"}}\n') +
       /* v2.14.4 · en el primer paso NO se ofrece "listo" (ver grammar()). */
-      ((obs && obs.length) ? 'Si no necesitás ninguna más: {"listo": true}\n\n' : 'Elegí SIEMPRE una herramienta de la lista. Todavía no hiciste nada.\n\n') +
-      'Usá una herramienta por vez. Elegí la más específica que sirva.';
+      ((obs && obs.length) ? 'Si no necesitás ninguna más: {"listo": true}' : 'Elegí SIEMPRE una herramienta de la lista. Todavía no hiciste nada.');
     /* Receta procedural: solo pista de herramientas, nunca argumentos guardados ni ejecución automática. */
     try {
       var recipe = window.KiuSkills && window.KiuSkills.matchRecipe && window.KiuSkills.matchRecipe(pedido);

@@ -1,3 +1,16 @@
+## [2.21.1] - 2026-10-30
+
+**PROMPT REORDENADO PARA QUE EL MOTOR REUTILICE MÁS (leer el pedido es el 72 % de cada decisión).**
+
+Medición de 2.21.0 en el teléfono, con la velocidad desglosada por primera vez (Qwen2.5-Coder·1.5B, Prueba completa): **27 de 27 (100 %)**, 8,7 s por decisión, de los cuales **leer el pedido son 6,3 s** y **generar va a 14,8 tok/s**. El «2,9 tok/s» de siempre mezclaba las dos cosas y hacía parecer lentísima la generación. El cuello de botella es el largo del prompt, no la velocidad del modelo.
+
+- El motor ya reutilizaba el **principio** del prompt si era igual al de la generación anterior (v2.13.7), pero la lista de herramientas, que cambia en cada pedido, iba segunda y cortaba la reutilización enseguida. Ahora va primero todo lo que no cambia (quién es Kiu, formato de la respuesta, «una herramienta por vez»), después el perfil y al final lo que cambia (herramientas, tarea, ejemplo y la línea del paso, que sigue siendo la última).
+- **Mismo contenido, otro orden:** no se agregó ni quitó nada (21 165 caracteres frente a 21 192 en los 27 prompts). Lo que se reutiliza del pedido anterior, en el orden de la Prueba, pasa del **19 % al 47 %**.
+- **Qué esperar:** en la Prueba, «Leer el pedido» debería bajar, porque los pedidos van seguidos. En el uso diario la ganancia es menor: la caché solo sirve si la generación anterior fue otra decisión del agente (el 2.º paso de un compuesto, o un pedido justo después de otro). Una charla o una redacción en el medio la reemplaza.
+- **Riesgo:** las reglas del formato ahora van al principio y no al final. La gramática obliga igual al JSON, pero un modelo chico puede ser sensible al orden: **hay que repetir la Prueba completa**. Si baja el acierto, se revierte.
+- Tests: los 27 prompts deben empezar con el mismo bloque fijo, las herramientas van después y la línea del paso es la última; el reutilizable entre pedidos seguidos debe ser al menos 40 %. Prompts fijados actualizados a propósito (cambian los 27).
+- Versión 2.21.1 (versionCode 117).
+
 ## [2.21.0] - 2026-10-30
 
 **RUTINAS POR VOZ: PAUSAR, REANUDAR Y CAMBIAR.** «pausá la rutina del resumen», «reanudá la rutina del resumen», «cambiá la rutina del resumen a las 9», «…solo los lunes».

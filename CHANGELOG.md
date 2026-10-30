@@ -1,3 +1,21 @@
+## [2.20.6] - 2026-10-30
+
+**SEGUNDA MEDICIÓN DE PEDIDOS COMPUESTOS EN EL TELÉFONO** (2.20.4 instalada, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 9,0 s por decisión, 2,5 tok/s. Los 21 simples siguen bien. Los 3 compuestos **siguen fallando, por causas nuevas**: el arreglo de 2.20.1 quitó la repetición de la herramienta anterior y dejó ver lo siguiente.
+
+| Pedido | Qué hizo en la 2.ª parte | Causa |
+|---|---|---|
+| alarma a las 7 **y** tiempo en Córdoba | `web_search` | `get_weather` no tenía ejemplo en el prompt; el que se mostraba era el de `web_search` y el modelo lo copió |
+| tarea comprar pan **y** anotá… | `manage_task` con `action=list` | tras mi reordenamiento de 2.20.1 el ejemplo era el de `manage_task`, que era `{action:'list'}`; lo copió |
+| linterna **y** pausá la música | «listo» | dio el pedido por terminado con la mitad hecha |
+
+- **Ejemplos:** las 8 herramientas de la tanda Jarvis (`get_weather`, `media_control`, `summarize_url`, `log_expense`, `daily_briefing`, `read_notifications`, `read_sms`, `manage_routine`) no tenían ejemplo, así que se mostraba el de **otra** herramienta. Ahora lo tienen, con valores que no coinciden con los pedidos de la prueba. `manage_task` y `manage_routine` eligen entre *crear* y *listar* según el pedido (antes era `list` fijo y se copiaba al crear).
+- **Alternativas cuentan como hechas:** tras `set_alarm`, el ejemplo del paso 2 ya no puede ser `manage_alarm` ni `device_action`.
+- **Red de seguridad contra el «listo» prematuro:** `KiuAgente.faltaParte(pedido, usadas)` parte el pedido en la primera conjunción (« y », «además», «luego»…) y busca una herramienta cuyas palabras clave caigan en una mitad que lo ya hecho no cubre. Si el modelo dice «listo» y falta una, se rechaza **una sola vez** («Falta otra parte del pedido: usá X») y se vuelve a preguntar; si repite «listo», se acepta (sin bucle). No se vetan los pedidos de una sola intención: «anotá que compré pan **y** leche», «alarma a las 7 **y** media», «el tiempo en Córdoba **y** si llueve».
+- **La Prueba completa mide lo mismo que hace el agente:** si el modelo dice «listo» en el 2.º paso y `faltaParte` encuentra algo, la prueba lo rechaza una vez y vuelve a preguntar (el fallo se muestra como «2.ª parte (tras avisarle que faltaba): …»).
+- Tests: `tests/compuestos-v2206.test.mjs` (8): tabla de `faltaParte` con casos que deben y que no deben vetar; ejemplos del paso 2; crear vs listar; todo ejemplo valida contra su esquema; el bucle rechaza una vez y no entra en bucle; la prueba mide la red de seguridad. Sin subir ningún techo de tokens.
+- **Sin verificar en el teléfono:** nada de esto se midió con el modelo real; hay que repetir la Prueba completa. Los tests usan un modelo guionizado. **Velocidad:** esta corrida dio 9,0 s por decisión (2,5 tok/s) frente a 6,1 s (3,3 tok/s) de la anterior con el mismo modelo; no sé si es el teléfono (temperatura, otras apps) o algo de la versión, y no lo investigué.
+- Versión 2.20.6 (versionCode 113).
+
 ## [2.20.5] - 2026-10-30
 
 - **Chat: el aviso flotante ya no tapa la caja de texto.** Los avisos («Listo, preguntame lo que quieras», «Copiado»…) caían a 104 px del borde, justo encima de la caja de texto del Chat. Ahora, en el Chat, flotan por encima de las sugerencias. `go()` marca la pantalla activa en `body[data-screen]` y el CSS ajusta solo ahí; en las demás pantallas no cambia nada.

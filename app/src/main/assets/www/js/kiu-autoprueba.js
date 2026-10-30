@@ -119,13 +119,28 @@ window.KiuAutoprueba = (function () {
         return;
       }
       var otra = P[1 - i1];
+      var hecha = '[' + P[i1].tool + ' ok] Listo.';
       A.probarDecision(caso.pedido, function (d2) {
         vista(d2);
         var ms = (d1.ms || 0) + (d2 && d2.ms || 0);
-        if (d2 && d2.ok && !d2.tool && d2.listo) { fin({ ok: false, motivo: '2.ª parte: dijo "listo" sin hacer ' + otra.tool }, ms); return; }
+        /* v2.20.6 · lo mismo que hace el agente de verdad: un «listo» con una parte sin hacer se rechaza UNA vez y se vuelve a preguntar */
+        if (d2 && d2.ok && !d2.tool && d2.listo) {
+          var falta = null;
+          try { falta = A.faltaParte ? A.faltaParte(caso.pedido, [P[i1].tool]) : null; } catch (e) { falta = null; }
+          if (falta) {
+            A.probarDecision(caso.pedido, function (d3) {
+              vista(d3);
+              var ms3 = ms + (d3 && d3.ms || 0);
+              var e3 = evaluar(otra, d3);
+              fin(e3.ok ? { ok: true, motivo: '' } : { ok: false, motivo: '2.ª parte (tras avisarle que faltaba): ' + (d3 && d3.listo ? 'volvió a decir "listo" sin hacer ' + otra.tool : e3.motivo) }, ms3);
+            }, { sinGramatica: opcs.sinGramatica, obs: [hecha, 'Falta otra parte del pedido: usá ' + falta + '.'] });
+            return;
+          }
+          fin({ ok: false, motivo: '2.ª parte: dijo "listo" sin hacer ' + otra.tool }, ms); return;
+        }
         var e2 = evaluar(otra, d2);
         fin(e2.ok ? { ok: true, motivo: '' } : { ok: false, motivo: '2.ª parte: ' + e2.motivo }, ms);
-      }, { sinGramatica: opcs.sinGramatica, obs: ['[' + P[i1].tool + ' ok] Listo.'] });
+      }, { sinGramatica: opcs.sinGramatica, obs: [hecha] });
     }, opcs);
   }
 

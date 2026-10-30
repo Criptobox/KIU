@@ -915,6 +915,37 @@ window.KiuAgente = (function () {
     }
     return false;
   }
+  /* v2.20.6 · PEDIDOS COMPUESTOS: ¿falta una parte? Medido en el teléfono (1B): tras la 1.ª herramienta el modelo a veces dice
+     «listo» con la mitad hecha. El pedido se parte en dos en la primera conjunción; una herramienta está PENDIENTE si sus palabras
+     clave caen en una mitad donde la herramienta ya usada (o sus alternativas) no tiene nada. «anotá que compré pan y leche» no
+     parte nada pendiente: log_expense matchea la misma mitad que remember. Devuelve el nombre de la herramienta o null. */
+  var ALTERNATIVAS = [['get_weather', 'web_search'], ['set_alarm', 'manage_alarm', 'device_action'], ['create_calendar_event', 'read_calendar']];
+  function grupoDe(n) {
+    for (var i = 0; i < ALTERNATIVAS.length; i++) if (ALTERNATIVAS[i].indexOf(n) >= 0) return ALTERNATIVAS[i];
+    return [n];
+  }
+  function faltaParte(pedido, usadas) {
+    var t = sinAcentos(pedido).replace(/[^a-z0-9ñ ,;]+/g, ' ');
+    var m = /[,;]?\s+(?:y|e|ademas|tambien|luego|despues)\s+/.exec(t);
+    if (!m || !usadas || !usadas.length) return null;
+    var mitades = [palabrasPedido(t.slice(0, m.index)), palabrasPedido(t.slice(m.index + m[0].length))];
+    function hits(n, pal) { return KW[n] ? cuentaPalabras(pal, KW[n]) : 0; }
+    var propias = [];   /* herramientas que cuentan como «ya cubierto» */
+    for (var u = 0; u < usadas.length; u++) {
+      var g = grupoDe(usadas[u]);
+      for (var k = 0; k < g.length; k++) if (propias.indexOf(g[k]) < 0) propias.push(g[k]);
+    }
+    var cubierta = [false, false];
+    for (var h = 0; h < 2; h++) for (var q = 0; q < propias.length; q++) if (hits(propias[q], mitades[h]) > 0) cubierta[h] = true;
+    var orden = seleccionar(pedido);
+    for (var o = 0; o < orden.length; o++) {
+      var n = orden[o];
+      if (propias.indexOf(n) >= 0 || usadas.indexOf(n) >= 0) continue;
+      for (var h2 = 0; h2 < 2; h2++) if (!cubierta[h2] && hits(n, mitades[h2]) > 0) return n;
+    }
+    return null;
+  }
+
   /* palabras del pedido, normalizadas como las del cerebro */
   function palabrasPedido(t) {
     var out = [];
@@ -1348,6 +1379,7 @@ window.KiuAgente = (function () {
     var obs = [];
     var hecho = [];
     var terminado = false;   /* v2.14.3: el bucle ya no acepta respuestas tardías */
+    var vetado = false;      /* v2.20.6: ya se rechazó un «listo» prematuro */
     var successfulTools = [];
     var failedTools = false;
     var taskText = s(o.pedido || (o.habla && o.habla.length ? o.habla[o.habla.length - 1] : ''), 300);
@@ -1486,7 +1518,15 @@ window.KiuAgente = (function () {
         if (!res || !res.ok || !res.text) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'generation'); } catch (eH1) { } finish(); return; }
         var d = parseDecision(res.text);
         if (!d) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'json parse'); } catch (eH2) { } avisar('pensando'); obs.push('Tu respuesta anterior no era un JSON válido. Respondé solo con el JSON.'); paso(); return; }
-        if (isDone(d)) { finish(); return; }
+        if (isDone(d)) {
+          /* v2.20.6 · un «listo» con una parte del pedido sin hacer se rechaza UNA vez y se vuelve a preguntar */
+          if (!vetado && successfulTools.length) {
+            var falta = null;
+            try { falta = faltaParte(taskText, successfulTools); } catch (eFp) { falta = null; }
+            if (falta) { vetado = true; avisar('pensando'); obs.push('Falta otra parte del pedido: usá ' + falta + '.'); paso(); return; }
+          }
+          finish(); return;
+        }
         var rd = readDecision(d);
         if (rd.bad) { avisar('pensando'); obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
         var v = validate(rd.name, rd.raw);
@@ -1593,9 +1633,30 @@ window.KiuAgente = (function () {
     forget: { text: 'dentista' },
     update_memory: { text: 'martes', new_text: 'jueves' },
     now: {},
-    web_search: { query: 'precio del dólar' }
+    web_search: { query: 'precio del dólar' },
+    /* v2.20.6 · las herramientas de la tanda Jarvis NO tenían ejemplo, así que el que se mostraba era el de OTRA herramienta
+       (medido en el teléfono: «tiempo en Córdoba» copiaba el ejemplo de web_search). Valores que NO coinciden con los pedidos de la
+       prueba, para que no se confunda copiar con acertar. */
+    manage_routine: { action: 'add', at: '7:30', what: 'resumen' },   /* ejemploArgs() lo cambia a list si el pedido es una consulta */
+    get_weather: { place: 'Mendoza' },
+    media_control: { action: 'pause' },
+    summarize_url: { url: 'https://ejemplo.com/nota' },
+    log_expense: { action: 'add', amount: 12 },
+    daily_briefing: {},
+    read_notifications: {},
+    read_sms: {}
   };
-  function ejemplos(lista, seguro) {
+  /* v2.20.6 · manage_task / manage_routine tienen dos usos muy distintos. Con un ejemplo fijo ({action:'list'}) el modelo chico lo
+     copiaba al CREAR («agregá una tarea…» → list). El ejemplo se elige según el pedido: consulta → list, si no → add. */
+  function esConsultaPedido(pedido) {
+    return /^(que|cuales|cuantas|cuanto|ver|mostr|list|tengo|tiene)/.test(palabrasPedido(pedido).join(' '));
+  }
+  function ejemploArgs(n, pedido) {
+    if (n === 'manage_task') return esConsultaPedido(pedido) ? { action: 'list' } : { action: 'add', text: 'sacar turno' };
+    if (n === 'manage_routine') return esConsultaPedido(pedido) ? { action: 'list' } : { action: 'add', at: '7:30', what: 'resumen' };
+    return EJEMPLO[n];
+  }
+  function ejemplos(lista, seguro, pedido) {
     /* v2.14.4 · UN SOLO EJEMPLO, el de la herramienta más probable, y SOLO
        si la selección es CONFIABLE. Con tres ejemplos, el modelo chico copiaba
        el primero (medido: 4 pedidos de 30 se equivocaban por eso). Con uno
@@ -1608,7 +1669,7 @@ window.KiuAgente = (function () {
     for (var i = 0; i < nombres.length; i++) {
       var n = nombres[i];
       if (!EJEMPLO[n]) continue;
-      return ['"' + n + '" → {"tool":"' + n + '","args":' + JSON.stringify(EJEMPLO[n]) + '}'];
+      return ['"' + n + '" → {"tool":"' + n + '","args":' + JSON.stringify(ejemploArgs(n, pedido)) + '}'];
     }
     return [];
   }
@@ -1622,7 +1683,11 @@ window.KiuAgente = (function () {
        lo copia: medido en el teléfono (1B), repetía la herramienta que acababa de usar en vez de
        hacer la otra parte. Las ya usadas no se quitan: repetir una (dos alarmas) sigue siendo válido. */
     var hechas = {}, pendientes = [], usadas = [];
-    for (var oi = 0; obs && oi < obs.length; oi++) { var mo = /^\[(\w+) ok\]/.exec(String(obs[oi])); if (mo) hechas[mo[1]] = 1; }
+    /* las ALTERNATIVAS de lo ya hecho cuentan como hechas: tras set_alarm, el ejemplo no puede ser manage_alarm */
+    for (var oi = 0; obs && oi < obs.length; oi++) {
+      var mo = /^\[(\w+) ok\]/.exec(String(obs[oi]));
+      if (mo) { var gr = grupoDe(mo[1]); for (var gi = 0; gi < gr.length; gi++) hechas[gr[gi]] = 1; }
+    }
     for (var hi = 0; herramientas && hi < herramientas.length; hi++) (hechas[herramientas[hi]] ? usadas : pendientes).push(herramientas[hi]);
     if (pendientes.length && usadas.length) herramientas = pendientes.concat(usadas);
     var lista = manifest(herramientas, !!compact);
@@ -1637,7 +1702,7 @@ window.KiuAgente = (function () {
       /* v2.14.4 · los ejemplos van con la lista de herramientas del turno: así
          el modelo ve el vocabulario Y la forma, sin pagar por las 16. */
       (function () {
-        var ex = ejemplos(herramientas, seguras);
+        var ex = ejemplos(herramientas, seguras, pedido);
         if (!ex.length) return '';
         return 'EJEMPLOS:\n' + ex.join('\n') +
           '\n"charla normal" → {"listo":true}\n\n';
@@ -1684,6 +1749,7 @@ window.KiuAgente = (function () {
     probarDecision: probarDecision,
     systemPrompt: systemPrompt,
     perfil: perfil,
+    faltaParte: faltaParte,
     riskOf: riskOf,
     MAX_STEPS: MAX_STEPS,
     DEVICE_WHAT: DEVICE_WHAT,

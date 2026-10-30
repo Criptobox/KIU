@@ -11,7 +11,9 @@ const mainJava = fs.readFileSync(path.join(root, 'app/src/main/java/com/kiu/agen
 test('genStatus identifica solicitudes y marca done aunque no haya tokens', () => {
   assert.match(cpp, /g_gen_id\.fetch_add\(1\)/);
   assert.match(cpp, /bool done = !running/);
-  assert.match(cpp, /char buf\[160\]/);
+  /* v2.20.8: el buffer creció (240) para pre_ms y gen_tps; lo que importa es que alcance */
+  const buf = cpp.match(/char buf\[(\d+)\];\s*\n\s*\/\/ done describe/);
+  assert.ok(buf && Number(buf[1]) >= 160, 'buffer de genStatus de al menos 160');
   assert.match(cpp, /\\"running\\":%s,\\"id\\":%llu/);
 });
 test('JS no reutiliza el texto de la generación anterior', () => {

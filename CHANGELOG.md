@@ -1,3 +1,18 @@
+## [2.19.4] - 2026-10-30
+
+**PRIMERAS MEDICIONES REALES EN UN TELÉFONO** (2.19.3 instalada; ya no se cierra la app):
+
+| Modelo | Prueba | Acierto | s/decisión | tok/s |
+|---|---|---|---|---|
+| Qwen3·8B | rápida (7) | 100 % | 43,7 | 0,5 |
+| Llama 3.2·1B | rápida (7) | 100 % | 6,4 | 3,0 |
+| Llama 3.2·1B | completa (21) | 95 % (20/21) | 6,2 | 3,2 |
+
+- **Veredicto con velocidad:** si acierta pero tarda más de 15 s por decisión, ahora dice «Acierta, pero es lento». Antes decía «sirve como agente» a 43 s por decisión.
+- **Único fallo del 1B:** «todos los días a las 8 dame el resumen» → `manage_routine` con `action=list` en vez de `add`. La descripción de la herramienta ahora aclara que hora + repetición es crear, y `add` va primero en el enum. **No se volvió a medir en el teléfono**: hay que repetir la Prueba completa.
+- «Probar agente» corre **7** pedidos, no 8 (el texto de 2.19.0 estaba mal).
+- Versión 2.19.4 (versionCode 106).
+
 ## [2.19.3] - 2026-10-30
 
 **CAUSA PROBABLE DEL CIERRE DE LA APP AL «PROBAR AGENTE».** Hallada leyendo llama.cpp; no reproducida en un teléfono (ver «Sin verificar»).

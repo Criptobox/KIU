@@ -768,9 +768,9 @@ window.KiuAgente = (function () {
      mañana". La lógica vive en kiu-rutinas.js; esto solo traduce los argumentos. Crear o
      borrar pide confirmación; ver la lista no. Una rutina solo puede LEER (ver ese archivo). */
   def('manage_routine',
-    'Ver, crear o borrar rutinas automáticas a cierta hora: "todos los días a las 8 el resumen".',
+    'Crear, ver o borrar rutinas a cierta hora. "todos los días a las 8 el resumen" = crear.',
     {
-      action: { type: 'string', required: true, enum: ['list', 'add', 'remove'], desc: 'list=ver, add=crear, remove=borrar.' },
+      action: { type: 'string', required: true, enum: ['add', 'list', 'remove'], desc: 'add=crear (con hora), list=ver, remove=borrar.' },
       name: { type: 'string', required: false, desc: 'Nombre corto. Para remove: cuál.' },
       at: { type: 'string', required: false, desc: 'Hora: "8", "20:30".' },
       days: { type: 'string', required: false, desc: '"lunes y jueves", "fines de semana". Vacío = todos los días.' },

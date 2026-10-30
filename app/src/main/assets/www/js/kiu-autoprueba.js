@@ -65,7 +65,11 @@ window.KiuAutoprueba = (function () {
     return { ok: true, motivo: '' };
   }
 
-  function veredicto(acierto) {
+  /* v2.19.4: ms = segundos por decisión en ms (opcional). Un modelo que acierta pero tarda más de
+     LENTO_MS no "sirve" sin reservas: con Qwen3-8B el teléfono daba 100 % a 43 s por decisión. */
+  var LENTO_MS = 15000;
+  function veredicto(acierto, ms) {
+    if (acierto >= UMBRAL_BIEN && ms > LENTO_MS) return { nivel: 'bien', lento: true, texto: 'Acierta, pero es lento (' + Math.round(ms / 1000) + ' s por decisión): se nota la espera. Probá un modelo más chico si querés respuestas ágiles.' };
     if (acierto >= UMBRAL_BIEN) return { nivel: 'bien', texto: 'Este modelo sirve como agente en tu teléfono.' };
     if (acierto >= UMBRAL_REGULAR) return { nivel: 'regular', texto: 'Anda a medias: se equivoca seguido. Probá un modelo más grande, o usalo solo para órdenes simples.' };
     return { nivel: 'mal', texto: 'Este modelo es demasiado chico para elegir herramientas. Probá uno más grande (1,5 B o más).' };
@@ -123,7 +127,8 @@ window.KiuAutoprueba = (function () {
       var hechos = filas.length;
       var aciertos = filas.filter(function (f) { return f.ok; }).length;
       var acierto = hechos ? aciertos / hechos : 0;
-      var v = veredicto(acierto);
+      var msProm = hechos ? Math.round(filas.reduce(function (a, f) { return a + f.ms; }, 0) / hechos) : 0;
+      var v = veredicto(acierto, msProm);
       var res = {
         ok: hechos > 0, modelo: String(window.S.kiu.name || ''), total: hechos, aciertos: aciertos, acierto: acierto,
         msPromedio: hechos ? Math.round(filas.reduce(function (a, f) { return a + f.ms; }, 0) / hechos) : 0,
@@ -136,5 +141,5 @@ window.KiuAutoprueba = (function () {
     }
   }
 
-  return { migasPendientes: migasPendientes, limpiarMigas: limpiarMigas, CASOS: CASOS, correr: correr, evaluar: evaluar, veredicto: veredicto, ultima: ultima, UMBRAL_BIEN: UMBRAL_BIEN };
+  return { migasPendientes: migasPendientes, limpiarMigas: limpiarMigas, CASOS: CASOS, correr: correr, evaluar: evaluar, veredicto: veredicto, ultima: ultima, UMBRAL_BIEN: UMBRAL_BIEN, LENTO_MS: LENTO_MS };
 })();

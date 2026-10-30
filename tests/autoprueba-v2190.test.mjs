@@ -227,3 +227,14 @@ test('cableado: botón "Sin gramática" y aviso de la prueba que cerró la app',
   assert.match(ui, /KiuAutoprueba\.migasPendientes\(\)/);
   assert.match(ui, /La prueba anterior cerró la app/);
 });
+
+test('v2.19.4: el veredicto avisa si el modelo acierta pero es lento', () => {
+  const { U } = conModelo(() => ({ ok: true, text: '{}' }));
+  assert.equal(U.veredicto(1, 6000).lento, undefined);
+  assert.match(U.veredicto(1, 6000).texto, /sirve como agente/);
+  const v = U.veredicto(1, 43700);
+  assert.equal(v.nivel, 'bien');
+  assert.equal(v.lento, true);
+  assert.match(v.texto, /lento/);
+  assert.equal(U.veredicto(0.3, 43700).nivel, 'mal');
+});

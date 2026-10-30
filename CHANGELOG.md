@@ -1,3 +1,12 @@
+## [2.20.2] - 2026-10-30
+
+**ÍCONO DE LA APP: EL AVATAR COMPLETO, SIN RECORTES.** En el teléfono el ícono salía cortado (antena y orejas fuera del marco): el robot ocupaba casi todo el lienzo y Android recorta lo que cae fuera de su zona segura.
+
+- El ícono ahora es el avatar **real** de la app (`kiu-avatar.js`, estado «Inactivo»: coral, con antena, pies y una mano saludando), renderizado entero y escalado para que **todo lo visible quede dentro de la zona segura** del ícono adaptativo (radio ≤ 140 px sobre 432). Mismo fondo violeta de siempre.
+- Regenerados en todas las densidades: `ic_launcher_foreground`, `ic_launcher_monochrome` (silueta para íconos temáticos, hoy desactivados en el XML), los íconos clásicos `ic_launcher` y `ic_launcher_round`, y `store/kiu-icon-512.png`. El fondo adaptativo no cambió.
+- **Sin verificar en un teléfono:** la vista previa se comprobó con máscaras de círculo, cuadrado redondeado y el ícono clásico, no con el lanzador real. Si en tu lanzador algo roza el borde, se achica un poco más.
+- Versión 2.20.2 (versionCode 109).
+
 ## [2.20.1] - 2026-10-30
 
 **PRIMERA MEDICIÓN DE PEDIDOS COMPUESTOS EN EL TELÉFONO** (2.20.0, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 6,6 s por decisión, 3,5 tok/s. Los 21 pedidos simples siguen bien; fallaron los 3 compuestos, por dos causas distintas:

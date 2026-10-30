@@ -1539,3 +1539,23 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
 }
 .toolcard.falló .ti{ background:rgba(251,113,133,.14); border-color:rgba(251,113,133,.28); color:var(--p-err); }
 .toolcard.falló .tc b .ok{ color:var(--p-err); }
+
+
+/* ---- v2.20.3 · desplegables «avanzado» (Modelos) y tarjeta de Inicio como acción ---- */
+.adv-box { margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; }
+.adv-box > summary {
+  list-style:none; display:flex; flex-direction:column; gap:2px; padding:13px 16px 13px 16px; cursor:pointer; position:relative; padding-right:40px;
+}
+.adv-box > summary::-webkit-details-marker { display:none; }
+.adv-box > summary span { font-size:13.5px; font-weight:800; }
+.adv-box > summary em { font-style:normal; font-size:11.5px; color:var(--dim); }
+.adv-box > summary::after {
+  content:''; position:absolute; right:16px; top:50%; width:8px; height:8px; margin-top:-6px;
+  border-right:2px solid var(--dim2); border-bottom:2px solid var(--dim2); transform:rotate(45deg); transition:transform .18s;
+}
+.adv-box[open] > summary::after { transform:rotate(225deg); margin-top:-2px; }
+.adv-box[open] > summary { border-bottom:1px solid var(--line); }
+.adv-body { padding:12px 14px 14px; }
+.motor-card.motor-cta { border-color:rgba(45,212,191,.55); background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(139,92,246,.10)); box-shadow:0 0 0 1px rgba(45,212,191,.12),0 10px 28px rgba(45,212,191,.10); }
+.motor-card.motor-cta #status-title { color:var(--teal); }
+.motor-card.motor-cta .motor-ram { display:none; }

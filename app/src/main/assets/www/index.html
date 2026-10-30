@@ -280,69 +280,6 @@
       <span class="topbar-spacer"></span>
     </header>
     <div class="content">
-      <!-- v2.10.1: arriba, CÓMO responde Kiu (modo + orquestador); abajo, DE DÓNDE salen los modelos (3 pestañas) -->
-      <div class="k2-sec"><h3>Cómo responde Kiu</h3></div>
-      <div class="seg" id="mode-seg">
-        <button class="seg-btn" data-mode="hybrid">Híbrido</button>
-        <button class="seg-btn" data-mode="local">Local</button>
-        <button class="seg-btn" data-mode="api">API</button>
-      </div>
-      <p class="set-hint" id="mode-hint"></p>
-      <!-- v2.0: orquestador compacto (mapa de roles) + ajuste fino plegable -->
-      <div class="k2-sec">
-        <h3>Orquestador · <span id="orch-mode-lbl">Auto decide</span></h3>
-        <button class="toggle" id="tg-orch" aria-label="Orquestador"></button>
-      </div>
-      <div class="k2-card" id="orch-rows"></div>
-      <button class="k2-adv hidden" id="orch-adv-btn"><span class="ic" data-ic="sliders"></span>Ajustar destinos y preferencias</button>
-
-      <!-- Ajuste fino del orquestador (segmentos originales, se abre tocando una fila o el botón) -->
-      <div id="orch-body" class="hidden" style="margin-top:10px">
-        <div class="set-card">
-          <p class="set-hint small" style="margin:2px 0 10px">Asigná qué modelo atiende cada tipo de tarea. En «Auto», Kiu usa primero tu servidor (si está conectado), luego el motor del teléfono con el modelo ya cargado, y al final las APIs. Si un modelo falla, prueba el siguiente.</p>
-          <div class="set-row col">
-            <div><strong>Charla y voz</strong><span>Saludos, dudas rápidas, recordatorios</span></div>
-            <div class="seg" id="orch-fast">
-              <button class="seg-btn" data-rv="auto">Auto</button>
-              <button class="seg-btn" data-rv="kiu">Teléfono</button>
-              <button class="seg-btn" data-rv="loc">Servidor</button>
-              <button class="seg-btn" data-rv="prov:gemini">Gemini</button>
-            </div>
-          </div>
-          <div class="set-row col">
-            <div><strong>Cerebro (razonamiento y código)</strong><span>Explicaciones, análisis, programación</span></div>
-            <div class="seg" id="orch-brain">
-              <button class="seg-btn" data-rv="auto">Auto</button>
-              <button class="seg-btn" data-rv="kiu">Teléfono</button>
-              <button class="seg-btn" data-rv="loc">Servidor</button>
-              <button class="seg-btn" data-rv="prov:deepseek">DeepSeek</button>
-            </div>
-          </div>
-          <div class="set-row col">
-            <div><strong>Fotos (visión)</strong><span>Entender imágenes que mandás al chat</span></div>
-            <div class="seg" id="orch-vision">
-              <button class="seg-btn" data-rv="auto">Auto</button>
-              <button class="seg-btn" data-rv="kiu">Teléfono</button>
-              <button class="seg-btn" data-rv="loc">Servidor</button>
-              <button class="seg-btn" data-rv="prov:gemini">Gemini</button>
-            </div>
-          </div>
-          <div class="set-row col">
-            <div><strong>Modelo rápido preferido (teléfono)</strong><span>Se cambia solo si la tarea lo necesita</span></div>
-            <div class="voice-pick"><select id="orch-kiufast"></select></div>
-          </div>
-          <div class="set-row col">
-            <div><strong>Modelo cerebro preferido (teléfono)</strong><span>Para razonar y código, si está descargado</span></div>
-            <div class="voice-pick"><select id="orch-kiubrain"></select></div>
-          </div>
-          <div class="set-row col">
-            <div><strong>Visión por foto</strong><span>El motor del teléfono <b>no ve</b> las fotos: las manda a tu servidor o a una API. Este ajuste quedó sin efecto.</span></div>
-            <div class="voice-pick"><select id="orch-kiuvis"></select></div>
-          </div>
-          <p class="set-hint small" style="margin:2px 0 0">Con el motor interno solo hay un modelo en memoria: si el orquestador cambia de rol, lo cambia solo (tarda unos segundos la primera vez). <b>El motor del teléfono todavía no «ve» la foto</b>: contesta el texto que la acompaña y deja el modelo cargado; la foto se la manda a Servidor o API, que sí la ven. Por eso Kiu ya no cambia de modelo cuando mandás una imagen.</p>
-        </div>
-      </div>
-
       <div class="mtabs" id="mtabs" role="tablist">
         <button class="mtab on" role="tab" data-mt="tel">Teléfono <i id="mt-count-tel"></i></button>
         <button class="mtab" role="tab" data-mt="nube">Nube <i id="mt-count-nube"></i></button>
@@ -376,15 +313,6 @@
       <div id="mdl-mine" class="k2-list"></div>
       <div class="loc-actions" style="margin-top:8px"><button class="chip-btn" id="mdl-import">Importar GGUF del teléfono</button></div>
       <p class="set-hint small" id="mdl-imp-status"></p>
-      <!-- v2.19.0: ¿este modelo, cargado en ESTE teléfono, sirve de agente? Solo mira qué herramienta elegiría; no ejecuta nada. -->
-      <div class="loc-actions" style="margin-top:8px">
-        <button class="chip-btn" id="mdl-agent-test">Probar agente</button>
-        <button class="chip-btn" id="mdl-agent-full">Prueba completa</button>
-        <button class="chip-btn" id="mdl-agent-nogram">Sin gramática</button>
-      </div>
-      <p class="set-hint small" id="mdl-agent-ver" style="margin-top:2px"></p>
-      <p class="set-hint small" id="mdl-agent-res" style="white-space:pre-line"></p>
-
       <div class="k2-sec">
         <h3>Descargar modelos</h3>
         <span class="k2-count">GGUF · privado</span>
@@ -400,6 +328,21 @@
       <div id="mdl-list" class="k2-list"></div>
       <p class="set-hint small" id="mdl-foot"></p>
       <p class="set-hint small centered">Los «EN EL TELÉFONO» corren con el motor interno de Kiu (llama.cpp), sin internet y sin mandar nada afuera. Los «SERVIDOR» (visión y multimodal) son para tu PC u Ollama. También podés asignar un modelo local a «Fotos (visión)» en el Orquestador: contesta el texto de tu mensaje.</p>
+      <details class="adv-box" id="adv-diag">
+        <summary><span>Diagnóstico del agente</span><em>Probar si este modelo sirve</em></summary>
+        <div class="adv-body">
+      <!-- v2.19.0: ¿este modelo, cargado en ESTE teléfono, sirve de agente? Solo mira qué herramienta elegiría; no ejecuta nada. -->
+      <div class="loc-actions" style="margin-top:8px">
+        <button class="chip-btn" id="mdl-agent-test">Probar agente</button>
+        <button class="chip-btn" id="mdl-agent-full">Prueba completa</button>
+        <button class="chip-btn" id="mdl-agent-nogram">Sin gramática</button>
+      </div>
+      <p class="set-hint small" id="mdl-agent-res" style="white-space:pre-line"></p>
+
+        </div>
+      </details>
+      <p class="set-hint small" id="mdl-agent-ver" style="margin-top:2px"></p>
+
       </div>
 
       <div class="mpane" id="mpane-nube">
@@ -482,6 +425,75 @@
         </div>
       </div>
       </div>
+      <!-- v2.20.3: «Cómo responde Kiu» (modo + orquestador) es avanzado: casi nadie lo toca y empujaba al final lo que todos necesitan (elegir un modelo). -->
+      <details class="adv-box" id="adv-resp">
+        <summary><span>Cómo responde Kiu</span><em>Avanzado · modo y orquestador</em></summary>
+        <div class="adv-body">
+      <!-- v2.10.1: arriba, CÓMO responde Kiu (modo + orquestador); abajo, DE DÓNDE salen los modelos (3 pestañas) -->
+      <div class="k2-sec"><h3>Cómo responde Kiu</h3></div>
+      <div class="seg" id="mode-seg">
+        <button class="seg-btn" data-mode="hybrid">Híbrido</button>
+        <button class="seg-btn" data-mode="local">Local</button>
+        <button class="seg-btn" data-mode="api">API</button>
+      </div>
+      <p class="set-hint" id="mode-hint"></p>
+      <!-- v2.0: orquestador compacto (mapa de roles) + ajuste fino plegable -->
+      <div class="k2-sec">
+        <h3>Orquestador · <span id="orch-mode-lbl">Auto decide</span></h3>
+        <button class="toggle" id="tg-orch" aria-label="Orquestador"></button>
+      </div>
+      <div class="k2-card" id="orch-rows"></div>
+      <button class="k2-adv hidden" id="orch-adv-btn"><span class="ic" data-ic="sliders"></span>Ajustar destinos y preferencias</button>
+
+      <!-- Ajuste fino del orquestador (segmentos originales, se abre tocando una fila o el botón) -->
+      <div id="orch-body" class="hidden" style="margin-top:10px">
+        <div class="set-card">
+          <p class="set-hint small" style="margin:2px 0 10px">Asigná qué modelo atiende cada tipo de tarea. En «Auto», Kiu usa primero tu servidor (si está conectado), luego el motor del teléfono con el modelo ya cargado, y al final las APIs. Si un modelo falla, prueba el siguiente.</p>
+          <div class="set-row col">
+            <div><strong>Charla y voz</strong><span>Saludos, dudas rápidas, recordatorios</span></div>
+            <div class="seg" id="orch-fast">
+              <button class="seg-btn" data-rv="auto">Auto</button>
+              <button class="seg-btn" data-rv="kiu">Teléfono</button>
+              <button class="seg-btn" data-rv="loc">Servidor</button>
+              <button class="seg-btn" data-rv="prov:gemini">Gemini</button>
+            </div>
+          </div>
+          <div class="set-row col">
+            <div><strong>Cerebro (razonamiento y código)</strong><span>Explicaciones, análisis, programación</span></div>
+            <div class="seg" id="orch-brain">
+              <button class="seg-btn" data-rv="auto">Auto</button>
+              <button class="seg-btn" data-rv="kiu">Teléfono</button>
+              <button class="seg-btn" data-rv="loc">Servidor</button>
+              <button class="seg-btn" data-rv="prov:deepseek">DeepSeek</button>
+            </div>
+          </div>
+          <div class="set-row col">
+            <div><strong>Fotos (visión)</strong><span>Entender imágenes que mandás al chat</span></div>
+            <div class="seg" id="orch-vision">
+              <button class="seg-btn" data-rv="auto">Auto</button>
+              <button class="seg-btn" data-rv="kiu">Teléfono</button>
+              <button class="seg-btn" data-rv="loc">Servidor</button>
+              <button class="seg-btn" data-rv="prov:gemini">Gemini</button>
+            </div>
+          </div>
+          <div class="set-row col">
+            <div><strong>Modelo rápido preferido (teléfono)</strong><span>Se cambia solo si la tarea lo necesita</span></div>
+            <div class="voice-pick"><select id="orch-kiufast"></select></div>
+          </div>
+          <div class="set-row col">
+            <div><strong>Modelo cerebro preferido (teléfono)</strong><span>Para razonar y código, si está descargado</span></div>
+            <div class="voice-pick"><select id="orch-kiubrain"></select></div>
+          </div>
+          <div class="set-row col">
+            <div><strong>Visión por foto</strong><span>El motor del teléfono <b>no ve</b> las fotos: las manda a tu servidor o a una API. Este ajuste quedó sin efecto.</span></div>
+            <div class="voice-pick"><select id="orch-kiuvis"></select></div>
+          </div>
+          <p class="set-hint small" style="margin:2px 0 0">Con el motor interno solo hay un modelo en memoria: si el orquestador cambia de rol, lo cambia solo (tarda unos segundos la primera vez). <b>El motor del teléfono todavía no «ve» la foto</b>: contesta el texto que la acompaña y deja el modelo cargado; la foto se la manda a Servidor o API, que sí la ven. Por eso Kiu ya no cambia de modelo cuando mandás una imagen.</p>
+        </div>
+      </div>
+
+        </div>
+      </details>
     </div>
   </section>
 

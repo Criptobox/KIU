@@ -398,7 +398,8 @@
       var el = document.getElementById('hero-hi');
       if (el) el.textContent = msg.split('. ').slice(0, 2).join('. ');
       stFlash('Respuesta lista', 3200);
-      this.toast(msg);
+      /* v2.20.3: sin aviso flotante: el saludo ya está escrito en el héroe y se dice por voz; el aviso flotante lo repetía
+         y caía sobre la caja de texto del Chat. */
       /* habla aunque la voz esté apagada: es la bienvenida. Se puede apagar en Ajustes → Voz */
       var clean = msg.replace(/\n+/g, '. ');
       if (!bridge('speak', [clean])) {
@@ -504,6 +505,8 @@
       /* v2.10.1: «Proveedores» ya no es una pantalla aparte: es la pestaña Nube de
          Modelos. Todo lo que apuntaba a 'api' sigue funcionando y cae ahí. */
       if (name === 'api') { name = 'models'; this._mtab = 'nube'; }
+      /* v2.20.3: «models-tel» = Modelos, pestaña Teléfono (elegir/descargar un modelo local) */
+      if (name === 'models-tel') { name = 'models'; this._mtab = 'tel'; }
       if (name === 'models' && this.current && this.current !== 'models') {
         var bk = document.querySelector('#screen-models .back-btn');
         if (bk) bk.setAttribute('data-go', this.current);
@@ -766,6 +769,7 @@
       } catch (eRam) { }
       var act = this.activeProvs();
       var first = act.length ? act[0] : null;
+      var sinMotor = false;
       if (S.mode !== 'local' && first) {
         dot.className = 'status-dot api';
         if (first.def.local) {
@@ -788,11 +792,28 @@
         sub.textContent = 'Agente personal · modelo ejecutándose en el teléfono';
       } else {
         dot.className = 'status-dot';
+        sinMotor = true;
         t.textContent = S.mode === 'local' ? 'Motor local sin cargar' : 'Sin motor conectado';
         m.textContent = S.mode === 'local' ? 'Descarga o carga un modelo GGUF' : 'Conecta una API o carga un modelo local';
         mm.textContent = S.mode === 'local' ? 'Pendiente de modelo' : 'Desconectado';
         sub.textContent = 'Tu agente personal';
       }
+      /* v2.20.3 · SIN MOTOR NO ES UN DATO, ES LA ACCIÓN: sin modelo ni API la app casi no puede ayudar. La tarjeta se vuelve
+         un botón claro hacia Modelos → Teléfono (o a Nube si el modo es solo API), con el modelo recomendado a la vista. */
+      try {
+        var card = document.getElementById('status-card');
+        if (card) {
+          card.classList.toggle('motor-cta', sinMotor);
+          card.setAttribute('data-go', sinMotor ? (S.mode === 'api' ? 'api' : 'models-tel') : (S.kiu && S.kiu.ok ? 'models-tel' : 'api'));
+          if (sinMotor) {
+            t.textContent = S.mode === 'api' ? 'Conectá una API para empezar' : 'Elegí un modelo para empezar';
+            m.textContent = 'Sin esto Kiu casi no puede ayudarte';
+            mm.textContent = 'Tocá para elegir';
+            var mdl2 = document.getElementById('motor-model');
+            if (mdl2) mdl2.textContent = S.mode === 'api' ? '' : 'Recomendado: Llama 3.2 · 1B (~2,4 GB de RAM)';
+          }
+        }
+      } catch (eCta) { }
       var pr = document.getElementById('profile-name');
       if (pr) pr.textContent = S.name || 'Tu nombre';
       var ps = document.getElementById('profile-sub');
@@ -1026,6 +1047,9 @@
         if (c.eng === 'server') return 'SERVIDOR';
         return 'TEXTO';
       };
+      /* v2.20.3: el modelo MEDIDO en un teléfono real (Llama 3.2 1B: 21/21 pedidos, ~6 s por decisión) va primero y marcado */
+      var RECO = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
+      visCats = visCats.slice().sort(function (a, b) { return (b.f === RECO ? 1 : 0) - (a.f === RECO ? 1 : 0); });
       var catRows = visCats.map(function (c) {
         var dn = Mod.done(c.f);
         var kind = modKind(c.f);
@@ -1044,6 +1068,7 @@
         else if (c.eng === 'kiu' && ram) badges += '<i class="k2-badge b-g">✓ COMPATIBLE</i>';
         else if (c.eng === 'server') badges += '<i class="k2-badge b-v">SERVIDOR</i>';
         badges += '<i class="k2-badge b-b">' + kindTag(c) + '</i>';
+        if (c.f === RECO) badges = '<i class="k2-badge b-g">★ RECOMENDADO</i>' + badges;
         var cardCls = ajustado && !dn ? ' warn' : (sinRam ? ' err' : '');
         var tileIdle = c.vis || kind === 'vision' ? '<span class="k2-tile big tl-pink">' + icon('eye', 19) + '</span>'
           : c.eng === 'server' ? '<span class="k2-tile big tl-violet">' + icon('cloud', 19) + '</span>'
@@ -1264,6 +1289,7 @@
             ' · ' + (mg.gram ? 'con gramática' : 'sin gramática') + (mg.ramMB !== null && mg.ramMB !== undefined ? ' · RAM libre ' + mg.ramMB + ' MB' : '') +
             '.\nProbá «Sin gramática» (si no se cierra, la causa es la gramática) o un modelo más chico (si se cierra igual, es la memoria).';
           KiuAutoprueba.limpiarMigas();
+          var dg = document.getElementById('adv-diag'); if (dg) dg.open = true;   /* v2.20.3: el aviso no puede quedar oculto */
         }
       } catch (eMg) { }
       this.bindOrch();

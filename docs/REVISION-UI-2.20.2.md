@@ -15,7 +15,7 @@ Pantallas: Inicio, Chat, Biblioteca, Modelos, Memoria, Ajustes (+ ventanas modal
 
 1. **Lo importante no se distingue de lo técnico.** El estado «sin modelo» (sin el cual la app casi no hace nada) se ve como un dato más, no como la acción principal. Los botones de diagnóstico están al mismo nivel que los de uso diario.
 2. **Cosas repetidas.** El mismo saludo sale 3 veces (texto del héroe, aviso flotante y voz); «Memoria» se repite 3 veces en su pantalla; los contadores y las pestañas de Memoria son lo mismo; Chat y Memoria están en la tarjetas de Inicio **y** en la barra inferior.
-3. **Navegación ambigua.** Modelos está en la barra inferior, pero su botón «volver» lleva a Ajustes. «Biblioteca» no tiene lugar en la barra (se llega desde Inicio como «Herramientas»).
+3. **Navegación.** «Biblioteca» no tiene lugar en la barra (se llega desde Inicio como «Herramientas»). *(Corrección: en la primera versión de este informe dije que el «volver» de Modelos siempre llevaba a Ajustes. Es solo el valor por defecto del HTML: `go()` en `app-ui.js` lo reasigna a la pantalla desde la que se entró, así que no es un problema.)*
 4. **Iconos sin texto.** El encabezado del Chat tiene 4 botones (lista, cuadrícula, onda, altavoz) sin etiqueta.
 5. **Texto largo donde debería haber una acción.** Párrafos explicativos en Modelos, el mensaje de bienvenida del Chat y las descripciones de Ajustes.
 
@@ -84,6 +84,11 @@ Pantallas: Inicio, Chat, Biblioteca, Modelos, Memoria, Ajustes (+ ventanas modal
 | 8 | Un único sistema visual (espaciado, jerarquía de títulos, botones primario/secundario) | global | alto | medio |
 
 Recomendación: hacer **1, 2 y 5** primero. Son lo que más pesa en el primer uso (sin modelo la app no hace nada) y no obligan a rediseñar nada profundo.
+
+## Estado
+
+- **Hecho en 2.20.3:** #1 (Modelos), #2 (Inicio) y #5 (saludo una sola vez). Ver el CHANGELOG.
+- **Pendiente:** #3 Chat, #4 Memoria, #6 Ajustes, #7 Biblioteca, #8 sistema visual. También queda el Asistente de voz que se abre solo.
 
 ## Verificación pendiente
 

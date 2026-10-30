@@ -169,10 +169,43 @@ test('modelos: tres pestañas y cada pieza en su panel', () => {
   assert.ok(pane('red').indexOf('id="local-block"') > 0, 'servidor en Mi red');
 });
 
-test('modelos: el modo y el orquestador quedan arriba de las pestañas', () => {
+test('modelos (v2.20.3): lo que todos usan va primero; modo y orquestador quedan en «Avanzado», plegado', () => {
   const m = seccion('screen-models');
-  assert.ok(m.indexOf('id="mode-seg"') < m.indexOf('id="mtabs"'));
-  assert.ok(m.indexOf('id="orch-rows"') < m.indexOf('id="mtabs"'));
+  /* siguen existiendo (el JS los usa por id) pero DESPUÉS de las pestañas y dentro de un <details> cerrado */
+  const adv = m.indexOf('id="adv-resp"');
+  assert.ok(adv > m.indexOf('id="mtabs"'), 'el avanzado va después de las pestañas');
+  assert.ok(adv > m.indexOf('id="mdl-list"'), 'y después del catálogo de modelos');
+  assert.match(m, /<details class="adv-box" id="adv-resp">/, 'plegado: sin atributo open');
+  for (const id of ['mode-seg', 'tg-orch', 'orch-rows', 'orch-body', 'orch-adv-btn']) {
+    assert.ok(m.indexOf(`id="${id}"`) > adv, id + ' vive dentro del avanzado');
+  }
+  /* «tu teléfono» y «mis modelos» abren la pantalla */
+  assert.ok(m.indexOf('id="dev-card"') < adv && m.indexOf('id="mdl-mine"') < m.indexOf('id="mdl-list"'));
+});
+
+test('modelos (v2.20.3): las pruebas del agente están en Diagnóstico, y la versión instalada sigue a la vista', () => {
+  const m = seccion('screen-models');
+  const d0 = m.indexOf('id="adv-diag"'), d1 = m.indexOf('</details>', d0);
+  assert.ok(d0 > m.indexOf('id="mdl-list"'), 'el diagnóstico va después del catálogo');
+  const dentro = m.slice(d0, d1);
+  for (const id of ['mdl-agent-test', 'mdl-agent-full', 'mdl-agent-nogram', 'mdl-agent-res']) assert.ok(dentro.includes(`id="${id}"`), id + ' en Diagnóstico');
+  assert.equal(dentro.includes('id="mdl-agent-ver"'), false, '«Kiu instalada» NO se esconde');
+  assert.ok(m.includes('id="mdl-agent-ver"'));
+  assert.match(ui, /adv-diag'\); if \(dg\) dg\.open = true/, 'si hay aviso de cierre, el desplegable se abre');
+});
+
+test('inicio (v2.20.3): sin motor la tarjeta es la acción hacia Modelos; el saludo ya no repite un aviso', () => {
+  assert.match(ui, /name === 'models-tel'/);
+  assert.match(ui, /sinMotor \? \(S\.mode === 'api' \? 'api' : 'models-tel'\)/);
+  assert.match(ui, /Elegí un modelo para empezar/);
+  const g = ui.slice(ui.indexOf('greet: function'), ui.indexOf('verEstado: function'));
+  assert.doesNotMatch(g, /this\.toast\(msg\)/, 'el saludo no se repite como aviso flotante');
+  assert.match(g, /bridge\('speak'/, 'pero sí se dice por voz');
+});
+
+test('catálogo (v2.20.3): el modelo medido en un teléfono va primero y marcado', () => {
+  assert.match(ui, /var RECO = 'Llama-3\.2-1B-Instruct-Q4_K_M\.gguf'/);
+  assert.match(ui, /★ RECOMENDADO/);
 });
 
 test('proveedores ya no es pantalla: go("api") cae en la pestaña Nube', () => {

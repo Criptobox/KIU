@@ -1,3 +1,15 @@
+## [2.20.3] - 2026-10-30
+
+**PRIMEROS CAMBIOS DE LA REVISIÓN DE PANTALLAS** (`docs/REVISION-UI-2.20.2.md`, puntos 1, 2 y 5). Se mueve y se pliega; no se borra ninguna función ni se renombra ningún `id`.
+
+- **Modelos — lo que todos usan, primero.** La pantalla abre en *Tu teléfono → Mis modelos → Descargar modelos*. «Cómo responde Kiu» (modo Híbrido/Local/API y orquestador) pasa a un desplegable **Avanzado** al final, cerrado; las pruebas del agente (Probar agente, Prueba completa, Sin gramática) pasan a otro desplegable **Diagnóstico del agente**. «Kiu instalada: X (código N)» sigue a la vista, fuera del desplegable. Si hay un aviso de «la prueba anterior cerró la app», el Diagnóstico se abre solo para que no quede escondido.
+- **Catálogo:** el modelo medido en un teléfono real (Llama 3.2 · 1B: 21/21 pedidos, ~6 s por decisión en un solo teléfono) sale primero con la insignia «★ RECOMENDADO».
+- **Inicio — sin modelo es la acción, no un dato.** Si no hay modelo ni API, la tarjeta del motor se vuelve un botón destacado «Elegí un modelo para empezar» (con el modelo recomendado) que lleva a Modelos → Teléfono (a Nube si el modo es solo API). Con motor cargado, tocarla abre Modelos → Teléfono.
+- **Saludo una sola vez:** el aviso flotante «Buenos días. Soy Kiu…» ya no aparece (repetía el texto del héroe y la voz, y caía sobre la caja de texto del Chat). Se mantiene el texto del héroe y el saludo por voz.
+- 4 tests nuevos y el de «modo y orquestador arriba» actualizado al nuevo orden (`tests/voz-comandos.test.mjs`).
+- **Sin verificar en un teléfono:** solo se vio en un navegador de escritorio con viewport de teléfono y sin el puente de Android (sin modelos ni RAM reales). Falta mirarlo con un modelo cargado y con uno sin cargar.
+- Versión 2.20.3 (versionCode 110).
+
 ## [2.20.2] - 2026-10-30
 
 **ÍCONO DE LA APP: EL AVATAR COMPLETO, SIN RECORTES.** En el teléfono el ícono salía cortado (antena y orejas fuera del marco): el robot ocupaba casi todo el lienzo y Android recorta lo que cae fuera de su zona segura.

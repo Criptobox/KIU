@@ -131,3 +131,29 @@ test('la Prueba completa mide también la red de seguridad: rechazado una vez, a
   assert.equal(fallosCompuestos.length, 0, 'con el aviso, los tres compuestos salen bien: ' + JSON.stringify(fallosCompuestos));
   assert.ok(res.total >= U.COMPUESTOS.length, 'corrió los compuestos');
 });
+
+test('v2.20.7: si se sabe qué parte falta, el 2.º paso ofrece SOLO esa herramienta y sin «listo»', async () => {
+  const raiz = (g) => g.split('\n').find((l) => /^root ::=/.test(l));
+  for (const [pedido, primera, falta, otras] of [
+    [ALARMA_CLIMA, { tool: 'set_alarm', args: { when: 'a las 7' } }, 'get-weather', /web-search|set-alarm/],
+    [LINTERNA_MUSICA, { tool: 'media_control', args: { action: 'pause' } }, 'device-action', /media-control/],
+  ]) {
+    const r = agente();
+    const prompts = [];
+    r.ctx.Kiu = { ask(hist, m, cb, t, gbnf) { prompts.push(gbnf); cb({ ok: true, text: prompts.length === 1 ? j(primera) : j({ listo: true }) }); } };
+    /* las herramientas de la 1.ª parte no se ejecutan de verdad: el puente de pruebas las deja pasar o no, da igual */
+    await new Promise((res) => r.ctx.KiuAgente.run({ pedido, habla: [pedido], componer: false }, res));
+    assert.ok(prompts.length >= 2, pedido);
+    const g = raiz(prompts[1]);
+    assert.match(g, new RegExp(falta), pedido + ' → ' + g);
+    assert.doesNotMatch(g, /\bdone\b/, 'sin «listo»: ' + g);
+    assert.doesNotMatch(g, otras, 'sin las alternativas ni lo ya hecho: ' + g);
+  }
+});
+
+test('v2.20.7: log_expense NO tiene ejemplo (con uno, «gasté 12 en almuerzo» pasó de acertar a elegir total)', () => {
+  const A = agente().ctx.KiuAgente;
+  const p = 'gasté 12 en almuerzo';
+  const sys = A.systemPrompt(p, A.seleccionar(p), [], 1, false, false, true);
+  assert.doesNotMatch(sys, /EJEMPLOS:/);
+});

@@ -816,12 +816,14 @@ window.KiuAgente = (function () {
     /* v2.20.0: opts.obs = lo que "ya hizo" el agente (pedidos compuestos: el 2.º paso se mide
        con el 1.º ya hecho). Sin obs es la decisión inicial de siempre. */
     var obs = (opts && opts.obs && opts.obs.length) ? opts.obs : [];
+    var forzar = (opts && opts.forzar && getTool(opts.forzar)) ? opts.forzar : null;
+    if (forzar) herr = [forzar];   /* v2.20.7: igual que run() cuando se sabe qué parte falta */
     var hist = [
-      { role: 'system', content: systemPrompt(s(pedido, 300), herr, obs, 1, harness && harness.id === 'Harness-Local-Compact', hermes, herramientasConPalabras(herr, pedido)) },
+      { role: 'system', content: systemPrompt(s(pedido, 300), herr, obs, 1, harness && harness.id === 'Harness-Local-Compact', hermes, forzar ? true : herramientasConPalabras(herr, pedido)) },
       { role: 'user', content: s(pedido, 300) }
     ];
     var gb = null;
-    if (!(opts && opts.sinGramatica)) { try { gb = grammar(herr, hermes, obs.length > 0); } catch (e2) { gb = null; } }
+    if (!(opts && opts.sinGramatica)) { try { gb = grammar(herr, hermes, forzar ? false : obs.length > 0); } catch (e2) { gb = null; } }
     var t0 = Date.now(), espera = 0;
     (function pedir() {
       K.ask(hist, (harness && harness.maxTokens) || 120, function (res) {
@@ -1380,6 +1382,7 @@ window.KiuAgente = (function () {
     var hecho = [];
     var terminado = false;   /* v2.14.3: el bucle ya no acepta respuestas tardías */
     var vetado = false;      /* v2.20.6: ya se rechazó un «listo» prematuro */
+    var forzadas = {};       /* v2.20.7: herramientas que ya se ofrecieron como «la que falta» (una sola vez cada una) */
     var successfulTools = [];
     var failedTools = false;
     var taskText = s(o.pedido || (o.habla && o.habla.length ? o.habla[o.habla.length - 1] : ''), 300);
@@ -1429,7 +1432,17 @@ window.KiuAgente = (function () {
     function paso() {
       if (n >= max) { finish(); return; }
       n++;
-      var hist = [{ role: 'system', content: systemPrompt(taskText, herramientas, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || '')), herramientasSeguras) }];
+      /* v2.20.7 · PEDIDOS COMPUESTOS: medido en el teléfono (1B), con el ejemplo y el aviso correctos igual elegía otra herramienta
+         (web_search en vez de get_weather) o decía «listo» dos veces. Lo que SÍ se controla es la gramática: si se sabe qué parte
+         falta, el paso siguiente ofrece solo esa herramienta y no admite «listo». Una vez por herramienta, para no entrar en bucle;
+         una acción de escritura sigue pidiendo confirmación al usuario. */
+      var hs = herramientas, forzada = null;
+      if (successfulTools.length) {
+        try { forzada = faltaParte(taskText, successfulTools); } catch (eFz) { forzada = null; }
+        if (forzada && (forzadas[forzada] || !getTool(forzada))) forzada = null;
+        if (forzada) { forzadas[forzada] = 1; hs = [forzada]; }
+      }
+      var hist = [{ role: 'system', content: systemPrompt(taskText, hs, obs, o.habla && o.habla.length, harness && harness.id === 'Harness-Local-Compact', /hermes/i.test(String(window.S && window.S.kiu && window.S.kiu.name || '')), forzada ? true : herramientasSeguras) }];
       if (o.habla && o.habla.length) {
         for (var i = 0; i < o.habla.length; i++) hist.push({ role: 'user', content: o.habla[i] });
       }
@@ -1457,7 +1470,7 @@ window.KiuAgente = (function () {
            ponía: y como la anterior nunca se aplicó, la segunda tampoco.
            El agente.enteró JA MÁS con gramática. Ahora se pone siempre (si el
            nativo la soporta) y el resultado se verifica después. */
-        try { gbnf = grammar(herramientas, hermesMode, obs.length > 0); } catch (eGr) { gbnf = null; }
+        try { gbnf = grammar(hs, hermesMode, forzada ? false : obs.length > 0); } catch (eGr) { gbnf = null; }
       }
       /* v2.14.2 · ESPERAR AL MOTOR Y NO QUEDARSE COLGADO.
          Dos cosas que el agente no tenía y el chat normal sí:
@@ -1641,7 +1654,8 @@ window.KiuAgente = (function () {
     get_weather: { place: 'Mendoza' },
     media_control: { action: 'pause' },
     summarize_url: { url: 'https://ejemplo.com/nota' },
-    log_expense: { action: 'add', amount: 12 },
+    /* log_expense: SIN ejemplo a propósito. Con uno ({action:'add',amount:12}) «gasté 12 en almuerzo» pasó de acertar en 4 mediciones
+       seguidas a elegir action=total (medido en el teléfono, 2.20.6). No se sabe por qué; se deja como estaba. */
     daily_briefing: {},
     read_notifications: {},
     read_sms: {}

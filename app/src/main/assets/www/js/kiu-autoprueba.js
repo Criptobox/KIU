@@ -120,6 +120,9 @@ window.KiuAutoprueba = (function () {
       }
       var otra = P[1 - i1];
       var hecha = '[' + P[i1].tool + ' ok] Listo.';
+      /* v2.20.7: igual que el agente: si se sabe qué parte falta, solo se ofrece esa herramienta y no se admite «listo» */
+      var forz = null;
+      try { forz = A.faltaParte ? A.faltaParte(caso.pedido, [P[i1].tool]) : null; } catch (eF) { forz = null; }
       A.probarDecision(caso.pedido, function (d2) {
         vista(d2);
         var ms = (d1.ms || 0) + (d2 && d2.ms || 0);
@@ -140,7 +143,7 @@ window.KiuAutoprueba = (function () {
         }
         var e2 = evaluar(otra, d2);
         fin(e2.ok ? { ok: true, motivo: '' } : { ok: false, motivo: '2.ª parte: ' + e2.motivo }, ms);
-      }, { sinGramatica: opcs.sinGramatica, obs: [hecha] });
+      }, { sinGramatica: opcs.sinGramatica, obs: [hecha], forzar: forz || undefined });
     }, opcs);
   }
 

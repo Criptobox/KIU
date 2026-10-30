@@ -267,7 +267,10 @@ test('v2.20.0: un modelo que hace las dos partes acierta, y el 2.º paso se mide
   assert.equal(p2.length, U.COMPUESTOS.length);
   for (const v of p2) {
     assert.match(v.hist[0].content, /otra parte sin hacer/);
-    assert.match(v.gbnf, /listo|done/, 'en el 2.º paso la gramática admite terminar');
+    /* v2.20.7: se sabe qué parte falta → solo esa herramienta y sin «listo» en la regla raíz */
+    const raiz = v.gbnf.split('\n').find((l) => /^root ::=/.test(l));
+    assert.doesNotMatch(raiz, /\bdone\b/, 'en el 2.º paso de un compuesto no se admite terminar con la mitad hecha');
+    assert.equal(raiz.split('|').length, 1, 'y se ofrece una sola herramienta: ' + raiz);
   }
   assert.ok(visto.filter((v) => !/YA INTENTASTE/.test(v.hist[0].content)).every((v) => !/otra parte sin hacer/.test(v.hist[0].content)));
 });

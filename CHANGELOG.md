@@ -1,3 +1,22 @@
+## [2.20.7] - 2026-10-30
+
+**TERCERA MEDICIÓN DE COMPUESTOS EN EL TELÉFONO** (2.20.6 instalada, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 9,3 s por decisión, 2,4 tok/s. Mejoró uno y empeoraron otros dos:
+
+| Pedido | Resultado en 2.20.6 | Qué pasó |
+|---|---|---|
+| tarea comprar pan **y** anotá… | ✅ pasa (fallaba en 2.20.4) | el ejemplo de crear/listar funcionó |
+| `gasté 12 en almuerzo` (simple) | ❌ `log_expense` con `action=total` | **regresión mía**: pasaba en las 4 mediciones anteriores; lo único que cambié en su prompt fue agregarle un ejemplo a `log_expense` |
+| alarma a las 7 **y** tiempo en Córdoba | ❌ `web_search` | con el ejemplo de `get_weather` correcto igual eligió otra herramienta |
+| linterna **y** pausá la música | ❌ «listo» | dijo «listo» dos veces, también tras avisarle que faltaba una parte |
+
+- **Se revierte el ejemplo de `log_expense`** (queda sin ejemplo, como estaba). No sé por qué lo empeoró: el ejemplo (`add`, 12) parecía correcto. La evidencia es que antes acertaba siempre y ahora no, y lo único distinto es ese ejemplo.
+- **Aprendizaje:** el ejemplo y el aviso en texto **no alcanzan** con este modelo: lo que un modelo chico ignora en el prompt, la **gramática** no lo deja ignorar. Cuando `faltaParte()` sabe qué parte falta, el paso siguiente ofrece **solo esa herramienta** y la regla raíz **no admite «listo»** (`root ::= get-weather`). Una vez por herramienta, para no entrar en bucle; una acción de escritura sigue pidiendo confirmación al usuario. Si la gramática no se aplica en el motor, sigue valiendo el rechazo del «listo» (una vez) de 2.20.6.
+- **Riesgo conocido:** si `faltaParte()` se equivoca (ve una parte pendiente donde no la hay), el agente intenta una herramienta de más. En una escritura el usuario puede decir que no; en una lectura no hace daño. La tabla de pruebas incluye los casos que NO deben activarse («anotá que compré pan y leche», «alarma a las 7 y media», «el tiempo en Córdoba y si llueve»), pero es una heurística de palabras clave.
+- La Prueba completa mide lo mismo que hace el agente: el 2.º paso de cada compuesto se pide con solo la herramienta que falta.
+- Tests actualizados (los que fijaban «en el 2.º paso la gramática admite terminar» y «la ya usada sigue disponible» eran del comportamiento anterior; para pedidos de una sola intención siguen valiendo) y 2 nuevos: la regla raíz del 2.º paso ofrece solo la herramienta que falta y sin `done`; `log_expense` no tiene ejemplo. Además corregí comprobaciones mías que no comprobaban nada (los nombres en la gramática van con guion: `get-weather`, no `get_weather`).
+- **Sin verificar en el teléfono:** hay que repetir la Prueba completa. **Velocidad:** 9,3 s por decisión, otra vez por encima de los 6,1 s de la medición de 2.20.0; dos corridas seguidas lentas hacen menos probable que sea solo temperatura. No lo investigué.
+- Versión 2.20.7 (versionCode 114).
+
 ## [2.20.6] - 2026-10-30
 
 **SEGUNDA MEDICIÓN DE PEDIDOS COMPUESTOS EN EL TELÉFONO** (2.20.4 instalada, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 9,0 s por decisión, 2,5 tok/s. Los 21 simples siguen bien. Los 3 compuestos **siguen fallando, por causas nuevas**: el arreglo de 2.20.1 quitó la repetición de la herramienta anterior y dejó ver lo siguiente.

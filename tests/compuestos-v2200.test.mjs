@@ -7,14 +7,14 @@ import { cargarAgente } from './evals/harness.mjs';
 
 const PEDIDO = 'agregá una tarea: comprar pan, y anotá que el dentista es el martes';
 
-function correr(guion) {
+function correr(guion, pedido = PEDIDO) {
   const r = cargarAgente();
   r.ctx.S.kiu = { ok: true, name: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf' };
   const prompts = [];
   r.ctx.Kiu = { ask(hist, maxT, cb, onTok, gbnf) { prompts.push({ sys: hist[0].content, gbnf }); cb({ ok: true, text: guion[Math.min(prompts.length, guion.length) - 1] }); } };
   return new Promise((res) => {
     const resultados = [];
-    r.ctx.KiuAgente.run({ pedido: PEDIDO, habla: [PEDIDO], componer: false, resultado: (n, ok) => resultados.push([n, ok]) }, (out) => res({ out, prompts, resultados, ctx: r.ctx }));
+    r.ctx.KiuAgente.run({ pedido, habla: [pedido], componer: false, resultado: (n, ok) => resultados.push([n, ok]) }, (out) => res({ out, prompts, resultados, ctx: r.ctx }));
   });
 }
 
@@ -33,14 +33,23 @@ test('las dos partes se ejecutan en un solo turno y el 2.º paso sabe que falta 
   assert.doesNotMatch(x.prompts[0].sys, /otra parte sin hacer/);
 });
 
-test('en el 1.er paso la gramática no admite "listo"; en el 2.º sí', async () => {
+test('en el 1.er paso la gramática no admite "listo"; en el 2.º de un pedido simple sí; en el de un compuesto, no', async () => {
   const raiz = (g) => g.split('\n').find((l) => /^root ::=/.test(l));
-  const x = await correr([
+  /* pedido de UNA intención: tras la herramienta se puede terminar */
+  const simple = await correr([
     JSON.stringify({ tool: 'manage_task', args: { action: 'add', text: 'comprar pan' } }),
     JSON.stringify({ listo: true }),
+  ], 'agregá una tarea: comprar pan');
+  assert.doesNotMatch(raiz(simple.prompts[0].gbnf), /\bdone\b/);
+  assert.match(raiz(simple.prompts[1].gbnf), /\bdone\b/);
+  /* compuesto: falta «anotá…» → se ofrece solo remember y no se admite terminar (v2.20.7) */
+  const comp = await correr([
+    JSON.stringify({ tool: 'manage_task', args: { action: 'add', text: 'comprar pan' } }),
+    JSON.stringify({ tool: 'remember', args: { text: 'el dentista es el martes' } }),
   ]);
-  assert.doesNotMatch(raiz(x.prompts[0].gbnf), /\bdone\b/);
-  assert.match(raiz(x.prompts[1].gbnf), /\bdone\b/);
+  assert.doesNotMatch(raiz(comp.prompts[1].gbnf), /\bdone\b/);
+  assert.match(raiz(comp.prompts[1].gbnf), /remember/);
+  assert.doesNotMatch(raiz(comp.prompts[1].gbnf), /manage-task|web-search|set-alarm/, 'solo la que falta');
 });
 
 test('v2.20.1: en el 2.º paso el ejemplo del prompt NO es el de la herramienta que ya salió bien', async () => {
@@ -54,14 +63,14 @@ test('v2.20.1: en el 2.º paso el ejemplo del prompt NO es el de la herramienta 
   const primera = ej(x.prompts[0].sys), segunda = ej(x.prompts[1].sys);
   assert.equal(primera, 'remember');
   assert.notEqual(segunda, primera, 'el 2.º paso mostraba el mismo ejemplo y el modelo lo copiaba');
-  assert.ok(x.prompts[1].sys.lastIndexOf('remember') > x.prompts[1].sys.indexOf('manage_task'), 'lo ya hecho va al final de la lista');
+  assert.equal(x.prompts[1].sys.includes('remember('), false, 'lo ya hecho ya no está en la lista del 2.º paso (v2.20.7): solo lo que falta');
 });
 
-test('v2.20.1: la herramienta ya usada sigue disponible (se puede repetir, p. ej. dos alarmas)', async () => {
+test('v2.20.1/2.20.7: en un pedido SIMPLE la herramienta ya usada sigue disponible (se puede repetir, p. ej. dos alarmas)', async () => {
   const x = await correr([
     JSON.stringify({ tool: 'manage_task', args: { action: 'add', text: 'comprar pan' } }),
     JSON.stringify({ listo: true }),
-  ]);
+  ], 'agregá una tarea: comprar pan');
   assert.match(x.prompts[1].sys, /manage_task/);
   assert.match(x.prompts[1].gbnf, /manage_task/);
 });

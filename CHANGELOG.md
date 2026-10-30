@@ -1,3 +1,14 @@
+## [2.20.8] - 2026-10-30
+
+**DOS ARREGLOS DE PROCESO. No cambia lo que el agente hace.**
+
+- **Los prompts del 1.er paso quedan fijados.** En 2.20.1 y en 2.20.6, al arreglar pedidos compuestos, rompí dos pedidos simples que acertaban (`manage_task` → `list`; `log_expense` → `total`). Solo se vio en el teléfono, días después. Ahora `tests/fixtures/prompts-paso1.json` guarda lo que el modelo ve en el 1.er paso de los 24 pedidos de la Prueba (herramientas, prompt completo y una huella de la gramática), capturado de `probarDecision` tal cual. Si un cambio lo toca, el CI falla; si es a propósito: `node scripts/prompts-paso1.mjs --actualizar`, y volver a medir en el teléfono. Se comprobó que detecta un cambio: quitando una frase del prompt, el test falla.
+- **La velocidad se mide en dos partes.** «tok/s» contaba desde *antes* de leer el prompt, así que mezclaba leer el pedido (prefill) con generar. El motor (`kiullama_jni.cpp`) ahora mide aparte cuánto tarda en leer el pedido (`pre_ms`) y la velocidad de generación (`gen_tps`) y los publica en `genStatus` (Java no cambia: pasa ese JSON tal cual). La Prueba los promedia y los muestra: «Leer el pedido: X s · generar: Y tok/s». Si sube «leer», creció el prompt; si baja «generar», es el teléfono (temperatura, ahorro de batería). El «tok/s» de siempre queda igual, para poder comparar con las mediciones anteriores.
+- Sobre la lentitud de las dos últimas mediciones (9,0 y 9,3 s por decisión frente a 6,1–6,6 s): entre 2.20.0 y 2.20.4 el prompt de los 21 pedidos simples no cambió y aun así fue más lento, lo que apunta al teléfono. Con esta medición separada se va a poder confirmar.
+- Tests: `tests/prompts-fijados.test.mjs`, `tests/velocidad-v2208.test.mjs` (3).
+- **Sin compilar aquí:** el cambio en C++ se compila por primera vez en el CI.
+- Versión 2.20.8 (versionCode 115).
+
 ## [2.20.7] - 2026-10-30
 
 **TERCERA MEDICIÓN DE COMPUESTOS EN EL TELÉFONO** (2.20.6 instalada, Llama 3.2·1B, Prueba completa): 21 de 24 (88 %), 9,3 s por decisión, 2,4 tok/s. Mejoró uno y empeoraron otros dos:

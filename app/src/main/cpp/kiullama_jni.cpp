@@ -66,6 +66,10 @@ std::atomic<int>  g_threads{4};
 std::atomic<int>  g_ctx_used{0};   // v2.7.4: contexto realmente aplicado (puede ser menor al pedido)
 std::atomic<int>  g_toks{0};
 std::atomic<double> g_tps{0.0};
+// v2.20.8: g_tps cuenta desde ANTES del prefill, así que mezcla leer el prompt con generar. Se miden aparte:
+// cuánto tardó en leer el prompt (ms) y a qué velocidad genera después (tok/s). g_tps queda igual por compatibilidad.
+std::atomic<double> g_pre_ms{0.0};
+std::atomic<double> g_gen_tps{0.0};
 
 // v2.13.7: metadatos del prefijo KV reutilizable. Solo se conservan tokens del
 // prompt anterior; los tokens de respuesta se eliminan desde el primer token
@@ -467,15 +471,15 @@ Java_com_kiu_agent_KiuNative_genStatus(JNIEnv* env, jclass) {
     }
     text.resize(utf8_valid_prefix(text));   // no mostrar un caracter a medio llegar
     std::string esc = json_escape(text);
-    char buf[160];
+    char buf[240];
     // done describe el estado real del worker, no si ya emitió tokens. Esto permite
     // detectar terminaciones tempranas y errores antes del primer token.
     bool running = g_running.load();
     // done también debe ser true cuando el modelo termina con cero tokens; de
     // otro modo el watchdog JS espera 180 s porque su ruta de 6 s nunca se activa.
     bool done = !running;
-    snprintf(buf, sizeof(buf), ",\"toks\":%d,\"tps\":%.1f,\"running\":%s,\"id\":%llu,\"done\":%s}",
-             g_toks.load(), g_tps.load(), running ? "true" : "false", g_gen_id.load(), done ? "true" : "false");
+    snprintf(buf, sizeof(buf), ",\"toks\":%d,\"tps\":%.1f,\"pre_ms\":%.0f,\"gen_tps\":%.1f,\"running\":%s,\"id\":%llu,\"done\":%s}",
+             g_toks.load(), g_tps.load(), g_pre_ms.load(), g_gen_tps.load(), running ? "true" : "false", g_gen_id.load(), done ? "true" : "false");
     std::string s = "{\"text\":\"" + esc + "\"" + buf;
     return mk_jstring(env, s);
 }
@@ -524,6 +528,8 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     g_stop = false;
     g_toks = 0;
     g_tps = 0.0;
+    g_pre_ms = 0.0;
+    g_gen_tps = 0.0;
     {
         std::lock_guard<std::mutex> lk2(g_out_mtx);
         g_out.clear();
@@ -710,6 +716,8 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
         done += chunk;
     }
 
+    const auto t_gen0 = ggml_time_us();
+    g_pre_ms = (double)(t_gen0 - t0) / 1000.0;
     if (ok) {
         for (int i = 0; i < n_predict; i++) {
             if (g_stop) break;
@@ -773,6 +781,8 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
             const auto now = ggml_time_us();
             double secs = (double)(now - t0) / 1000000.0;
             if (secs > 0.05) g_tps = (double)(i + 1) / secs;
+            const double gsecs = (double)(now - t_gen0) / 1000000.0;
+            if (gsecs > 0.05) g_gen_tps = (double)(i + 1) / gsecs;
 
             one[0] = id;
             emit(one, 1, n_pos, true);

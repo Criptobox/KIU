@@ -1272,6 +1272,8 @@
           var pct = Math.round(r.acierto * 100);
           res.textContent = (r.parcial ? '(cancelada) ' : '') + (r.sinGramatica ? '[sin gramática] ' : '') + prettyName(r.modelo) + ': ' + r.aciertos + ' de ' + r.total + ' bien (' + pct + ' %) · ' +
             (r.msPromedio / 1000).toFixed(1).replace('.', ',') + ' s por decisión' + (r.tps ? ' · ' + r.tps.toFixed(1).replace('.', ',') + ' tok/s' : '') +
+            /* v2.20.8: separa leer el pedido (prefill) de generar; si sube «leer», el prompt creció; si baja «generar», es el teléfono */
+            (r.preMs || r.genTps ? '\nLeer el pedido: ' + (r.preMs / 1000).toFixed(1).replace('.', ',') + ' s · generar: ' + (r.genTps ? r.genTps.toFixed(1).replace('.', ',') : '—') + ' tok/s' : '') +
             '\n' + r.texto +
             (r.fallos.length ? '\nFalló: ' + r.fallos.slice(0, 4).map(function (f) { return '«' + f.pedido + '» → ' + f.motivo; }).join(' · ') : '');
         });

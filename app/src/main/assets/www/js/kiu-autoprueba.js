@@ -86,7 +86,7 @@ window.KiuAutoprueba = (function () {
   function guardar(res) {
     try {
       var m = JSON.parse(localStorage.getItem(KEY) || '{}');
-      m[res.modelo] = { acierto: res.acierto, total: res.total, ms: res.msPromedio, tps: res.tps, nivel: res.nivel, at: Date.now() };
+      m[res.modelo] = { acierto: res.acierto, total: res.total, ms: res.msPromedio, tps: res.tps, preMs: res.preMs, genTps: res.genTps, nivel: res.nivel, at: Date.now() };
       localStorage.setItem(KEY, JSON.stringify(m));
     } catch (e) { }
   }
@@ -158,6 +158,14 @@ window.KiuAutoprueba = (function () {
     if (!cargado) { cb({ ok: false, err: 'cargá un modelo primero (Ajustes → Modelos)' }); return; }
     var casos = CASOS.filter(function (c) { return o.completa || c.rapido; }).concat(o.completa ? COMPUESTOS : []);
     var filas = [], i = 0, tpsSum = 0, tpsN = 0;
+    /* v2.20.8: aparte de los tok/s de siempre (que mezclan leer el prompt con generar), lo que tarda en leer el pedido y la velocidad de generación */
+    var preSum = 0, preN = 0, genSum = 0, genN = 0;
+    function medir(dec) {
+      if (!dec) return;
+      if (dec.tps) { tpsSum += dec.tps; tpsN++; }
+      if (typeof dec.preMs === 'number' && dec.preMs > 0) { preSum += dec.preMs; preN++; }
+      if (typeof dec.genTps === 'number' && dec.genTps > 0) { genSum += dec.genTps; genN++; }
+    }
     (function sig() {
       if ((typeof o.cancelar === 'function' && o.cancelar()) || i >= casos.length) { fin(); return; }
       var caso = casos[i];
@@ -165,10 +173,10 @@ window.KiuAutoprueba = (function () {
       miga({ pedido: caso.pedido, n: i + 1, de: casos.length, modelo: String(window.S.kiu.name || ''), gram: !o.sinGramatica, ramMB: ramLibreMB(), at: Date.now() });
       var opcs = { sinGramatica: !!o.sinGramatica };
       function listo(ev, ms) { filas.push({ pedido: caso.pedido, ok: ev.ok, motivo: ev.motivo, ms: ms }); i++; sig(); }
-      if (caso.partes) { compuesto(caso, opcs, function (dec) { if (dec && dec.tps) { tpsSum += dec.tps; tpsN++; } }, listo); return; }
+      if (caso.partes) { compuesto(caso, opcs, function (dec) { medir(dec); }, listo); return; }
       A.probarDecision(caso.pedido, function (dec) {
         var ev = evaluar(caso, dec);
-        if (dec && dec.tps) { tpsSum += dec.tps; tpsN++; }
+        medir(dec);
         listo(ev, dec && dec.ms || 0);
       }, opcs);
     })();
@@ -183,6 +191,8 @@ window.KiuAutoprueba = (function () {
         ok: hechos > 0, modelo: String(window.S.kiu.name || ''), total: hechos, aciertos: aciertos, acierto: acierto,
         msPromedio: hechos ? Math.round(filas.reduce(function (a, f) { return a + f.ms; }, 0) / hechos) : 0,
         tps: tpsN ? tpsSum / tpsN : 0,
+        preMs: preN ? Math.round(preSum / preN) : 0,
+        genTps: genN ? genSum / genN : 0,
         fallos: filas.filter(function (f) { return !f.ok; }).map(function (f) { return { pedido: f.pedido, motivo: f.motivo }; }),
         nivel: v.nivel, texto: v.texto, parcial: hechos < casos.length, sinGramatica: !!o.sinGramatica
       };

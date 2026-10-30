@@ -832,8 +832,13 @@ window.KiuAgente = (function () {
         if (!res || !res.ok || !res.text) { cb({ ok: false, err: (res && res.err) || 'sin respuesta', ms: ms }); return; }
         var d = parseDecision(res.text), rd = d ? readDecision(d) : null;
         var v = rd && !rd.bad ? validate(rd.name, rd.raw) : null;
+        /* v2.20.8: el motor mide aparte cuánto tardó en LEER el prompt y a qué velocidad GENERA (tok/s de antes mezclaba las dos) */
+        var gst = null;
+        try { gst = JSON.parse(rawBridge('kiuGenStatus') || 'null'); } catch (eSt) { gst = null; }
         cb({
           ok: true, ms: ms, tps: res.tps || 0, raw: s(res.text, 160),
+          preMs: gst && typeof gst.pre_ms === 'number' ? gst.pre_ms : null,
+          genTps: gst && typeof gst.gen_tps === 'number' ? gst.gen_tps : null,
           tool: rd && !rd.bad ? rd.name : null,
           args: v && v.ok ? v.args : (rd && rd.raw) || null,
           valida: !!(v && v.ok), listo: !!(d && isDone(d))

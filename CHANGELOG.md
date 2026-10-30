@@ -1,3 +1,17 @@
+## [2.20.4] - 2026-10-30
+
+**SEGUNDA TANDA DE LA REVISIÓN DE PANTALLAS** (`docs/REVISION-UI-2.20.2.md`, puntos 3, 4, 6 y 7, y el asistente de voz). Se mueve, se pliega y se renombra; ningún `id` que use el JS cambió.
+
+- **Chat:** la bienvenida pasa de tres párrafos a dos frases con ejemplos («poné una alarma a las 7», «qué batería me queda»). La bienvenida ya no lleva la barra de reintentar / copiar / me sirvió / compartir (tampoco la vieja, ya guardada en el historial de quien ya usó la app).
+- **Memoria:** fuera la tarjeta «Memoria» repetida y los cinco contadores aparte; cada pestaña lleva su número (`Recuerdos 0`, `Tareas 0`…). Las pestañas se desplazan, así que «Gustos» ya no queda cortada. «Documentos (RAG)» pasa a después de la lista, en vez de partir la página, y «Frases que Kiu aprendió» queda como una línea.
+- **Biblioteca:** el filtro «Cuentas» (que es de cálculos: calculadora, propina, descuento) pasa a **«Cálculos»**; «Conexiones» pasa a **«Atajos a tus apps»** y su botón «Conectar» a **«Abrir»**, porque abren WhatsApp, Mapas, etc.; no enlazan cuentas.
+- **Ajustes:** «Diagnóstico» y «Actualizaciones» (cinco botones anchos de igual peso) pasan a un desplegable **«Mantenimiento → Diagnóstico y actualizaciones»**, cerrado. Los dos interruptores (avisos de versión nueva, interrumpir a Kiu) quedan a la vista porque son ajustes de verdad. Si el asistente de voz manda al resultado del diagnóstico, el desplegable se abre solo.
+- **Asistente de voz:** sigue abriéndose solo una vez tras la bienvenida si falta algo, pero **solo sobre Inicio**; si ya navegaste a otra pantalla no se te abre encima y reintenta en el próximo arranque.
+- 6 tests nuevos (`tests/pantallas-v2204.test.mjs`).
+- **No hecho de la revisión:** #8 (un sistema visual común: espaciado, jerarquía de títulos, botones primario/secundario). Es un rediseño transversal que conviene hacer mirando el teléfono, no a ciegas. Tampoco se tocaron los 4 iconos del Chat: ya tienen `title` y `aria-label`; solo les falta texto visible.
+- **Sin verificar en un teléfono:** visto solo en un navegador de escritorio con viewport de teléfono y sin el puente de Android.
+- Versión 2.20.4 (versionCode 111).
+
 ## [2.20.3] - 2026-10-30
 
 **PRIMEROS CAMBIOS DE LA REVISIÓN DE PANTALLAS** (`docs/REVISION-UI-2.20.2.md`, puntos 1, 2 y 5). Se mueve y se pliega; no se borra ninguna función ni se renombra ningún `id`.

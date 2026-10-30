@@ -1559,3 +1559,10 @@ body.fs-l .msg-bubble { font-size:16px; line-height:1.6; }
 .motor-card.motor-cta { border-color:rgba(45,212,191,.55); background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(139,92,246,.10)); box-shadow:0 0 0 1px rgba(45,212,191,.12),0 10px 28px rgba(45,212,191,.10); }
 .motor-card.motor-cta #status-title { color:var(--teal); }
 .motor-card.motor-cta .motor-ram { display:none; }
+
+/* ---- v2.20.4 · Memoria: pestañas con su número, desplazables; ya no se corta «Gustos» ---- */
+.seg.seg-scroll { overflow-x:auto; scrollbar-width:none; }
+.seg.seg-scroll::-webkit-scrollbar { display:none; }
+.seg.seg-scroll .seg-btn { flex:0 0 auto; white-space:nowrap; padding-left:14px; padding-right:14px; }
+.seg-btn i { font-style:normal; font-size:10.5px; font-weight:800; margin-left:5px; padding:1px 6px; border-radius:9px; background:rgba(141,166,255,.16); color:var(--dim); }
+.seg-btn.active i { background:rgba(45,212,191,.22); color:var(--teal); }

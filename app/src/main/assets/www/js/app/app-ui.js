@@ -1794,7 +1794,8 @@
     renderChat: function () {
       var hist = chatHist();
       if (!hist.length) {
-        hist = [{ role: 'bot', text: 'Hola, soy Kiu, tu agente personal. Vivo en tu teléfono con mi cerebro local, sin nube y sin vueltas.\n\nPuedo encender la linterna, poner alarmas, llamar a tus contactos, mandar WhatsApp, cronometrar, anotar recuerdos y leer la batería y el espacio reales del teléfono.\n\nTocá el micrófono una vez y sigo escuchando después de cada respuesta. Y si activás «Despertar por voz», decí «Kiu» y te escucho incluso con la app cerrada.', ts: Date.now() }];
+        /* v2.20.4: bienvenida corta (antes eran 3 párrafos, más alta que la pantalla); las sugerencias tocables ya están debajo */
+        hist = [{ role: 'bot', bienvenida: true, text: 'Hola, soy Kiu, tu agente personal. Vivo en tu teléfono, sin nube y sin vueltas.\n\nProbá: «poné una alarma a las 7», «qué batería me queda» o «anotá que…». Tocá el micrófono y hablamos.', ts: Date.now() }];
         saveHist(hist);
       }
       var el = document.getElementById('chat-messages');
@@ -1805,7 +1806,8 @@
       var isBot = m.role !== 'user';
       var html = '<div class="msg ' + (isBot ? 'bot' : 'user') + '" data-ts="' + (m.ts || 0) + '">' +
         '<div class="msg-bubble">' + (m.img ? '<img class="msg-img" src="' + m.img + '" alt="foto adjunta">' : '') + this.md(m.text) + '</div>';
-      if (isBot) {
+      /* v2.20.4: la bienvenida no es una respuesta: reintentar/copiar/me sirvió/compartir no tienen sentido ahí */
+      if (isBot && !m.bienvenida && !/^Hola, soy Kiu, tu agente personal\./.test(String(m.text || ''))) {
         html += '<div class="msg-actions">' +
           '<button class="act-btn" data-act="retry" title="Reintentar">' + icon('refresh', 15) + '</button>' +
           '<button class="act-btn" data-act="copy" title="Copiar">' + icon('copy', 15) + '</button>' +
@@ -3616,7 +3618,7 @@
         return '<button class="list-row" data-cx="' + ix + '">' +
           '<span class="list-ic cx" style="color:' + c.color + '">' + icon(c.ic, 18) + '</span>' +
           '<div class="list-txt"><strong>' + c.name + '</strong><span>' + c.desc + '</span></div>' +
-          '<span style="font-size:11px;color:var(--teal);font-weight:700">Conectar</span></button>';
+          '<span style="font-size:11px;color:var(--teal);font-weight:700">Abrir</span></button>';
       }).join('');
       el.onclick = function (ev) {
         var b = ev.target.closest('[data-cx]');
@@ -4437,6 +4439,7 @@
         if (id === 'vol') { bridge('openSettings', ['sonido']); return; }
         if (id === 'model') {
           self.closeModal(); self.go('settings'); self.renderDiagVoz();
+          var mt = document.getElementById('adv-mant'); if (mt) mt.open = true;   /* v2.20.4: el resultado vive en un desplegable */
           setTimeout(function () { var bx = document.getElementById('diag-voz-box'); if (bx && bx.scrollIntoView) bx.scrollIntoView({ block: 'start' }); }, 250);
         }
       });
@@ -4445,6 +4448,8 @@
     asistenteAuto: function () {
       try {
         if (store('kiu_asist_voz') || !store('nexo_onb')) return;
+        /* v2.20.4: solo sobre Inicio; si ya se fue a otra pantalla no se le tapa. No se marca como hecho: reintenta en el próximo arranque. */
+        if (this.current && this.current !== 'home') return;
         var root = document.getElementById('modal-root');
         if (root && !root.classList.contains('hidden')) return;
         var malos = this.vozPasos().filter(function (p) { return !p.ok; });

@@ -87,8 +87,9 @@ Recomendación: hacer **1, 2 y 5** primero. Son lo que más pesa en el primer us
 
 ## Estado
 
-- **Hecho en 2.20.3:** #1 (Modelos), #2 (Inicio) y #5 (saludo una sola vez). Ver el CHANGELOG.
-- **Pendiente:** #3 Chat, #4 Memoria, #6 Ajustes, #7 Biblioteca, #8 sistema visual. También queda el Asistente de voz que se abre solo.
+- **Hecho en 2.20.3:** #1 (Modelos), #2 (Inicio) y #5 (saludo una sola vez).
+- **Hecho en 2.20.4:** #3 (Chat: bienvenida corta y sin acciones; los 4 iconos del encabezado siguen sin texto visible), #4 (Memoria), #6 (Ajustes), #7 (Biblioteca) y el asistente de voz solo sobre Inicio. Ver el CHANGELOG.
+- **Pendiente:** #8 sistema visual común (rediseño transversal; conviene hacerlo con el teléfono delante).
 
 ## Verificación pendiente
 

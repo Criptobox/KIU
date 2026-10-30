@@ -240,7 +240,7 @@
     <header class="topbar">
       <div class="brand-txt solo">
         <h1>Biblioteca</h1>
-        <p>Herramientas y conexiones reales</p>
+        <p>Herramientas y atajos reales</p>
       </div>
     </header>
     <div class="content">
@@ -252,7 +252,7 @@
       <div class="filter-bar">
         <div class="filter-scroll" id="biblio-filters">
           <button class="chip active" data-f="todas">Todas</button>
-          <button class="chip" data-f="cuentas">Cuentas</button>
+          <button class="chip" data-f="cuentas">Cálculos</button>
           <button class="chip" data-f="notas">Notas</button>
           <button class="chip" data-f="tiempo">Tiempo</button>
           <button class="chip" data-f="util">Utilidades</button>
@@ -262,8 +262,8 @@
       <div id="tools-grid" class="tools-grid"></div>
 
       <div class="section-row">
-        <h3>Conexiones</h3>
-        <span class="count-badge" id="cx-count">9 conexiones reales</span>
+        <h3>Atajos a tus apps</h3>
+        <span class="count-badge" id="cx-count">9 atajos reales</span>
       </div>
       <div id="cx-list" class="list"></div>
     </div>
@@ -508,29 +508,17 @@
       <button class="icon-btn" id="mem-add" aria-label="Agregar"></button>
     </header>
     <div class="content">
-      <div class="mem-hero">
-        <div class="mem-hero-txt">
-          <h2>Memoria</h2>
-          <p>Todo lo que Kiu sabe de vos</p>
-        </div>
-        <span class="mem-hero-ic ic" data-ic="memory"></span>
-      </div>
-      <div class="mem-stats">
-        <div class="mem-stat"><strong id="st-rec">0</strong><span>Recuerdos</span></div>
-        <div class="mem-stat"><strong id="st-tar">0</strong><span>Tareas</span></div>
-        <div class="mem-stat"><strong id="st-not">0</strong><span>Notas</span></div>
-        <div class="mem-stat"><strong id="st-ala">0</strong><span>Alarmas</span></div>
-        <div class="mem-stat"><strong id="st-apr">0</strong><span>Aprendido</span></div>
-      </div>
-      <div id="rag-card"></div>
-      <div class="seg" id="mem-tabs">
-        <button class="seg-btn active" data-tab="recuerdos">Recuerdos</button>
-        <button class="seg-btn" data-tab="tareas">Tareas</button>
-        <button class="seg-btn" data-tab="notas">Notas</button>
-        <button class="seg-btn" data-tab="alarmas">Alarmas</button>
+      <!-- v2.20.4: sin tarjeta «Memoria» repetida y sin contadores aparte: cada pestaña lleva su número (los ids st-* siguen siendo los mismos). Documentos (RAG) va DESPUÉS de la lista, no partiendo la página. -->
+      <div class="seg seg-scroll" id="mem-tabs">
+        <button class="seg-btn active" data-tab="recuerdos">Recuerdos <i id="st-rec">0</i></button>
+        <button class="seg-btn" data-tab="tareas">Tareas <i id="st-tar">0</i></button>
+        <button class="seg-btn" data-tab="notas">Notas <i id="st-not">0</i></button>
+        <button class="seg-btn" data-tab="alarmas">Alarmas <i id="st-ala">0</i></button>
         <button class="seg-btn" data-tab="prefs">Gustos</button>
       </div>
       <div id="mem-list" class="list"></div>
+      <p class="set-hint small" style="margin:8px 2px 0">Frases que Kiu aprendió: <b id="st-apr">0</b></p>
+      <div id="rag-card"></div>
     </div>
   </section>
 
@@ -711,15 +699,20 @@
         </div>
       </div>
 
-      <div class="section-row"><h3>Diagnóstico</h3></div>
+      <!-- v2.20.4: Diagnóstico y Actualizaciones eran 5 botones anchos de igual peso; ahora van plegados. Los dos interruptores (avisos de versión, interrumpir a Kiu) son ajustes de verdad y quedan a la vista. -->
+      <div class="section-row"><h3>Mantenimiento</h3></div>
+      <details class="adv-box" id="adv-mant" style="margin-top:4px">
+        <summary><span>Diagnóstico y actualizaciones</span><em>Revisar configuración y voz · buscar versión nueva</em></summary>
+        <div class="adv-body">
       <button class="btn-ghost full" id="btn-diag" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="shield"></span> Revisar mi configuración</button>
       <button class="btn-ghost full" id="btn-diag-voz" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="mic"></span> Diagnosticar voz</button>
       <button class="btn-ghost full" id="btn-asist-voz" style="justify-content:center;margin:2px 0 14px"><span class="ic" data-ic="mic"></span> Asistente de voz (paso a paso)</button>
       <div id="diag-voz-box"></div>
 
-      <div class="section-row"><h3>Actualizaciones</h3></div>
       <button class="btn-ghost full" id="btn-estado" style="justify-content:center;margin:2px 0 8px"><span class="ic" data-ic="check"></span> Estado y diagnóstico</button>
       <button class="btn-ghost full" id="btn-upd" style="justify-content:center;margin:2px 0 8px"><span class="ic" data-ic="cloudup"></span> Buscar versión nueva</button>
+        </div>
+      </details>
       <div class="set-row">
         <div><strong>Avisarme de versiones nuevas</strong><span>Consulta GitHub cada pocas horas y avisa con una notificación. Se puede apagar</span></div>
         <button class="toggle" id="tg-upd" aria-label="Avisarme de versiones nuevas"></button>

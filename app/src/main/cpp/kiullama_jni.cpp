@@ -11,6 +11,7 @@
 
 #include <jni.h>
 #include <algorithm>
+#include <exception>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -609,24 +610,10 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
     // Se llama a traves de kiu_penalties(): si el llama.cpp vendorizado cambia la firma, el build NO se rompe
     // (compila igual y solo se omite la penalizacion). Firma conocida: (last_n, repeat, freq, present).
     if (llama_sampler* pen = kiu_penalties(64, 1.10f, 0.0f, 0.0f)) llama_sampler_chain_add(smpl, pen);
-    if (temperature <= 0.0f) {
-        llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
-    } else {
-        llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-        llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-    }
-
-    // v2.9.2: la gramatica va SIEMPRE al final de la cadena. Es lo que decide si
-    // el motor descarta un token: lo que no encaje con la gramatica no se puede
-    // emitir. Si fuera antes, los samplers de arriba verian tokens que despues
-    // se rechazan y el resultado seria incoherente.
-    //
-    // OJO: si viniera temp > 0 habria un sampler de_dist ALEATORIO antes. El
-    // de abajo (la gramatica) va ultimo y es el que decide, asi que el resultado
-    // igual quedaria restringido: la gramatica acota el conjunto, la temperatura
-    // elige dentro. Aun asi, motor.js manda temp=0 cuando manda gramatica, para
-    // no depender de cual de los dos gana el conflicto.
+    // v2.9.2 (corregido en v2.19.3): la gramatica va ANTES del selector, para que
+    // restrinja los candidatos antes de que se elija el token. Si el selector va
+    // primero, elige un token que la gramatica puede rechazar al aceptarlo (excepcion).
+    // motor.js manda temp=0 cuando manda gramatica, para no depender de la temperatura.
     std::string gbnf;
     {
         std::lock_guard<std::mutex> glk(g_gram_mtx);
@@ -651,6 +638,21 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
                 g_grammar_ok = false;
             }
         }
+    }
+
+    // v2.19.3: el SELECTOR (greedy o min_p+temp+dist) va DESPUES de la gramatica.
+    // llama_sampler_sample() elige el token con el selector y luego llama a
+    // llama_sampler_accept() de TODA la cadena; la gramatica lanza
+    // std::runtime_error si recibe un token que no encaja. Con la gramatica
+    // detras del selector, este elegia sin restriccion, la gramatica rechazaba
+    // y la excepcion cruzaba el JNI = cierre de la app. Orden correcto:
+    // penalizaciones -> gramatica -> selector.
+    if (temperature <= 0.0f) {
+        llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+    } else {
+        llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
+        llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     }
 
     llama_batch_ext* batch = llama_batch_ext_init(g_ctx);
@@ -734,7 +736,20 @@ Java_com_kiu_agent_KiuNative_generate(JNIEnv* env, jclass, jstring prompt, jint 
                 }
             }
 
-            llama_token id = llama_sampler_sample(smpl, g_ctx, -1);
+            llama_token id;
+            try {
+                id = llama_sampler_sample(smpl, g_ctx, -1);
+            } catch (const std::exception& e) {
+                // v2.19.3: la gramatica puede lanzar al aceptar un token; una excepcion
+                // C++ cruzando el JNI mata el proceso. Se corta la generacion con error.
+                set_err(std::string("el sampler fallo: ") + e.what());
+                ok = false;
+                break;
+            } catch (...) {
+                set_err("el sampler fallo (excepcion desconocida)");
+                ok = false;
+                break;
+            }
             if (llama_vocab_is_eog(vocab, id)) break;
 
             char piece[192];

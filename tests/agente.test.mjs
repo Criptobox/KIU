@@ -755,15 +755,17 @@ test('la gramática se CONSUME: no queda pegada a la generación siguiente', () 
     'y stopGen() también la limpia: si se cancela, no queda esperando');
 });
 
-test('la gramática va al FINAL de la cadena de samplers', () => {
+test('la gramática va ANTES del selector (v2.19.3)', () => {
+  /* llama_sampler_sample() elige con el selector y luego hace accept de toda la cadena;
+     la gramática lanza si el token no encaja. Con el selector antes, la excepción cruzaba
+     el JNI y cerraba la app. Orden: penalizaciones -> gramática -> selector. */
   const cpp = readFileSync(path.join(here, '..', 'app', 'src', 'main', 'cpp', 'kiullama_jni.cpp'), 'utf8');
   const start = cpp.indexOf('// sampler: greedy');
   const bloque = cpp.slice(start, cpp.indexOf('llama_batch_ext_init(g_ctx)', start));
-  const iUltimo = bloque.lastIndexOf('llama_sampler_chain_add(smpl, gs)');
-  assert.ok(iUltimo > -1, 'no agrega el sampler de gramática a la cadena');
-  const iAnteriores = bloque.lastIndexOf('llama_sampler_chain_add(smpl, llama_sampler_init_dist');
-  assert.ok(iUltimo > iAnteriores,
-    'la gramática tiene que ir después de los demás: es la que decide si el token se puede emitir');
+  const iGram = bloque.lastIndexOf('llama_sampler_chain_add(smpl, gs)');
+  assert.ok(iGram > -1, 'no agrega el sampler de gramática a la cadena');
+  const iSelector = bloque.indexOf('llama_sampler_chain_add(smpl, llama_sampler_init_greedy');
+  assert.ok(iGram < iSelector, 'la gramática tiene que ir antes del selector');
 });
 
 test('si el motor no soporta la firma, el build NO se rompe', () => {

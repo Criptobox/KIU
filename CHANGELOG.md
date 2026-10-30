@@ -1,3 +1,12 @@
+## [2.19.3] - 2026-10-30
+
+**CAUSA PROBABLE DEL CIERRE DE LA APP AL «PROBAR AGENTE».** Hallada leyendo llama.cpp; no reproducida en un teléfono (ver «Sin verificar»).
+
+- **`kiullama_jni.cpp`:** la cadena del sampler era `penalizaciones → selector → gramática`. `llama_sampler_sample()` elige con el selector y después llama `accept` en toda la cadena; la gramática lanza `std::runtime_error` si recibe un token que no encaja, y una excepción C++ que cruza el JNI mata el proceso. Ahora el orden es `penalizaciones → gramática → selector`, y `llama_sampler_sample` va en `try/catch` (la generación termina con error en vez de cerrar la app).
+- `tests/motor-gramatica-v2193.test.mjs`: test de **forma** (orden de la cadena y `try/catch`); no ejecuta el motor.
+- Versión 2.19.3 (versionCode 105).
+- **Sin verificar:** el C++ no se compiló aquí (sin NDK) ni se probó en un teléfono. El primer build del CI es la primera compilación real.
+
 ## [2.19.2] - 2026-10-29
 
 **LA VERSIÓN, A LA VISTA Y A PRUEBA DE OLVIDOS.**

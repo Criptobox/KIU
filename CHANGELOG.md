@@ -1,3 +1,9 @@
+## [2.20.5] - 2026-10-30
+
+- **Chat: el aviso flotante ya no tapa la caja de texto.** Los avisos («Listo, preguntame lo que quieras», «Copiado»…) caían a 104 px del borde, justo encima de la caja de texto del Chat. Ahora, en el Chat, flotan por encima de las sugerencias. `go()` marca la pantalla activa en `body[data-screen]` y el CSS ajusta solo ahí; en las demás pantallas no cambia nada.
+- Medido en un navegador de escritorio con viewport de teléfono (390 × 844): antes el aviso se solapaba con las sugerencias y la caja; ahora termina 21 px por encima de las sugerencias. **Sin verificar en un teléfono** (teclado abierto, otros tamaños de pantalla).
+- 1 test nuevo. Versión 2.20.5 (versionCode 112).
+
 ## [2.20.4] - 2026-10-30
 
 **SEGUNDA TANDA DE LA REVISIÓN DE PANTALLAS** (`docs/REVISION-UI-2.20.2.md`, puntos 3, 4, 6 y 7, y el asistente de voz). Se mueve, se pliega y se renombra; ningún `id` que use el JS cambió.

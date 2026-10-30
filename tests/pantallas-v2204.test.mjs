@@ -59,3 +59,11 @@ test('asistente de voz: se abre solo una vez y solo sobre Inicio', () => {
   assert.match(a, /this\.current !== 'home'\) return;/);
   assert.ok(a.indexOf("this.current !== 'home'") < a.indexOf("store('kiu_asist_voz', 1)"), 'si no está en Inicio NO se marca como hecho');
 });
+
+test('v2.20.5: en el Chat el aviso flotante no tapa la caja de texto', () => {
+  assert.match(ui, /document\.body\.setAttribute\('data-screen', name\)/, 'go() marca la pantalla activa en el body');
+  const m = css.match(/body\[data-screen="chat"\] \.toast \{ bottom:calc\((\d+)px/);
+  assert.ok(m, 'hay una regla propia del aviso en el Chat');
+  const base = Number(css.match(/\.toast \{[^}]*bottom:calc\((\d+)px/)[1]);
+  assert.ok(Number(m[1]) > base + 60, 'sube por encima de la caja de texto y las sugerencias (' + m[1] + ' > ' + base + ')');
+});

@@ -512,6 +512,7 @@
         if (bk) bk.setAttribute('data-go', this.current);
       }
       this.current = name;
+      document.body.setAttribute('data-screen', name);   /* v2.20.5: el CSS sube los avisos sobre la caja de texto del Chat */
       var screens = document.querySelectorAll('.screen');
       for (var i = 0; i < screens.length; i++) screens[i].classList.remove('active');
       var sc = document.getElementById('screen-' + name);

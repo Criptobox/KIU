@@ -768,10 +768,10 @@ window.KiuAgente = (function () {
      mañana". La lógica vive en kiu-rutinas.js; esto solo traduce los argumentos. Crear o
      borrar pide confirmación; ver la lista no. Una rutina solo puede LEER (ver ese archivo). */
   def('manage_routine',
-    'Crear, ver o borrar rutinas a cierta hora. "todos los días a las 8 el resumen" = crear.',
+    'Crear, ver, pausar, cambiar, borrar rutinas. "todos los días a las 8 el resumen" = crear.',
     {
-      action: { type: 'string', required: true, enum: ['add', 'list', 'remove'], desc: 'add=crear (con hora), list=ver, remove=borrar.' },
-      name: { type: 'string', required: false, desc: 'Nombre corto. Para remove: cuál.' },
+      action: { type: 'string', required: true, enum: ['add', 'list', 'pause', 'resume', 'edit', 'remove'], desc: 'add=crear, list=ver, pause/resume, edit=hora/días, remove=borrar.' },
+      name: { type: 'string', required: false, desc: 'Cuál, al pausar, cambiar o borrar.' },
       at: { type: 'string', required: false, desc: 'Hora: "8", "20:30".' },
       days: { type: 'string', required: false, desc: '"lunes y jueves", "fines de semana". Vacío = todos los días.' },
       what: { type: 'string', required: false, enum: ['resumen', 'clima', 'agenda', 'tareas', 'decir'], desc: 'Qué hacer. Por defecto resumen.' },
@@ -789,6 +789,31 @@ window.KiuAgente = (function () {
         R.programarDespertadores();
         return { ok: true, text: 'Rutina creada — ' + R.dicho(r.routine) + (nf ? '. La próxima es ' + nf.toLocaleString('es', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) + '.' : '.') +
           ' Corre cuando Kiu está abierto; con la app cerrada te suena una alarma y al tocarla se ejecuta.' };
+      }
+      /* v2.21.0 · pausar / reanudar / cambiar por voz. Sin nombre y con UNA sola rutina, es esa. */
+      if (action === 'pause' || action === 'resume' || action === 'edit') {
+        var cual = s(a.name, 40).trim();
+        if (!cual) {
+          var todas = R.all();
+          if (todas.length === 1) cual = todas[0].id;
+          else return { ok: false, err: todas.length ? 'decime cuál rutina (tenés ' + todas.length + ')' : 'no tenés rutinas' };
+        }
+        if (action === 'edit') {
+          var e = R.edit(cual, { at: a.at, days: a.days, what: a.what, ifRain: a.if_rain, text: a.text });
+          if (!e.ok) return { ok: false, err: e.err };
+          R.programarDespertadores();
+          var nf2 = e.routine.on ? R.nextFire(e.routine) : null;
+          return { ok: true, text: 'Rutina cambiada — ' + R.dicho(e.routine) + (nf2 ? '. La próxima es ' + nf2.toLocaleString('es', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) + '.' : '.') };
+        }
+        var on = action === 'resume';
+        var r2 = R.setEnabled(cual, on);
+        if (!r2) return { ok: false, err: 'no encontré una rutina "' + cual + '"' };
+        if (on) {
+          R.programarDespertadores();
+          var nf3 = R.nextFire(R.find(r2.id));
+          return { ok: true, text: 'Reanudé la rutina "' + r2.name + '"' + (nf3 ? '. La próxima es ' + nf3.toLocaleString('es', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) + '.' : '.') };
+        }
+        return { ok: true, text: 'Pausé la rutina "' + r2.name + '". No corre hasta que me digas «reanudá la rutina ' + r2.name + '».' };
       }
       if (action === 'remove') {
         var q = s(a.name, 40).trim();
@@ -890,7 +915,9 @@ window.KiuAgente = (function () {
     read_notifications: ['notificacion', 'notificaciones', 'notificación', 'llego', 'llegó', 'me llego', 'me llegó', 'escribio', 'escribió', 'novedades', 'avisos'],
     read_sms: ['sms', 'mensajes de texto', 'mensaje de texto', 'banco', 'codigo', 'código', 'leeme mis mensajes', 'leeme los mensajes'],
     media_control: ['musica', 'música', 'cancion', 'canción', 'pausa', 'pausar', 'pausá', 'reproducir', 'siguiente', 'anterior', 'saltá', 'saltar', 'tema', 'volumen', 'play'],
-    manage_routine: ['rutina', 'rutinas', 'cada', 'todos los', 'todas las', 'automatico', 'automaticamente', 'los lunes', 'los martes', 'los miercoles', 'los jueves', 'los viernes', 'los sabados', 'los domingos', 'fines de semana', 'avisame si', 'siempre que'],
+    /* v2.21.0: «la rutina» suma una palabra más; sin ella «pausá la rutina» iba a la música y «cambiá la rutina» a la memoria
+       (sus listas tienen «pausá/pausa» y «cambiá/cambia», que sin acentos son la misma palabra y cuentan doble) */
+    manage_routine: ['rutina', 'rutinas', 'la rutina', 'las rutinas', 'reanuda', 'reactiva', 'desactiva', 'suspende', 'cada', 'todos los', 'todas las', 'automatico', 'automaticamente', 'los lunes', 'los martes', 'los miercoles', 'los jueves', 'los viernes', 'los sabados', 'los domingos', 'fines de semana', 'avisame si', 'siempre que'],
     get_weather: ['clima', 'tiempo', 'llueve', 'lluvia', 'llover', 'llovera', 'lloviendo', 'va llover', 'hace calor', 'hace frio', 'temperatura', 'pronostico', 'pronóstico', 'paraguas', 'calor', 'frio', 'frío', 'nublado', 'hace sol'],
     summarize_url: ['resumi', 'resumí', 'resume', 'resumen de', 'pagina', 'página', 'articulo', 'artículo', 'link', 'enlace', 'url', 'https', 'leé', 'lee esta'],
     log_expense: ['gaste', 'gasté', 'gasto', 'gastos', 'gastar', 'pague', 'pagué', 'compre', 'compré', 'costo', 'presupuesto'],
@@ -1672,7 +1699,15 @@ window.KiuAgente = (function () {
   }
   function ejemploArgs(n, pedido) {
     if (n === 'manage_task') return esConsultaPedido(pedido) ? { action: 'list' } : { action: 'add', text: 'sacar turno' };
-    if (n === 'manage_routine') return esConsultaPedido(pedido) ? { action: 'list' } : { action: 'add', at: '7:30', what: 'resumen' };
+    if (n === 'manage_routine') {
+      /* v2.21.0: el ejemplo sigue al VERBO del pedido; si no, al pedir «pausá la rutina» el modelo copiaría «crear».
+         Nombre y hora del ejemplo distintos de los de la Prueba, para no confundir copiar con acertar. */
+      var pv = palabrasPedido(pedido).join(' ');
+      if (/\b(pausa|desactiva|suspende|frena|para)\b/.test(pv)) return { action: 'pause', name: 'clima' };
+      if (/\b(reanuda|reactiva|activa|retoma)\b/.test(pv)) return { action: 'resume', name: 'clima' };
+      if (/\b(cambia|mova|move|pasa|corre)\b/.test(pv) && /\brutina/.test(pv)) return { action: 'edit', name: 'clima', at: '7:30' };
+      return esConsultaPedido(pedido) ? { action: 'list' } : { action: 'add', at: '7:30', what: 'resumen' };
+    }
     return EJEMPLO[n];
   }
   function ejemplos(lista, seguro, pedido) {

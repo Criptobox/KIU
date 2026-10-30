@@ -1,3 +1,19 @@
+## [2.21.0] - 2026-10-30
+
+**RUTINAS POR VOZ: PAUSAR, REANUDAR Y CAMBIAR.** «pausá la rutina del resumen», «reanudá la rutina del resumen», «cambiá la rutina del resumen a las 9», «…solo los lunes».
+
+- `manage_routine` suma tres acciones: `pause`, `resume` y `edit` (sin herramienta nueva: el pedido del traspaso era no agregar herramientas sin medir). `KiuRutinas.edit()` cambia solo lo que viene (hora, días, qué hace, condición de lluvia, texto) y deja el resto. `setEnabled` ya existía y ninguna herramienta lo usaba.
+- Las alarmas de Android siguen a la rutina: pausar quita su alarma; reanudar la vuelve a programar; cambiar la hora quita la vieja y programa la nueva. Si la hora nueva de hoy ya pasó, hoy no corre (igual que al crear).
+- Sin nombre: si hay UNA sola rutina, es esa; si hay varias, pregunta cuál. Pausar, reanudar y cambiar piden confirmación, como crear y borrar; listar no. La lista marca las pausadas con «[pausada]».
+- **Selección:** «pausá la rutina» iba a la música y «cambiá la rutina» a la memoria, porque sus listas de palabras tienen «pausá/pausa» y «cambiá/cambia», que sin acentos son la misma palabra y cuentan doble. Las rutinas suman la frase «la rutina»; «pausá la música» y «cambiá el dentista al jueves» siguen yendo donde iban.
+- **Ejemplo según el verbo:** el ejemplo de rutinas sigue al verbo del pedido (pausar, reanudar, cambiar, consultar o crear). Si no, al pedir «pausá la rutina» el modelo copiaría «crear», como ya pasó con `manage_task`.
+- **Presupuesto de tokens:** entra sin subir ningún techo; se recortaron las descripciones hasta que entró.
+- **Prueba completa:** 3 pedidos nuevos (pausar, reanudar y cambiar); ahora son 24 simples y 3 compuestos. También están en el arnés (`tests/evals/escenarios.mjs`).
+- **Prompts fijados actualizados a propósito:** cambió el del pedido «todos los días a las 8 dame el resumen» (la descripción de `manage_routine`). Fue el único de los 24 anteriores que cambió. **Hay que repetir la Prueba completa en el teléfono** para confirmar que sigue acertando.
+- Tests: `tests/rutinas-voz-v2210.test.mjs` (7).
+- **Sin verificar en el teléfono.**
+- Versión 2.21.0 (versionCode 116).
+
 ## [2.20.8] - 2026-10-30
 
 **DOS ARREGLOS DE PROCESO. No cambia lo que el agente hace.**

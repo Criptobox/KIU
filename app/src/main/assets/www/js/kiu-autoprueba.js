@@ -40,7 +40,11 @@ window.KiuAutoprueba = (function () {
     { pedido: 'buen día, qué tengo hoy', tool: 'daily_briefing' },
     { pedido: 'qué notificaciones me llegaron', tool: 'read_notifications' },
     { pedido: 'pausá la música', tool: 'media_control', args: { action: 'pause' } },
-    { pedido: 'todos los días a las 8 dame el resumen', tool: 'manage_routine', args: { action: 'add', at: { re: '8' } } }
+    { pedido: 'todos los días a las 8 dame el resumen', tool: 'manage_routine', args: { action: 'add', at: { re: '8' } } },
+    /* v2.21.0 · rutinas por voz (solo en la prueba completa) */
+    { pedido: 'pausá la rutina del resumen', tool: 'manage_routine', args: { action: 'pause' } },
+    { pedido: 'reanudá la rutina del resumen', tool: 'manage_routine', args: { action: 'resume' } },
+    { pedido: 'cambiá la rutina del resumen a las 9', tool: 'manage_routine', args: { action: 'edit', at: { re: '9' } } }
   ];
 
   /* v2.20.0 · PEDIDOS COMPUESTOS (solo en la prueba completa). Dos partes, en cualquier orden:

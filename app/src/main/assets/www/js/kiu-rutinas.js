@@ -139,6 +139,37 @@ window.KiuRutinas = (function () {
     return r;
   }
 
+  /* v2.21.0 · EDITAR por voz: «cambiá la rutina del resumen a las 9», «…solo los lunes».
+     Cambia solo lo que viene; el resto queda igual. Si la hora nueva de hoy ya pasó, hoy no corre (igual que al crear). */
+  function edit(q, spec, now) {
+    var r = find(q);
+    if (!r) return { ok: false, err: 'no encontré una rutina "' + String(q || '').slice(0, 40) + '"' };
+    spec = spec || {};
+    now = now || new Date();
+    var l = all(), x = null, i;
+    for (i = 0; i < l.length; i++) if (l[i].id === r.id) x = l[i];
+    var cambios = 0;
+    if (spec.at != null && String(spec.at).trim()) {
+      var at = parseHora(spec.at);
+      if (!at) return { ok: false, err: 'no entendí la hora nueva (decime algo como "9:30")' };
+      if (at !== x.at) { x.at = at; cambios++; }
+    }
+    if (spec.days != null && String(spec.days).trim()) { x.days = parseDias(spec.days); cambios++; }
+    var w = sinAcentos(spec.what || '');
+    if (w && Object.prototype.hasOwnProperty.call(ACCIONES, w) && w !== x.what) { x.what = w; cambios++; }
+    var rain = sinAcentos(spec.ifRain || '');
+    if (rain) { x.rain = /hoy/.test(rain) ? 'hoy' : /manana/.test(rain) ? 'manana' : ''; cambios++; }
+    if (spec.text != null && String(spec.text).trim()) { x.text = String(spec.text).replace(/\s+/g, ' ').trim().slice(0, 120); cambios++; }
+    if (!cambios) return { ok: false, err: 'decime qué cambiar: la hora, los días o qué hace' };
+    if (x.what === 'decir' && !x.text) return { ok: false, err: 'decime qué querés que diga la rutina' };
+    var hm = x.at.split(':');
+    var hoyAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +hm[0], +hm[1], 0, 0);
+    if (hoyAt.getTime() <= now.getTime()) x.last = ymd(now);
+    if (!save(l)) return { ok: false, err: 'no pude guardar la rutina' };
+    quitarDespertador(r);   /* la alarma vieja tenía la hora vieja; quien llama reprograma */
+    return { ok: true, routine: x };
+  }
+
   /* ================= calendario ================= */
   function permitido(r, d) { return !r.days || !r.days.length || r.days.indexOf(d.getDay()) >= 0; }
   function horaDe(r, d) {
@@ -269,7 +300,7 @@ window.KiuRutinas = (function () {
   }
 
   return {
-    add: add, all: all, find: find, remove: remove, setEnabled: setEnabled,
+    add: add, all: all, find: find, remove: remove, setEnabled: setEnabled, edit: edit,
     nextFire: nextFire, due: due, correr: correr, tick: tick, dicho: dicho,
     programarDespertadores: programarDespertadores,
     parseHora: parseHora, parseDias: parseDias,

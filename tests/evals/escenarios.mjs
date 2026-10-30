@@ -77,6 +77,10 @@ export const ESCENARIOS = [
   { id: 'rutina-resumen', pedido: 'todos los días a las 8 dame el resumen', espera: { tool: 'manage_routine' }, args: { action: 'add', at: /8/ }, ejemplo: { action: 'add', name: 'resumen', at: '8', what: 'resumen' } },
   { id: 'rutina-lluvia', pedido: 'los domingos a las 20 avisame si llueve mañana', espera: { tool: 'manage_routine' }, args: { action: 'add' }, ejemplo: { action: 'add', name: 'paraguas', at: '20', days: 'domingo', what: 'clima', if_rain: 'manana' } },
   { id: 'rutinas-ver', pedido: 'qué rutinas tengo', espera: { tool: 'manage_routine' }, args: { action: 'list' }, ejemplo: { action: 'list' } },
+  /* v2.21.0 · rutinas por voz */
+  { id: 'rutina-pausar', pedido: 'pausá la rutina del resumen', espera: { tool: 'manage_routine' }, args: { action: 'pause' }, ejemplo: { action: 'pause', name: 'resumen' } },
+  { id: 'rutina-reanudar', pedido: 'reanudá la rutina del resumen', espera: { tool: 'manage_routine' }, args: { action: 'resume' }, ejemplo: { action: 'resume', name: 'resumen' } },
+  { id: 'rutina-cambiar', pedido: 'cambiá la rutina del resumen a las 9', espera: { tool: 'manage_routine' }, args: { action: 'edit', at: /9/ }, ejemplo: { action: 'edit', name: 'resumen', at: '9' } },
   { id: 'documento', pedido: 'qué dice el contrato en mis documentos', espera: { tool: 'search_docs' }, ejemplo: { query: 'contrato' } },
 ];
 

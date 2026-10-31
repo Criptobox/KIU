@@ -2,6 +2,8 @@
 
 **NOTAS POR VOZ: BUSCAR LO GUARDADO COMO SE PREGUNTA HABLANDO.** «qué anoté ayer», «qué guardé del médico», «qué dije el lunes», «qué anoté la semana pasada».
 
+**Medición de 2.22.0 en el teléfono (Qwen2.5-Coder·1.5B, Prueba completa): 28 de 28 (100 %), 6,7 s por decisión (antes 8,7). Leer el pedido: 4,3 s (antes 6,3); generar: 13,3 tok/s (antes 14,8).** El reordenamiento del prompt de 2.21.1 bajó un 32 % el tiempo de leer el pedido sin perder acierto. La generación quedó parecida, así que la mejora viene del prefill y no del estado del teléfono. «qué anoté ayer» pasó: el modelo pone «ayer» en la consulta. Es una sola corrida.
+
 Guardar ya funcionaba («anotá…», `remember`), y cada recuerdo ya llevaba su fecha. Lo que fallaba era **encontrarlo**:
 - La búsqueda exigía que **todas** las palabras de la consulta estuvieran en el recuerdo, incluidas «qué», «del», «anoté». Si el modelo pasaba la frase entera, no encontraba nada.
 - No entendía fechas: «ayer» se buscaba como palabra dentro del texto.

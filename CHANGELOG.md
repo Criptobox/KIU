@@ -1,3 +1,24 @@
+## [2.22.0] - 2026-10-31
+
+**NOTAS POR VOZ: BUSCAR LO GUARDADO COMO SE PREGUNTA HABLANDO.** «qué anoté ayer», «qué guardé del médico», «qué dije el lunes», «qué anoté la semana pasada».
+
+Guardar ya funcionaba («anotá…», `remember`), y cada recuerdo ya llevaba su fecha. Lo que fallaba era **encontrarlo**:
+- La búsqueda exigía que **todas** las palabras de la consulta estuvieran en el recuerdo, incluidas «qué», «del», «anoté». Si el modelo pasaba la frase entera, no encontraba nada.
+- No entendía fechas: «ayer» se buscaba como palabra dentro del texto.
+
+Cambios (en `memoria.js`; **no cambia lo que ve el modelo** y no se agregó ninguna herramienta):
+- **Fechas:** «hoy», «ayer», «anteayer», «esta semana», «la semana pasada», «este mes», «el mes pasado» y los días («el martes» es el último martes, hoy incluido) filtran por el día en que se guardó.
+- **Palabras de la pregunta fuera:** «qué», «del», «anoté», «guardé», «nota»… no se exigen.
+- **Plurales:** «reuniones» encuentra «reunión».
+- **Lo más parecido:** si nada coincide con todas las palabras, muestra lo que coincide con alguna (más coincidencias primero), con el título «No encontré exactamente eso; lo más parecido:».
+- **«martes» como contenido:** en «el dentista es el martes», «martes» no es la fecha de guardado. Si con el filtro de fecha no aparece nada, se vuelve a buscar tomando la palabra como texto.
+- **Cada resultado dice cuándo se guardó:** «- [recuerdo, ayer] …», «- [nota, el lunes] …».
+- **Prueba completa:** un pedido nuevo, «qué anoté ayer» → `recall` con «ayer» en la consulta. Si el modelo deja la consulta vacía, la búsqueda devuelve todo, y la prueba lo marca como fallo. Ahora son 25 simples y 3 compuestos.
+- **No hecho:** sinónimos («doctor» no encuentra «médico»). Haría falta búsqueda por significado (los embeddings del RAG) sobre la memoria; queda para otra tanda.
+- Tests: `tests/memoria-busqueda-v2220.test.mjs` (8), con fechas fijas. Los de memoria anteriores pasan sin cambios.
+- **Sin verificar en el teléfono.**
+- Versión 2.22.0 (versionCode 119).
+
 ## [2.21.2] - 2026-10-31
 
 **SEGURIDAD: UN SMS, UNA NOTIFICACIÓN O UNA PÁGINA YA NO PUEDEN HACER QUE KIU ACTÚE SIN PREGUNTAR.** Arreglos de `docs/REVISION-SEGURIDAD-INYECCION-2.21.md`.

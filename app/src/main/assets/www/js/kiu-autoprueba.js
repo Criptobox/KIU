@@ -44,7 +44,9 @@ window.KiuAutoprueba = (function () {
     /* v2.21.0 · rutinas por voz (solo en la prueba completa) */
     { pedido: 'pausá la rutina del resumen', tool: 'manage_routine', args: { action: 'pause' } },
     { pedido: 'reanudá la rutina del resumen', tool: 'manage_routine', args: { action: 'resume' } },
-    { pedido: 'cambiá la rutina del resumen a las 9', tool: 'manage_routine', args: { action: 'edit', at: { re: '9' } } }
+    { pedido: 'cambiá la rutina del resumen a las 9', tool: 'manage_routine', args: { action: 'edit', at: { re: '9' } } },
+    /* v2.22.0 · buscar por fecha: «ayer» tiene que llegar a la consulta */
+    { pedido: 'qué anoté ayer', tool: 'recall', args: { query: { re: 'ayer' } } }
   ];
 
   /* v2.20.0 · PEDIDOS COMPUESTOS (solo en la prueba completa). Dos partes, en cualquier orden:

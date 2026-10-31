@@ -348,11 +348,15 @@ window.KiuAgente = (function () {
           : 'Todavía no hay nada guardado: ni recuerdos, ni tareas, ni notas.' };
       }
       var ETI = { recuerdos: 'recuerdo', tareas: 'tarea', notas: 'nota', prefs: 'preferencia' };
+      /* v2.22.0: cada línea dice CUÁNDO se guardó («qué anoté ayer» necesita la fecha) */
+      var cf = typeof M.cuandoFue === 'function' ? M.cuandoFue : function () { return ''; };
       var lines = hits.slice(0, 6).map(function (h) {
-        return '- [' + (ETI[h.kind] || h.kind) + '] ' + String(h.text || '').slice(0, 120) + (h.done ? ' (hecha)' : '');
+        var c = cf(h.ts);
+        return '- [' + (ETI[h.kind] || h.kind) + (c ? ', ' + c : '') + '] ' + String(h.text || '').slice(0, 120) + (h.done ? ' (hecha)' : '');
       });
       var cola = hits.length > 6 ? (' (te muestro 6 de ' + hits.length + ')') : '';
-      return { ok: true, text: 'Guardado' + cola + ':\n' + lines.join('\n') };
+      var titulo = hits.parcial ? ('No encontré exactamente eso; lo más parecido' + cola + ':') : ('Guardado' + (hits.fecha ? ' ' + hits.fecha : '') + cola + ':');
+      return { ok: true, text: titulo + '\n' + lines.join('\n') };
     });
 
   /* --- 8-ter. LAS TAREAS (v2.14.2) ----------------------------------------

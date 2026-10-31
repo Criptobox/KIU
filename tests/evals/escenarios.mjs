@@ -39,6 +39,8 @@ export const ESCENARIOS = [
   { id: 'guardar-nota', pedido: 'anotá que tengo que llamar al banco', espera: { tool: 'remember' }, ejemplo: { text: 'tengo que llamar al banco' } },
   { id: 'preguntar-recuerdo', pedido: '¿cuándo era el dentista?', espera: { tool: 'recall' }, args: { query: /dentista/ }, ejemplo: { query: 'dentista' } },
   { id: 'ver-todo-guardado', pedido: 'qué tengo guardado', espera: { tool: 'recall' }, ejemplo: {} },
+  /* v2.22.0 · la búsqueda entiende fechas: el modelo tiene que pasar «ayer» en la consulta (si la deja vacía, devuelve todo) */
+  { id: 'anote-ayer', pedido: 'qué anoté ayer', espera: { tool: 'recall' }, args: { query: /ayer/ }, ejemplo: { query: 'ayer' } },
   { id: 'tarea-nueva', pedido: 'agregá una tarea: comprar pan', espera: { tool: 'manage_task' }, args: { action: 'add', text: /pan/ }, ejemplo: { action: 'add', text: 'comprar pan' } },
   { id: 'ver-tareas', pedido: 'qué tareas tengo pendientes', espera: { tool: 'manage_task' }, args: { action: 'list' }, ejemplo: { action: 'list' } },
   { id: 'completar-tarea', pedido: 'ya hice la tarea de comprar pan', espera: { tool: 'manage_task' }, args: { action: 'done' }, ejemplo: { action: 'done', text: 'comprar pan' } },

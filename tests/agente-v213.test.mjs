@@ -292,10 +292,10 @@ test('app-ui pasa confirmar al agente y confirm() avisa la cancelación (no cuel
      `avanzar` para que la pastilla diga qué está haciendo. El contrato que
      importa sigue siendo que el llamador pase `confirmar`. */
   assert.match(uiSrc, /habla: \[text\],/);
-  assert.match(uiSrc, /confirmar: function \(tool, args, cbC\)/);
+  assert.match(uiSrc, /confirmar: function \(tool, args, cbC, opC\) \{ selfA\.agentConfirm\(tool, args, cbC, opC\); \}/, 'v2.21.2: pasa también las opciones (forzar)');
   assert.match(uiSrc, /avanzar: function \(que, tool\)/, 'y que le avise en qué está');
-  assert.match(uiSrc, /agentConfirm: function \(tool, args, cb\)/);
-  assert.match(uiSrc, /if \(!S\.agentConfirm\) \{ cb\(true\); return; \}/, 'apagada por defecto');
+  assert.match(uiSrc, /agentConfirm: function \(tool, args, cb, opts\)/);
+  assert.match(uiSrc, /if \(!S\.agentConfirm && !forzar\) \{ cb\(true\); return; \}/, 'apagada por defecto, salvo tras texto de terceros (v2.21.2)');
   assert.match(uiSrc, /onCancel: function \(\) \{ once\(false\); \}/);
   assert.match(uiSrc, /setTimeout\(function \(\) \{ once\(false\); \}, 60000\)/, 'tope de 60 s');
   assert.match(uiSrc, /opts\.onCancel\(\)/);

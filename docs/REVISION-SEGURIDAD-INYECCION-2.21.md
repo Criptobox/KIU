@@ -42,6 +42,10 @@ La redacción final («Contestale al usuario… usando SOLO estos resultados») 
 ### 4. Memoria persistente en cada prompt (bajo)
 `perfil()` agrega a CADA decisión un resumen de la memoria (`KiuMem.summary(240)`: 3 tareas y 3 recuerdos de 40 caracteres). Si algo ajeno llega a guardarse (hueco 1), queda en todos los prompts siguientes. El límite de 40 caracteres por ítem lo acota mucho; con el punto 1 resuelto, guardar requiere confirmación.
 
+## Estado
+
+**Arreglado en 2.21.2:** los huecos 1, 2 y 3 (y el 4 queda cubierto por el 1: guardar tras texto de terceros pide confirmación). El 3 depende del modelo; la protección determinista es la del 1. Ver el CHANGELOG.
+
 ## Orden propuesto
 
 1. Contaminación por turno → confirmación obligatoria (hueco 1). Determinista, con tests.

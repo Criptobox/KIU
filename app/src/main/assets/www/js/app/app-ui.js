@@ -2175,7 +2175,8 @@
           var selfA = this;
           KiuAgente.run({
             habla: [text],
-            confirmar: function (tool, args, cbC) { selfA.agentConfirm(tool, args, cbC); },
+            /* v2.21.2: el 4.º argumento (forzar tras texto de terceros) TIENE que llegar a agentConfirm */
+            confirmar: function (tool, args, cbC, opC) { selfA.agentConfirm(tool, args, cbC, opC); },
             /* v2.14.2 · el agente AVISA en qué está. Un turno puede dar 3-4 pasos
                y cada paso es una generación en la CPU del teléfono: sin esto el
                usuario ve "Enrutando" clavado y no sabe si está pensando,
@@ -2295,11 +2296,14 @@
        llamar y mandar SMS ya abren el marcador/los mensajes y ahí se confirma). Con el
        ajuste encendido, el agente pregunta ANTES de ejecutar. Sin respuesta en 60 s se
        cancela: un modal ignorado no puede dejar el bucle colgado. */
-    agentConfirm: function (tool, args, cb) {
-      if (!S.agentConfirm) { cb(true); return; }
+    agentConfirm: function (tool, args, cb, opts) {
+      /* v2.21.2 · forzar: el agente leyó texto de terceros (SMS, notificaciones, una página) en este turno. Se pregunta
+         aunque la confirmación esté apagada: ese texto puede haber pedido la acción, no el usuario. */
+      var forzar = !!(opts && opts.forzar);
+      if (!S.agentConfirm && !forzar) { cb(true); return; }
       var a = args || {};
       var txt = {
-        send_message: 'Preparar un SMS para ' + (a.to || 'ese contacto') + '.',
+        send_message: 'Preparar un SMS para ' + (a.to || 'ese contacto') + ': «' + String(a.text || '').slice(0, 140) + '».',
         call_contact: 'Llamar a ' + (a.who || 'ese contacto') + '.',
         remember: 'Guardar esta nota: «' + String(a.text || '').slice(0, 80) + '».',
         set_alarm: 'Programar una alarma (' + (a.when || '') + ').',
@@ -2313,12 +2317,18 @@
         manage_alarm: (a.action === 'cancel')
           ? 'Cancelar la alarma: «' + String(a.which || '').slice(0, 60) + '».'
           : 'Ver tus alarmas programadas.',
-        create_calendar_event: 'Crear el evento "' + String(a.title || '').slice(0, 60) + '" (' + (a.when || '') + ').'
+        create_calendar_event: 'Crear el evento "' + String(a.title || '').slice(0, 60) + '" (' + (a.when || '') + ').',
+        forget: 'Borrar de tu memoria: «' + String(a.text || '').slice(0, 80) + '».',
+        update_memory: 'Cambiar un recuerdo por: «' + String(a.new_text || '').slice(0, 80) + '».',
+        log_expense: 'Anotar un gasto' + (a.amount != null ? ' de ' + a.amount : '') + (a.what ? ' en ' + String(a.what).slice(0, 40) : '') + '.',
+        manage_routine: { add: 'Crear una rutina', pause: 'Pausar una rutina', resume: 'Reanudar una rutina', edit: 'Cambiar una rutina', remove: 'Borrar una rutina' }[a.action] ? ({ add: 'Crear una rutina', pause: 'Pausar una rutina', resume: 'Reanudar una rutina', edit: 'Cambiar una rutina', remove: 'Borrar una rutina' }[a.action] + (a.name ? ' («' + String(a.name).slice(0, 40) + '»)' : '') + '.') : 'Ver tus rutinas.',
+        media_control: 'Controlar la música (' + (a.action || '') + ').'
       }[tool] || ('Ejecutar ' + tool + '.');
+      if (forzar) txt = 'Antes leí ' + (opts.origen || 'texto de otra persona') + ', y eso lo escribió otra persona. Confirmá que esto lo pediste vos: ' + txt;
       var fin = false;
       function once(v) { if (fin) return; fin = true; cb(v); }
       setTimeout(function () { once(false); }, 60000);
-      this.confirm('¿Lo hago?', txt, function () { once(true); }, { okLabel: 'Hacerlo', danger: false, onCancel: function () { once(false); } });
+      this.confirm(forzar ? '¿Lo pediste vos?' : '¿Lo hago?', txt, function () { once(true); }, { okLabel: 'Hacerlo', danger: forzar, onCancel: function () { once(false); } });
     },
     /* lo que venía después del punto donde se inserta el agente */
     tryAfterAgent: function (text, task) {

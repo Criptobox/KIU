@@ -25,11 +25,11 @@ test('el README nombra la misma versión', () => {
     'la línea de versión del README quedó vieja');
 });
 
-test('versionCode y versionName avanzan juntos (piso: 2.21.1 = 117)', () => {
+test('versionCode y versionName avanzan juntos (piso: 2.21.2 = 118)', () => {
   const [a, b, c] = nombre.split('.').map(Number);
   const piso = a * 10000 + b * 100 + c;
-  assert.ok(piso >= 22101, 'la versión no puede retroceder de 2.21.1');
-  assert.ok(codigo >= 117, 'el versionCode no puede bajar de 117: ' + codigo);
+  assert.ok(piso >= 22102, 'la versión no puede retroceder de 2.21.2');
+  assert.ok(codigo >= 118, 'el versionCode no puede bajar de 118: ' + codigo);
 });
 
 test('la versión instalada se muestra en la pantalla de Modelos', () => {

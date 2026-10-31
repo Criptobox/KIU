@@ -15,7 +15,7 @@ function correr(pedido, guion, { confirmar } = {}) {
   r.ctx.KiuApp.smsQuery = () => [{ w: Date.now(), f: '+5491100000000', x: SMS_MALO }];
   const prompts = [], confirmaciones = [], resultados = [];
   r.ctx.Kiu = { ask(hist, m, cb) { prompts.push(hist.map((x) => x.content).join('\n')); cb({ ok: true, text: guion[Math.min(prompts.length, guion.length) - 1] }); } };
-  const opts = { pedido, habla: [pedido], componer: false, resultado: (n, ok) => resultados.push([n, ok]) };
+  const opts = { pedido, habla: [pedido], componer: false, resultado: (n, ok, txt) => resultados.push([n, ok, txt]) };
   if (confirmar) opts.confirmar = (tool, args, cb, o) => { confirmaciones.push({ tool, o: o || null }); cb(confirmar(tool, o)); };
   return new Promise((res) => r.ctx.KiuAgente.run(opts, (out) => res({ out, prompts, confirmaciones, resultados, ctx: r.ctx })));
 }
@@ -29,7 +29,9 @@ test('tras leer un SMS, guardar algo pide confirmación OBLIGATORIA (aunque la c
   assert.ok(c, 'se pidió confirmación para remember');
   assert.equal(c.o && c.o.forzar, true, 'marcada como forzada: la app pregunta aunque el usuario la tenga apagada');
   assert.match(c.o.origen, /tus SMS/);
-  assert.deepEqual(x.resultados.map((r) => r[0]), ['read_sms'], 'el usuario dijo que no: no se guardó nada');
+  /* v2.22.1: el agente avisa también lo que NO hizo (para cerrar la tarjeta del chat); lo que importa es que no se guardó */
+  assert.ok(x.resultados.filter((r) => r[0] === 'remember').every((r) => r[1] === false), 'remember nunca salió bien');
+  assert.equal(x.ctx.KiuMem.search('banco').length, 0, 'el usuario dijo que no: en la memoria no hay nada del SMS');
 });
 
 test('tras leer un SMS, hasta una alarma (que cuenta como lectura) pide confirmación', async () => {
@@ -47,7 +49,8 @@ test('sin quien confirme, tras texto de terceros NO se actúa', async () => {
     j({ tool: 'remember', args: { text: 'la clave del banco es 1234' } }),
     j({ listo: true }),
   ]);
-  assert.deepEqual(x.resultados.map((r) => r[0]), ['read_sms'], 'remember no corrió');
+  assert.ok(x.resultados.filter((r) => r[0] === 'remember').every((r) => r[1] === false && /necesitaba tu confirmación/.test(r[2])), 'remember no corrió');
+  assert.equal(x.ctx.KiuMem.search('banco').length, 0, 'en la memoria no hay nada del SMS');
   assert.ok(x.out.obs.some((o) => /No hice remember: necesito tu confirmación porque antes leí tus SMS/.test(o)));
 });
 

@@ -1471,10 +1471,13 @@ window.KiuAgente = (function () {
       /* v2.14.8 · el llamador se entera del RESULTADO de la herramienta, no
          solo de que empezó. Con eso el chat puede mostrar lo que Kiu hizo como
          una tarjeta ("Linterna ✓ · Acción ejecutada") en vez de un párrafo. */
-      try { if (typeof o.resultado === 'function') o.resultado(t.name, ok, txt); } catch (eRes) { }
+      avisarResultado(t.name, ok, txt);
       paso();
     }
     function anotar(t, args, ok, nota) { registrar(t.name, riskOf(t, args), ok, nota); }
+    /* v2.14.8 · el llamador se entera del RESULTADO (la tarjeta del chat). v2.22.1: también cuando NO se hizo (cancelada,
+       bloqueada): si no, la tarjeta quedaba «en curso…» para siempre. */
+    function avisarResultado(nombre, ok, txt) { try { if (typeof o.resultado === 'function') o.resultado(nombre, ok, txt); } catch (eRes) { } }
 
     function paso() {
       if (n >= max) { finish(); return; }
@@ -1623,17 +1626,18 @@ window.KiuAgente = (function () {
             o.confirmar(t.name, v.args, function (si) {
               if (resp) return; resp = true;
               if (si) ejecutar();
-              else { anotar(t, v.args, false, 'cancelada por el usuario'); obs.push('El usuario canceló ' + t.name + '.'); paso(); }
+              else { anotar(t, v.args, false, 'cancelada por el usuario'); avisarResultado(t.name, false, 'Cancelado: no lo hice.'); obs.push('El usuario canceló ' + t.name + '.'); paso(); }
             }, porTerceros ? { forzar: true, origen: origenes.join(' y ') } : undefined);
           } catch (eCf) {
             /* si preguntar falla: sin texto de terceros se hace (como antes); con texto de terceros, NO */
-            if (!resp) { resp = true; if (porTerceros) { anotar(t, v.args, false, 'sin confirmación tras texto de terceros'); obs.push('No hice ' + t.name + ': necesito tu confirmación.'); paso(); } else ejecutar(); }
+            if (!resp) { resp = true; if (porTerceros) { anotar(t, v.args, false, 'sin confirmación tras texto de terceros'); avisarResultado(t.name, false, 'No lo hice: necesitaba tu confirmación.'); obs.push('No hice ' + t.name + ': necesito tu confirmación.'); paso(); } else ejecutar(); }
           }
           return;
         }
         if (porTerceros) {
           /* nadie puede confirmar: tras texto de terceros no se actúa */
           anotar(t, v.args, false, 'sin confirmación tras texto de terceros');
+          avisarResultado(t.name, false, 'No lo hice: necesitaba tu confirmación.');
           obs.push('No hice ' + t.name + ': necesito tu confirmación porque antes leí ' + origenes.join(' y ') + '.');
           paso();
           return;

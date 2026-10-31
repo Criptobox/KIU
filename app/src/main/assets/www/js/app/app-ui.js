@@ -1805,9 +1805,14 @@
       el.innerHTML = hist.map(function (m) { return App.msgHTML(m); }).join('') + '<div class="chat-state" id="chat-state"><i></i><span>Listo para empezar</span></div>';
       this.scrollBottom();
     },
-    msgHTML: function (m) {
+    msgHTML: function (m, sinAcciones) {
       var isBot = m.role !== 'user';
-      var html = '<div class="msg ' + (isBot ? 'bot' : 'user') + '" data-ts="' + (m.ts || 0) + '">' +
+      var self0 = this;
+      /* v2.22.1 · registro: las acciones guardadas con este mensaje, como tarjetas, antes de la respuesta */
+      var cards = (!sinAcciones && m.acciones && m.acciones.length) ? m.acciones.map(function (a) {
+        return '<div class="toolcard' + (a.ok ? '' : ' falló') + '">' + self0.toolCardInner(a.tool, a.ok, a.text) + '</div>';
+      }).join('') : '';
+      var html = cards + '<div class="msg ' + (isBot ? 'bot' : 'user') + '" data-ts="' + (m.ts || 0) + '">' +
         '<div class="msg-bubble">' + (m.img ? '<img class="msg-img" src="' + m.img + '" alt="foto adjunta">' : '') + this.md(m.text) + '</div>';
       /* v2.20.4: la bienvenida no es una respuesta: reintentar/copiar/me sirvió/compartir no tienen sentido ahí */
       if (isBot && !m.bienvenida && !/^Hola, soy Kiu, tu agente personal\./.test(String(m.text || ''))) {
@@ -2053,6 +2058,9 @@
       var hist = chatHist();
       var msg = { role: role, text: text, ts: Date.now() };
       if (imgThumb) msg.img = imgThumb;
+      /* v2.22.1 · las acciones del agente de este turno quedan registradas con la respuesta de Kiu */
+      if (role === 'user') this._acciones = null;   /* sobrantes de un turno anterior: ya se vieron en vivo */
+      else if (this._acciones && this._acciones.length) { msg.acciones = this._acciones.slice(0, 8); this._acciones = null; }
       hist.push(msg);
       if (hist.length > 400) hist = hist.slice(-400);
       saveHist(hist);
@@ -2060,7 +2068,7 @@
         var el = document.getElementById('chat-messages');
         var pill = document.getElementById('chat-state');
         if (pill) pill.remove();
-        el.insertAdjacentHTML('beforeend', this.msgHTML(msg));
+        el.insertAdjacentHTML('beforeend', this.msgHTML(msg, true));   /* las tarjetas ya están en pantalla */
         if (pill) el.appendChild(pill);
         this.scrollBottom();
       }
@@ -2280,15 +2288,22 @@
       this.scrollBottom();
     },
     agentResultado: function (tool, ok, txt) {
+      var resumen = String(txt || '').replace(/\s+/g, ' ').trim();
+      if (resumen.length > 72) resumen = resumen.slice(0, 70) + '…';
+      /* v2.22.1 · REGISTRO: la acción se guarda junto al mensaje de Kiu que viene después (pushMsg), así queda en el
+         historial y se vuelve a ver al reabrir el chat. Va como dato del mensaje, NO como mensaje: lo que arma el contexto
+         del modelo usa solo m.text, así que no infla ningún prompt. */
+      (this._acciones || (this._acciones = [])).push({ tool: tool, ok: !!ok, text: resumen, ts: Date.now() });
       var div = this._toolCard;
       if (!div) return;
       this._toolCard = null;
       div.className = 'toolcard' + (ok ? '' : ' falló');
+      div.innerHTML = this.toolCardInner(tool, ok, resumen);
+    },
+    toolCardInner: function (tool, ok, resumen) {
       var nombre = this.TOOL_NOMBRE[tool] || tool;
       var ic = this.TOOL_ICONO[tool] || 'bolt';
-      var resumen = String(txt || '').replace(/\s+/g, ' ').trim();
-      if (resumen.length > 72) resumen = resumen.slice(0, 70) + '…';
-      div.innerHTML = '<span class="ti">' + icon(ic, 14) + '</span>' +
+      return '<span class="ti">' + icon(ic, 14) + '</span>' +
         '<span class="tc"><b>' + esc(nombre) + '<span class="ok">' + (ok ? '✓' : '✕') + '</span></b>' +
         '<span>' + esc(resumen || (ok ? 'Listo' : 'No se pudo')) + '</span></span>';
     },
@@ -3073,7 +3088,10 @@
       var txt = 'Kiu · ' + c.title + '\n' + new Date(c.ts).toLocaleString('es-AR') + '\n\n';
       for (var i = 0; i < c.msgs.length; i++) {
         var m = c.msgs[i];
-        txt += '[' + new Date(m.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + '] ' + (m.role === 'user' ? 'Vos' : 'Kiu') + ': ' + m.text + '\n\n';
+        txt += '[' + new Date(m.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + '] ' + (m.role === 'user' ? 'Vos' : 'Kiu') + ': ' +
+          /* v2.22.1 · la exportación incluye lo que hizo el agente */
+          (m.acciones && m.acciones.length ? m.acciones.map(function (x) { return '[' + (App.TOOL_NOMBRE[x.tool] || x.tool) + ' ' + (x.ok ? '✓' : '✕') + '] ' + x.text; }).join('\n') + '\n' : '') +
+          m.text + '\n\n';
       }
       if (!this.shareText(txt)) {
         this.copyText(txt);

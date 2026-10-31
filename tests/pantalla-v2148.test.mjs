@@ -51,7 +51,8 @@ test('existe la tarjeta de acción en el chat', () => {
 });
 
 test('el agente avisa el resultado de la herramienta, no solo que empezó', () => {
-  assert.match(agSrc, /o\.resultado\(t\.name, ok, txt\)/, 'el agente pasa el resultado');
+  assert.match(agSrc, /avisarResultado\(t\.name, ok, txt\)/, 'el agente pasa el resultado');
+  assert.match(agSrc, /o\.resultado\(nombre, ok, txt\)/, 'por un solo lugar (v2.22.1: también cuando no se hizo)');
   assert.match(uiSrc, /resultado: function \(tool, ok, txt\)/, 'y la app lo recibe');
 });
 

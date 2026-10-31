@@ -1,3 +1,18 @@
+## [2.22.1] - 2026-10-31
+
+**REGISTRO EN EL CHAT DE LO QUE HIZO EL AGENTE.**
+
+Desde 2.14.8 el chat mostraba una tarjeta por cada acción («Alarma ✓ · Listo: alarma a las 7»), pero **no se guardaba**: al volver a abrir el chat desaparecía, así que no quedaba registro.
+
+- **Las acciones se guardan con la respuesta de Kiu** del mismo turno (`acciones` dentro de ese mensaje) y se vuelven a dibujar, antes de la respuesta, al reabrir el chat o cambiar de conversación. Van como dato del mensaje, **no como mensaje**: lo que arma el contexto del modelo (`kiuMsgs`, `apiMsgs`, el resumen) usa solo el texto. Un test lo comprueba con las dos funciones reales: el historial entra y la tarjeta no.
+- En vivo no se duplican: la tarjeta ya está en pantalla y el mensaje se agrega sin repetirla.
+- **Arreglo:** si cancelabas una acción en la confirmación, o la regla de seguridad de 2.21.2 la bloqueaba, la tarjeta quedaba **«en curso…» para siempre** (nadie le avisaba el resultado). Ahora se cierra como «✕ Cancelado: no lo hice.» o «✕ No lo hice: necesitaba tu confirmación.».
+- La exportación del chat incluye las acciones («[Alarma ✓] Listo: alarma a las 7»).
+- Visto en un navegador de escritorio: 3 tarjetas en vivo y las mismas 3 al reabrir, sin errores de JavaScript. **Sin verificar en el teléfono.**
+- No cambia lo que ve el modelo (prompts fijados iguales).
+- Tests: `tests/registro-acciones-v2221.test.mjs` (6).
+- Versión 2.22.1 (versionCode 120).
+
 ## [2.22.0] - 2026-10-31
 
 **NOTAS POR VOZ: BUSCAR LO GUARDADO COMO SE PREGUNTA HABLANDO.** «qué anoté ayer», «qué guardé del médico», «qué dije el lunes», «qué anoté la semana pasada».

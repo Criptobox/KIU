@@ -66,6 +66,7 @@ window.KiuAutoprueba = (function () {
   /* ¿esta decisión del modelo es la correcta para el caso? → {ok, motivo} */
   function evaluar(caso, dec) {
     if (!dec || !dec.ok) return { ok: false, motivo: 'el motor no respondió' + (dec && dec.err ? ' (' + dec.err + ')' : '') };
+    if (!dec.tool && dec.fueraDeLista) return { ok: false, motivo: 'eligió ' + dec.fueraDeLista + ', que no estaba entre las ofrecidas' + (dec.gramatica === false ? ' (el motor NO aplicó la gramática)' : '') };
     if (!dec.tool) return { ok: false, motivo: dec.listo ? 'dijo "listo" sin hacer nada' : 'no devolvió una herramienta válida' };
     var buenas = [caso.tool].concat(caso.acepta || []);
     if (buenas.indexOf(dec.tool) < 0) return { ok: false, motivo: 'eligió ' + dec.tool };
@@ -165,12 +166,13 @@ window.KiuAutoprueba = (function () {
     var casos = CASOS.filter(function (c) { return o.completa || c.rapido; }).concat(o.completa ? COMPUESTOS : []);
     var filas = [], i = 0, tpsSum = 0, tpsN = 0;
     /* v2.20.8: aparte de los tok/s de siempre (que mezclan leer el prompt con generar), lo que tarda en leer el pedido y la velocidad de generación */
-    var preSum = 0, preN = 0, genSum = 0, genN = 0;
+    var preSum = 0, preN = 0, genSum = 0, genN = 0, sinGram = 0, conGram = 0;
     function medir(dec) {
       if (!dec) return;
       if (dec.tps) { tpsSum += dec.tps; tpsN++; }
       if (typeof dec.preMs === 'number' && dec.preMs > 0) { preSum += dec.preMs; preN++; }
       if (typeof dec.genTps === 'number' && dec.genTps > 0) { genSum += dec.genTps; genN++; }
+      if (dec.gramatica === false) sinGram++; else if (dec.gramatica === true) conGram++;
     }
     (function sig() {
       if ((typeof o.cancelar === 'function' && o.cancelar()) || i >= casos.length) { fin(); return; }
@@ -199,6 +201,7 @@ window.KiuAutoprueba = (function () {
         tps: tpsN ? tpsSum / tpsN : 0,
         preMs: preN ? Math.round(preSum / preN) : 0,
         genTps: genN ? genSum / genN : 0,
+        gramaticaNoAplicada: sinGram, gramaticaAplicada: conGram,   /* v2.22.2: decisiones en las que el motor (no) aplicó la gramática */
         fallos: filas.filter(function (f) { return !f.ok; }).map(function (f) { return { pedido: f.pedido, motivo: f.motivo }; }),
         nivel: v.nivel, texto: v.texto, parcial: hechos < casos.length, sinGramatica: !!o.sinGramatica
       };

@@ -439,6 +439,18 @@
       L.push('— ACTUALIZACIÓN —');
       L.push(ok(J.installOk) + ' Permiso para instalar actualizaciones' + (J.installOk ? '' : ' (se pide al instalar)'));
       L.push(ok(J.notif) + ' Notificaciones');
+      /* v2.22.2 · qué decidió el agente y si el motor aplicó la gramática: sin esto no hay forma de saber por qué eligió mal */
+      try {
+        var dg = window.KiuAgente && KiuAgente.diag ? KiuAgente.diag() : null;
+        if (dg) {
+          L.push('— AGENTE —');
+          L.push((dg.sinGramatica ? '⚠️' : '✅') + ' Gramática aplicada en ' + dg.conGramatica + ' de ' + (dg.conGramatica + dg.sinGramatica) + ' decisiones');
+          if (dg.fueraDeLista) L.push('⚠️ Eligió herramientas que no se le ofrecían: ' + dg.fueraDeLista + ' vez/veces (la última: ' + dg.ultimoFuera + '); se rechazaron');
+          (dg.log || []).forEach(function (e) {
+            L.push((e.ok ? '✓ ' : '✕ ') + new Date(e.at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' ' + e.tool + (e.note ? ' · ' + e.note : ''));
+          });
+        }
+      } catch (eDg) { }
       var txt = L.join('\n');
       var body = this.modal('Estado y diagnóstico',
         '<pre id="est-txt" style="white-space:pre-wrap;font:12.5px/1.55 ui-monospace,Menlo,monospace;margin:0 0 10px;max-height:52vh;overflow:auto">' + esc(txt) + '</pre>' +
@@ -1273,6 +1285,7 @@
           res.textContent = (r.parcial ? '(cancelada) ' : '') + (r.sinGramatica ? '[sin gramática] ' : '') + prettyName(r.modelo) + ': ' + r.aciertos + ' de ' + r.total + ' bien (' + pct + ' %) · ' +
             (r.msPromedio / 1000).toFixed(1).replace('.', ',') + ' s por decisión' + (r.tps ? ' · ' + r.tps.toFixed(1).replace('.', ',') + ' tok/s' : '') +
             /* v2.20.8: separa leer el pedido (prefill) de generar; si sube «leer», el prompt creció; si baja «generar», es el teléfono */
+            (r.gramaticaNoAplicada ? '\n⚠ El motor NO aplicó la gramática en ' + r.gramaticaNoAplicada + ' de ' + (r.gramaticaNoAplicada + (r.gramaticaAplicada || 0)) + ' decisiones: el modelo puede elegir cualquier herramienta.' : '') +
             (r.preMs || r.genTps ? '\nLeer el pedido: ' + (r.preMs / 1000).toFixed(1).replace('.', ',') + ' s · generar: ' + (r.genTps ? r.genTps.toFixed(1).replace('.', ',') : '—') + ' tok/s' : '') +
             '\n' + r.texto +
             (r.fallos.length ? '\nFalló: ' + r.fallos.slice(0, 4).map(function (f) { return '«' + f.pedido + '» → ' + f.motivo; }).join(' · ') : '');

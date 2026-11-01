@@ -860,7 +860,10 @@ window.KiuAgente = (function () {
         var ms = Date.now() - t0;
         if (!res || !res.ok || !res.text) { cb({ ok: false, err: (res && res.err) || 'sin respuesta', ms: ms }); return; }
         var d = parseDecision(res.text), rd = d ? readDecision(d) : null;
-        var v = rd && !rd.bad ? validate(rd.name, rd.raw) : null;
+        var fuera = !!(rd && !rd.bad && rd.name && herr.indexOf(rd.name) < 0);   /* v2.22.2: no estaba entre las ofrecidas */
+        var v = rd && !rd.bad && !fuera ? validate(rd.name, rd.raw) : null;
+        var gOk = null;
+        try { if (gb) gOk = rawBridge('kiuGenGrammarOk') !== false; } catch (eGo) { gOk = null; }
         /* v2.20.8: el motor mide aparte cuánto tardó en LEER el prompt y a qué velocidad GENERA (tok/s de antes mezclaba las dos) */
         var gst = null;
         try { gst = JSON.parse(rawBridge('kiuGenStatus') || 'null'); } catch (eSt) { gst = null; }
@@ -868,7 +871,9 @@ window.KiuAgente = (function () {
           ok: true, ms: ms, tps: res.tps || 0, raw: s(res.text, 160),
           preMs: gst && typeof gst.pre_ms === 'number' ? gst.pre_ms : null,
           genTps: gst && typeof gst.gen_tps === 'number' ? gst.gen_tps : null,
-          tool: rd && !rd.bad ? rd.name : null,
+          tool: rd && !rd.bad && !fuera ? rd.name : null,
+          fueraDeLista: fuera ? String(rd.name).slice(0, 30) : null,
+          gramatica: gOk,
           args: v && v.ok ? v.args : (rd && rd.raw) || null,
           valida: !!(v && v.ok), listo: !!(d && isDone(d))
         });
@@ -879,6 +884,10 @@ window.KiuAgente = (function () {
   /* v2.13.1 · REGISTRO de lo que hizo el agente: solo metadatos (herramienta, riesgo,
      resultado, hora), nunca los argumentos ni el texto del usuario. Máx. 30. */
   var LOG = [];
+  /* v2.22.2 · diagnóstico: ¿el motor aplicó la gramática? ¿el modelo eligió herramientas que no se le ofrecieron?
+     Reportado por un usuario: «cualquier cosa que digas, pregunta si pone la música». Sin gramática, el modelo puede
+     elegir cualquiera de las 24 herramientas. */
+  var DIAG = { conGramatica: 0, sinGramatica: 0, fueraDeLista: 0, ultimoFuera: '' };
   function registrar(name, risk, ok, nota) {
     LOG.push({ tool: name, risk: risk || 'read', ok: !!ok, note: s(nota, 80), at: Date.now() });
     if (LOG.length > 30) LOG.shift();
@@ -901,24 +910,27 @@ window.KiuAgente = (function () {
      específica. Es la misma idea que el KW elige, pero afinable palabra por
      palabra — y el arnés de evaluación dice si está bien o no. */
   var KW = {
-    set_alarm: ['alarma', 'alarmas', 'recordatorio', 'recordatorios', 'despiertame', 'despiertá', 'despertar', 'avisame', 'avisá', 'recordá', 'recordame', 'poneme una alarma', 'poné una alarma'],
+    set_alarm: ['alarma', 'alarmas', 'recordatorio', 'recordatorios', 'despiertame', 'despiertá', 'despertar', 'despertame', 'desperta', 'avisame', 'avisá', 'recordá', 'recordame', 'poneme una alarma', 'poné una alarma'],
     read_calendar: ['agenda', 'calendario', 'reunion', 'reunión', 'evento', 'eventos', 'cita', 'citas', 'agendá', 'dia', 'día', 'mañana', 'manana', 'ayer', 'semana', 'tengo'],
     find_contact: ['contacto', 'contactos', 'numero', 'número', 'telefono', 'teléfono', 'celular', 'quien es', 'dónde está', 'donde esta', 'numero de'],
     call_contact: ['llamar', 'llamá', 'llame', 'llama', 'marcá', 'marcar', 'telefonear'],
     search_docs: ['documento', 'documentos', 'archivo', 'archivos', 'pdf', 'apunte', 'apuntes', 'contrato', 'segun mis', 'según mis', 'en mis'],
-    device_action: ['linterna', 'bateria', 'batería', 'espacio', 'disco', 'abrí', 'abrir', 'abre', 'maps', 'mapa', 'temporizador', 'timer', 'navegá', 'ruta', 'llevame', 'llévame', 'como llego', 'cómo llego', 'aeropuerto', 'youtube', 'memoria ram'],
-    send_message: ['mensaje', 'sms', 'escribí', 'escribi', 'mandá', 'manda', 'enviá', 'envia', 'whatsapp', 'decile', 'decí', 'avisale', 'avisá'],
-    remember: ['recordá', 'recorda', 'anotá', 'anota', 'guardá', 'guarda', 'acordate', 'prefiero', 'prefiero', 'me gusta', 'no me gusta', 'apuntá', 'apuntate'],
+    device_action: ['linterna', 'bateria', 'batería', 'cuanta bateria', 'espacio', 'disco', 'abrí', 'abrir', 'abre', 'maps', 'mapa', 'temporizador', 'timer', 'navegá', 'ruta', 'llevame', 'llévame', 'como llego', 'cómo llego', 'aeropuerto', 'youtube', 'memoria ram'],
+    send_message: ['mensaje', 'sms', 'escribí', 'escribi', 'mandá', 'manda', 'mandale', 'escribile', 'enviá', 'envia', 'whatsapp', 'decile', 'decí', 'avisale', 'avisá'],
+    remember: ['recordá', 'recorda', 'anotá', 'anota', 'anotalo', 'anotala', 'anotame', 'guardá', 'guarda', 'guardalo', 'guardala', 'acordate', 'prefiero', 'prefiero', 'me gusta', 'no me gusta', 'apuntá', 'apuntate'],
     recall: ['recordá', 'recuerdos', 'recuerdo', 'anoté', 'anote', 'anotado', 'guardé', 'guarde', 'guardado', 'guardados', 'mi memoria', 'que se', 'qué sé', 'buscá en tu memoria', 'preguntáte', 'que tengo guardado', 'qué tengo guardado', 'que era', 'qué era', 'cuando era', 'cuándo era'],
     manage_task: ['tarea', 'tareas', 'pendiente', 'pendientes', 'to do', 'todo', 'agendame una tarea', 'tengo una tarea', 'tengo tareas'],
     manage_alarm: ['alarma', 'alarmas', 'recordatorio', 'recordatorios', 'cancelá', 'cancela', 'borra la alarma', 'borrala', 'quitala', 'eliminá', 'elimina'],
     create_calendar_event: ['evento', 'eventos', 'agendá', 'agendar', 'agenda un', 'agendá un', 'calendario', 'reunión', 'cita', 'invitación', 'turno', 'meeting', 'agendame un'],
     forget: ['olvidá', 'olvida', 'olvidate', 'no quiero guardar', 'sacá', 'saca', 'borra mi', 'elimina mi'],
-    update_memory: ['corregí', 'corregir', 'corrige', 'cambiá', 'cambia', 'reemplazá', 'en realidad', 'ahora es', 'ya no es', 'no era', 'equivocad', 'es el'],
+    /* v2.22.2: sin «es el»: matcheaba cualquier frase («¿cuándo es el dentista?» ofrecía SOLO corregir un recuerdo) */
+    update_memory: ['corregí', 'corregir', 'corrige', 'cambiá', 'cambia', 'reemplazá', 'en realidad', 'ahora es', 'ya no es', 'no es el', 'no era', 'equivocad'],
     now: ['hora', 'fecha', 'que dia', 'qué día', 'hoy es', 'que fecha', 'qué fecha', 'que horas'],
     read_notifications: ['notificacion', 'notificaciones', 'notificación', 'llego', 'llegó', 'me llego', 'me llegó', 'escribio', 'escribió', 'novedades', 'avisos'],
     read_sms: ['sms', 'mensajes de texto', 'mensaje de texto', 'banco', 'codigo', 'código', 'leeme mis mensajes', 'leeme los mensajes'],
-    media_control: ['musica', 'música', 'cancion', 'canción', 'pausa', 'pausar', 'pausá', 'reproducir', 'siguiente', 'anterior', 'saltá', 'saltar', 'tema', 'volumen', 'play'],
+    /* v2.22.2: «siguiente», «anterior» y «tema» sueltas son palabras de todos los días («la siguiente tarea», «el tema de la
+       reunión») y mandaban pedidos cualquiera a la música (reportado por un usuario). Van solo en frases. */
+    media_control: ['musica', 'música', 'cancion', 'canción', 'pausa', 'pausar', 'reproducir', 'saltá', 'saltar', 'volumen', 'play', 'siguiente cancion', 'siguiente tema', 'cancion anterior', 'tema anterior', 'proximo tema', 'proxima cancion', 'pasa el tema', 'pasa la cancion', 'pone pausa'],
     /* v2.21.0: «la rutina» suma una palabra más; sin ella «pausá la rutina» iba a la música y «cambiá la rutina» a la memoria
        (sus listas tienen «pausá/pausa» y «cambiá/cambia», que sin acentos son la misma palabra y cuentan doble) */
     manage_routine: ['rutina', 'rutinas', 'la rutina', 'las rutinas', 'reanuda', 'reactiva', 'desactiva', 'suspende', 'cada', 'todos los', 'todas las', 'automatico', 'automaticamente', 'los lunes', 'los martes', 'los miercoles', 'los jueves', 'los viernes', 'los sabados', 'los domingos', 'fines de semana', 'avisame si', 'siempre que'],
@@ -951,7 +963,7 @@ window.KiuAgente = (function () {
   var PRIORIDAD = {
     manage_task: 3, recall: 3, manage_alarm: 3, create_calendar_event: 3,
     read_calendar: 2, device_action: 2, web_search: 2, get_weather: 3, manage_routine: 4, read_notifications: 3, read_sms: 3, media_control: 3, summarize_url: 3, log_expense: 3, daily_briefing: 3, find_contact: 2, search_docs: 2,
-    set_alarm: 1, send_message: 1, remember: 1, now: 1, forget: 1, update_memory: 1
+    set_alarm: 2, send_message: 1, remember: 3, now: 1, forget: 1, update_memory: 1
   };
   /* ¿alguno de estos tools matcheó palabras del pedido? */
   function herramientasConPalabras(lista, pedido) {
@@ -1015,9 +1027,13 @@ window.KiuAgente = (function () {
   }
   function cuentaPalabras(pal, lista) {
     if (!lista) return 0;
-    var n = 0;
+    var n = 0, vistas = {};
     for (var i = 0; i < lista.length; i++) {
       var k = sinAcentos(lista[i]);
+      /* v2.22.2 · cada palabra clave cuenta UNA vez: «mañana»/«manana», «pausá»/«pausa», «batería»/«bateria» son la misma
+         palabra sin acentos y contaban doble, desequilibrando el desempate entre herramientas */
+      if (vistas[k]) continue;
+      vistas[k] = 1;
       if (k.indexOf(' ') >= 0) {
         /* frase: matchea si aparece en el pedido ("agenda un turno") */
         if (pal.join(' ').indexOf(k) >= 0) n++;
@@ -1550,8 +1566,11 @@ window.KiuAgente = (function () {
              diagnóstico, porque un agente sin gramática parece un agente
              que "no funciona" y la causa es invisible. */
           try {
-            if (rawBridge('kiuGenGrammarOk') === false) {
-              if (window.KiuHarness2) window.KiuHarness2.record(false, 'grammar');
+            if (gbnf) {
+              if (rawBridge('kiuGenGrammarOk') === false) {
+                DIAG.sinGramatica++;
+                if (window.KiuHarness2) window.KiuHarness2.record(false, 'grammar');
+              } else DIAG.conGramatica++;
             }
           } catch (eGr2) { }
           if (reloj) { try { clearTimeout(reloj); } catch (eCl2) { } reloj = 0; }
@@ -1592,6 +1611,16 @@ window.KiuAgente = (function () {
         }
         var rd = readDecision(d);
         if (rd.bad) { avisar('pensando'); obs.push(rd.bad + '. Respondé de nuevo.'); paso(); return; }
+        /* v2.22.2 · SOLO las herramientas ofrecidas en este turno. La gramática ya lo impone, pero si el motor no la aplicó el
+           modelo podía elegir cualquiera de las 24 (y validate() solo mira que exista). Se rechaza y se vuelve a preguntar; si
+           insiste hasta agotar los pasos, el agente no hace nada y sigue la respuesta normal: mejor que una acción equivocada. */
+        if (rd.name && getTool(rd.name) && hs.indexOf(rd.name) < 0) {
+          DIAG.fueraDeLista++; DIAG.ultimoFuera = String(rd.name).slice(0, 30);
+          avisar('corrigiendo');
+          obs.push('«' + rd.name + '» no sirve para este pedido. Usá solo una de estas: ' + hs.join(', ') + '.');
+          paso();
+          return;
+        }
         var v = validate(rd.name, rd.raw);
         if (!v.ok) { try { if (window.KiuHarness2) window.KiuHarness2.record(false, 'validation'); } catch (eH3) { } avisar('corrigiendo'); obs.push(v.err + ' Corregí y volvé a intentar.'); paso(); return; }
         try { if (window.KiuHarness2) window.KiuHarness2.record(true, 'validated'); } catch (eH4) { }
@@ -1842,6 +1871,7 @@ window.KiuAgente = (function () {
     systemPrompt: systemPrompt,
     perfil: perfil,
     faltaParte: faltaParte,
+    diag: function () { return { conGramatica: DIAG.conGramatica, sinGramatica: DIAG.sinGramatica, fueraDeLista: DIAG.fueraDeLista, ultimoFuera: DIAG.ultimoFuera, log: LOG.slice(-8) }; },
     EXTERNO: EXTERNO,
     riskOf: riskOf,
     MAX_STEPS: MAX_STEPS,

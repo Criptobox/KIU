@@ -1,3 +1,28 @@
+## [2.22.2] - 2026-11-01
+
+**«ANDA MAREADO»: LA SELECCIÓN DE HERRAMIENTAS OFRECÍA LA EQUIVOCADA.** Reporte desde el teléfono: «cualquier cosa que digas pregunta si pone la música, y ni siquiera lo hace».
+
+**Causa:** antes de preguntarle al modelo, Kiu elige por palabras clave qué herramientas ofrecerle, y la gramática le **obliga** a usar una de esas. En frases normales esa selección fallaba:
+- «el siguiente paso es llamar a Juan, anotalo» ofrecía primero la **música**, porque «siguiente», «anterior» y «tema» eran palabras clave de la música.
+- «¿cuándo es el dentista?» ofrecía **solo** «corregir un recuerdo», porque «es el» era su palabra clave.
+- «despertame mañana a las 7» no ofrecía la alarma: faltaba «despertame», y «mañana» le daba la ventaja a la agenda.
+- **Error de fondo:** las listas tienen variantes con y sin acento («mañana»/«manana», «pausá»/«pausa», «batería»/«bateria»). Sin acentos son la misma palabra y **contaban doble**, lo que desequilibraba los desempates en todas partes.
+
+La Prueba del teléfono no lo veía: sus frases están ajustadas a esas palabras clave.
+
+**Arreglos:**
+- **Cada palabra clave cuenta una vez.** La música ya no usa «siguiente», «anterior» ni «tema» sueltas, solo en frases («siguiente canción», «tema anterior», «pasá el tema»). Corregir un recuerdo ya no usa «es el». Se agregan variantes que faltaban: «despertame», «anotalo», «guardalo», «mandale», «escribile», «cuánta batería». Las prioridades de desempate de la alarma y de anotar se ajustan, porque antes ganaban gracias al doble conteo.
+- **Medido con 40 frases naturales que no están en la Prueba** (`tests/seleccion-v2222.test.mjs`): la herramienta correcta se ofrece en **40/40** (antes 37) y va primera en **35/40** (antes 31). Los 25 pedidos simples de la Prueba siguen con la correcta primera. El arnés de evaluación detectó en el camino que «anotá que tengo que llamar al banco» pasaba a leer SMS; quedó corregido.
+- **Solo se aceptan herramientas ofrecidas.** Si el motor no aplica la gramática, el modelo podía elegir cualquiera de las 24 (el validador solo miraba que existiera). Ahora se rechaza y se vuelve a preguntar; si insiste, no hace nada y sigue la respuesta normal.
+- **Diagnóstico visible:**
+  - La Prueba completa avisa si el motor no aplicó la gramática («⚠ El motor NO aplicó la gramática en N de M decisiones»).
+  - Un pedido que elige fuera de la lista falla con ese motivo.
+  - «Estado y diagnóstico» tiene una sección **AGENTE**: gramática aplicada o no, herramientas rechazadas y las últimas decisiones. Sirve para mandar el informe cuando algo «anda mareado».
+- **Prompts fijados actualizados a propósito:** cambian 3 pedidos de la Prueba («acordate de que el dentista…», «¿cuál es el número de Ana?» y el compuesto tarea + anotar), porque ya no se les ofrece «corregir un recuerdo». **Hay que repetir la Prueba completa en el teléfono.**
+- **Sin verificar en el teléfono** que el reporte quede resuelto. No sé cuál fue la frase exacta: si vuelve a pasar, mandame la frase y el informe «Estado y diagnóstico».
+- Tests: `tests/seleccion-v2222.test.mjs` (5) y `tests/fuera-de-lista-v2222.test.mjs` (5).
+- Versión 2.22.2 (versionCode 121).
+
 ## [2.22.1] - 2026-10-31
 
 **REGISTRO EN EL CHAT DE LO QUE HIZO EL AGENTE.**

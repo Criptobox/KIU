@@ -389,7 +389,9 @@ test('la observación dice qué herramienta se ejecutó y si salió bien', async
   });
   sb.KiuMem.addRecuerdo('algo del trabajo');
   const r = await new Promise((res) => {
-    sb.KiuAgente.run({ habla: ['buscá la hipoteca'], componer: false }, res);
+    /* v2.22.2: «buscá la hipoteca» ofrece web_search, no recall; desde que se rechazan herramientas fuera de lista,
+       el pedido tiene que ser uno que ofrezca recall */
+    sb.KiuAgente.run({ habla: ['qué anoté de la hipoteca'], componer: false }, res);
   });
   const obs = String(r.obs);
   assert.match(obs, /\[recall ok\]/, 'observación con herramienta y estado');

@@ -98,7 +98,7 @@ function entorno(op) {
     'js/kiu-estados.js', 'js/kiu-avatar.js', 'js/kiu-avatar-boot.js',
     'js/rag-worker.js', 'js/rag.js', 'js/kiu-secure.js',
     'js/app/env.js', 'js/app/memoria.js', 'js/app/state.js', 'js/app/catalog.js',
-    'js/app/models.js', 'js/app/motor.js', 'js/app/app-ui.js',
+    'js/app/models.js', 'js/app/motor.js', 'js/app/markdown.js', 'js/app/app-ui.js',
   ]);
 
   /* el agente, encima */

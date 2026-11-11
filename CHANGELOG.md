@@ -1,3 +1,12 @@
+## [2.23.1] - 2026-11-11
+
+**EL RENDERIZADOR DE MARKDOWN SALE DE `app-ui.js` Y QUEDA PROBADO CONTRA XSS.**
+
+- `App.md` (convierte el texto de Kiu, del modelo o de una web en HTML; es la frontera de seguridad del chat) pasó a `js/app/markdown.js` (`window.KiuMd.render`). `App.md` sigue existiendo y delega. Mismo código, sin cambios de comportamiento; `app-ui.js` baja unas 130 líneas.
+- Tests nuevos (`tests/markdown-xss-v2230.test.mjs`, 6): `<script>` e `<img onerror>` salen escapados; `javascript:` y `data:` no se vuelven enlaces; una comilla en la URL no rompe el atributo; el código y la tarjeta de error no interpretan HTML; lo básico (negrita, listas, títulos) sigue andando. No se encontró ningún hueco.
+- Los tests y el harness que cargan la UI incluyen el módulo nuevo.
+- Versión 2.23.1 (versionCode 122).
+
 ## [2.23.0] - 2026-11-11
 
 **REVISIÓN GENERAL: SEGURIDAD DEL WEBVIEW, BÚSQUEDA CON SINÓNIMOS Y UN BUG DE VOZ.**

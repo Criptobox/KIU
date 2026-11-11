@@ -16,7 +16,7 @@ const SCRIPTS = [
   'js/kiu-agente.js', 'js/kiu-estados.js', 'js/kiu-avatar.js', 'js/kiu-avatar-boot.js',
   'js/rag-worker.js', 'js/rag.js', 'js/kiu-secure.js',
   'js/app/env.js', 'js/app/memoria.js', 'js/app/state.js', 'js/app/catalog.js', 'js/app/models.js',
-  'js/app/motor.js', 'js/app/diag-voz.js', 'js/app/app-ui.js',
+  'js/app/motor.js', 'js/app/diag-voz.js', 'js/app/markdown.js', 'js/app/app-ui.js',
 ];
 function boot() { const sb = newSandbox(); loadAll(sb, SCRIPTS); return sb; }
 

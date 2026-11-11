@@ -1,6 +1,6 @@
 # Kiu — agente personal para Android
 
-Kiu 2.22.1 · paquete `com.kiu.agent` · minSdk 24 · targetSdk 34 · arm64-v8a (+ x86_64 compilando el motor)
+Kiu 2.23.0 · paquete `com.kiu.agent` · minSdk 24 · targetSdk 34 · arm64-v8a (+ x86_64 compilando el motor)
 
 App Android híbrida: interfaz web (HTML/CSS/JS) dentro de un WebView, una capa nativa en Java
 y un motor **llama.cpp** que corre modelos GGUF en el propio teléfono, sin Internet.
@@ -26,7 +26,7 @@ y un motor **llama.cpp** que corre modelos GGUF en el propio teléfono, sin Inte
 | `app/src/main/jniLibs/` | `.so` del motor — **fuera de Git** (`.gitignore`): las regenera el build con `vendor_llama.sh` o las copiás de un build previo | No (binarios) |
 | `vendor/llama.cpp/` | Motor vendored (opcional, `./scripts/vendor_llama.sh`) | Sí, al actualizar el motor |
 | `scripts/` | `build.sh` (Gradle), `get-tools.sh` (JDK/SDK/NDK), `vendor_llama.sh` (motor nativo), `bridge_audit.py` (contrato del puente) | Sí |
-| `docs/` | Arquitectura, puente JS↔Java, migración Gradle | Sí |
+| `docs/` | Arquitectura, puente JS↔Java, migración Gradle; `docs/historial/` guarda los informes de mejoras viejos (2.11–2.14) | Sí |
 | `.github/workflows/build.yml` | CI: tests + build Gradle (debug y release) | Sí |
 
 ## Cómo compilar
@@ -46,8 +46,8 @@ no deja actualizar la app instalada y habría que desinstalarla (se pierden los 
 En GitHub: subí tu clave como secretos `KIU_KEYSTORE_BASE64` (`base64 -w0 kiu-release.jks`) y
 `KIU_KEYSTORE_PASSWORD`; cada push a `main` genera los APK en *Actions → Artifacts* (debug y
 release), y al pushear un tag `v*` (por ejemplo `git tag v2.6.0 && git push --tags`) se publica
-una **Release** con ambos APK. La suite de 255 tests (brain, secure, rag, rag-worker, boot,
-app-core, skills, react, i18n, migrate) corre en cada push (job `tests`); el build espera a
+una **Release** con ambos APK. La suite completa (`node --test tests/*.test.mjs`: más de 700 tests, de la lógica JS, el
+arranque de la UI, el agente, la CSP y arneses Java reales) corre en cada push (job `tests`); el build espera a
 que estén en verde y provisiona sus herramientas con `scripts/get-tools.sh`.
 
 ## Cómo editar (lo más importante)

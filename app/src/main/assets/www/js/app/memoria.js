@@ -69,6 +69,39 @@
   function sinRuido(ws) { return ws.filter(function (w) { return !RUIDO[w]; }); }
   /* plural → singular, para buscar dentro del texto: «reuniones» → «reunion», «medicos» → «medico» */
   function raiz(w) { return w.length > 4 ? w.replace(/(es|s)$/, '') : w; }
+  /* v2.23.0 · SINÓNIMOS: «doctor» encuentra «médico». Grupos cortos y de uso diario (sin acentos,
+     como `plano`). Es un diccionario y no embeddings a propósito: no usa el motor (que está
+     ocupado mientras el agente decide) y da siempre el mismo resultado. */
+  var SINONIMOS = [
+    ['medico', 'doctor', 'doctora', 'medica', 'clinica', 'hospital', 'consultorio'],
+    ['dentista', 'odontologo', 'odontologa'],
+    ['auto', 'coche', 'carro', 'vehiculo'],
+    ['celular', 'telefono', 'movil'],
+    ['trabajo', 'laburo', 'oficina', 'empleo'],
+    ['reunion', 'junta', 'meeting', 'cita'],
+    ['plata', 'dinero', 'efectivo'],
+    ['compras', 'supermercado', 'super', 'mercado'],
+    ['cumpleanos', 'cumple', 'aniversario'],
+    ['comida', 'almuerzo', 'cena', 'desayuno'],
+    ['mama', 'madre'], ['papa', 'padre'],
+    ['pastilla', 'remedio', 'medicamento', 'medicina'],
+    ['viaje', 'vacaciones', 'pasaje', 'vuelo']
+  ];
+  var SIN_DE = {};
+  SINONIMOS.forEach(function (g) {
+    g.forEach(function (w) { (SIN_DE[w] = SIN_DE[w] || []).push(g); });
+  });
+  /* raíces con las que una palabra de la consulta cuenta como encontrada: ella misma y su grupo */
+  function variantes(w) {
+    var out = [raiz(w)];
+    /* el plural puede ser -s o -es («coches», «reuniones»): se prueban las dos formas singulares */
+    var gs = SIN_DE[w] || SIN_DE[w.replace(/s$/, '')] || SIN_DE[w.replace(/es$/, '')] || [];
+    for (var i = 0; i < gs.length; i++) for (var j = 0; j < gs[i].length; j++) {
+      var r = raiz(gs[i][j]);
+      if (out.indexOf(r) < 0) out.push(r);
+    }
+    return out;
+  }
   var DIA_MS = 86400000;
   var DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
   function inicioDia(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
@@ -265,6 +298,7 @@
          el resultado con .parcial = true.
        - «el dentista es el martes» tiene «martes» como CONTENIDO: si con el filtro de fecha no aparece nada, se vuelve a
          buscar tomando esa palabra como texto.
+       - v2.23.0 Sinónimos: «doctor» encuentra «médico» (diccionario SINONIMOS).
        now (opcional) es para los tests. */
     search: function (query, kinds, now) {
       this.load();
@@ -280,7 +314,10 @@
             var it = lista[j], ts = it.ts || 0;
             if (desde != null && (ts < desde || ts >= hasta)) continue;
             var txt = String(it.text || ''), hay = plano(txt), n = 0;
-            for (var w = 0; w < qs.length; w++) if (hay.indexOf(raiz(qs[w])) >= 0) n++;
+            for (var w = 0; w < qs.length; w++) {
+              var vs = variantes(qs[w]);
+              for (var v = 0; v < vs.length; v++) if (hay.indexOf(vs[v]) >= 0) { n++; break; }
+            }
             if (qs.length && (parcial ? n === 0 : n < qs.length)) continue;
             out.push({ kind: k, text: txt, ts: it.ts, done: !!it.done, n: n });
           }

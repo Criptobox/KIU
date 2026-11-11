@@ -162,7 +162,8 @@
 - [x] **El comando de la palabra de activación se perdía en un arranque en frío** (2.14.2) → si la
       actividad existía pero la página todavía no estaba lista, `evaluateJavascript` no ejecutaba
       nada y el comando se descartaba en silencio. Ahora queda en cola hasta `pageReady()`.
-- [ ] **La palabra de activación puede ejecutar el comando DOS veces** → con la app abierta, el
+- [x] **La palabra de activación puede ejecutar el comando DOS veces** (resuelto en 2.23.0 con un antirrebote común en JS, `App.vozDup`; sin verificar en el teléfono)
+      Descripción original: → con la app abierta, el
       servicio entrega el comando y el micrófono de la app también lo escucha: los dos mandan el
       mensaje. El antirrebote (`wakeDup`) solo cubre la vía del servicio. Habría que coordinar
       que, cuando la app toma el micrófono, el servicio deje de entregar.
@@ -185,7 +186,8 @@
 - [ ] **El arnés todavía no corrió contra un GGUF real** → falta la medición de acierto de un
       modelo chico de verdad: necesita un teléfono o una máquina con `llama-server`. El arnés
       está listo; los números no están.
-- [ ] **La memoria no tiene ciclo de vida** → no hay forma de corregir u olvidar un hecho
+- [x] **La memoria no tiene ciclo de vida** (resuelto: las herramientas `forget` y `update_memory` existen desde 2.14.2)
+      Descripción original: → no hay forma de corregir u olvidar un hecho
       aprendido desde el chat (solo desde la UI), ni de que el agente actualice un recuerdo
       viejo ("ya no es el martes, es el jueves").
 - [ ] Solo existe la librería `arm64-v8a` precompilada: sin `armeabi-v7a` el motor interno no corre
@@ -245,8 +247,12 @@
       cerebro, pero un sandbox JS con API acotada (toast/http/memoria) es el paso siguiente.
 - [ ] El ReAct v1 usa reglas + cerebro/RAG: enchufarlo al modelo local (o a un proveedor) para
       planificar pasos que las reglas no detectan.
-- [ ] El resumen matutino usa notificación; con pantalla desbloqueada podría además hablar
-      (TTS) si la voz está activada.
+- [ ] El resumen matutino ya se lee en voz alta si la app está abierta y la voz activada
+      (`kiuMorningSummary`); con la app cerrada solo hay notificación. Hablar desde el receptor
+      pide TTS en Java y probarlo en el teléfono.
+- [ ] **R8 (`isMinifyEnabled`) sigue apagado**: las reglas de `proguard-rules.pro` existen, pero
+      activarlo sin poder compilar y probar el APK release puede romper el puente, JNI o Vosk/JNA.
+- [ ] **i18n del texto dinámico** de `app-ui.js` (~6.000 líneas) sin extraer: es una tanda propia.
 
 ## Funciones sugeridas
 - Marketplace remoto de skills (un JSON indexado en GitHub Pages + verificación SHA) sobre el

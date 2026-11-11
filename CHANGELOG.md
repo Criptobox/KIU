@@ -1,3 +1,16 @@
+## [2.23.0] - 2026-11-11
+
+**REVISIÓN GENERAL: SEGURIDAD DEL WEBVIEW, BÚSQUEDA CON SINÓNIMOS Y UN BUG DE VOZ.**
+
+- **Content-Security-Policy en `index.html`** (segunda barrera contra XSS; la primera sigue siendo `esc()` antes de `innerHTML`): `default-src 'none'`, `script-src 'self'` (sin inline, sin eval), sin objetos, frames, `<base>` ni formularios; `connect-src` solo `https:` (lo `http://` local ya viaja por el proxy Java). El script inline SafeBoot pasó a `js/kiu-safeboot.js` y sigue cargando primero. **Sin comprobar en un WebView real:** si algo falla al arrancar, SafeBoot lo muestra; hay que abrir la app y probar chat, modelos, adjuntar PDF y voz.
+- **WebView endurecido:** `setAllowFileAccess(false)`, `setAllowContentAccess(false)` y `MIXED_CONTENT_NEVER_ALLOW` (los assets, usados por el ferry de migración, no dependen de lo primero). Sin verificar en el teléfono.
+- **Bug: la palabra de activación podía ejecutar el comando dos veces** con la app abierta (el servicio y el micrófono de la app entregaban la misma frase). Antirrebote común en JS (`App.vozDup`, misma frase en 4 s = una vez) para `nexoOnVoice` y `nexoWakeCmd`.
+- **Memoria: sinónimos.** «doctor» encuentra «médico», «coches» encuentra «auto», «reuniones» encuentra «junta» (diccionario `SINONIMOS` en `memoria.js`; no usa el motor, que está ocupado mientras el agente decide). Todas las palabras de la consulta siguen siendo obligatorias. **No hecho:** búsqueda por significado con embeddings, que hoy son experimentales.
+- **Java testeable:** el antirrebote de `MainActivity` pasó a `WakeDedupe.java` (puro, con reloj inyectable) y tiene arnés que se ejecuta en una JVM.
+- **Limpieza:** se quitó `preview-2.14.8.html` (85 KB dentro del APK, sin referencias); los 18 informes de mejoras viejos pasaron a `docs/historial/`; README y `KNOWN_ISSUES.md` al día; el CI revisa la sintaxis de todo el JS antes de correr la suite.
+- Tests: `csp-webview-v2230` (4), `voz-antirrebote-v2230` (4), `memoria-sinonimos-v2230` (4), `java-wakededupe-v2230` (3).
+- Versión 2.23.0 (versionCode 121).
+
 ## [2.22.1] - 2026-10-31
 
 **REGISTRO EN EL CHAT DE LO QUE HIZO EL AGENTE.**

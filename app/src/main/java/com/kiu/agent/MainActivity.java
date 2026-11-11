@@ -304,14 +304,19 @@ public class MainActivity extends Activity {
             WebSettings settings = this.web.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
-            settings.setAllowFileAccess(true);
-            settings.setAllowContentAccess(true);
+            /* v2.23.0 · endurecido: la UI sale de https://appassets… y los archivos del usuario
+               entran por SAF desde Java, así que el WebView no necesita leer file:// ni content://.
+               Los assets (file:///android_asset, usado por el ferry de migración) no dependen de
+               setAllowFileAccess. */
+            settings.setAllowFileAccess(false);
+            settings.setAllowContentAccess(false);
             settings.setAllowFileAccessFromFileURLs(false);
             /* v2.3.0: el origen nuevo es https (appassets.androidplatform.net); ya no
                hace falta —y no conviene— el acceso universal desde file://. Se deja
                allowFileAccess=true SOLO para el ferry único de migración de datos. */
             settings.setAllowUniversalAccessFromFileURLs(false);
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+            /* v2.23.0: nunca contenido mixto. Lo http:// local va por el proxy Java (kiu-secure.js), no desde la página. */
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setCacheMode(-1);
             settings.setTextZoom(100);
@@ -833,15 +838,9 @@ public class MainActivity extends Activity {
 
     /* v2.7.3: antirrebote — el mismo comando dos veces en 4 s (motores Vosk/SpeechRecognizer
        que repiten el final) no se ejecuta dos veces. */
-    private static String lastWakeCmd = "";
-    private static long lastWakeAt = 0;
-    private static synchronized boolean wakeDup(String s) {
-        long now = SystemClock.elapsedRealtime();
-        String k = s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
-        if (k.equals(lastWakeCmd) && now - lastWakeAt < 4000) return true;
-        lastWakeCmd = k;
-        lastWakeAt = now;
-        return false;
+    private static final WakeDedupe WAKE_DEDUPE = new WakeDedupe(4000);
+    private static boolean wakeDup(String s) {
+        return WAKE_DEDUPE.esRepetido(s, SystemClock.elapsedRealtime());
     }
 
     static void wakeDeliver(Context context, String str) {

@@ -93,7 +93,18 @@
       ensureConv();
       document.addEventListener('click', function (e) { if (e.target && e.target.id === 'typing-cancel') App.cancelApi(); });
       /* Callbacks de voz: manejadores estables (Java los dispara en cualquier momento) */
-      window.nexoOnVoice = function (text) { App.handleVoice(text); };
+      /* v2.23.0 · UN SOLO COMANDO POR FRASE: con la app abierta, el servicio de la palabra de
+         activación y el micrófono de la app pueden entregar la misma frase (Java solo
+         deduplica la vía del servicio). Misma frase en 4 s = una sola ejecución. */
+      var _vozUlt = { k: '', t: 0 };
+      App.vozDup = function (text) {
+        var k = String(text || '').trim().toLowerCase();
+        var now = Date.now();
+        if (k && k === _vozUlt.k && now - _vozUlt.t < 4000) return true;
+        _vozUlt = { k: k, t: now };
+        return false;
+      };
+      window.nexoOnVoice = function (text) { if (App.vozDup(text)) return; App.handleVoice(text); };
       window.nexoVoiceError = function (err) {
         if (err === 'unavailable') App.voiceError('El micrófono no está disponible ahora');
         else if (err === 'no_permission') App.voiceError('Falta permiso de micrófono');
@@ -134,6 +145,7 @@
         App.toast('Kiu te escucha...');
       };
       window.nexoWakeCmd = function (text) {
+        if (App.vozDup(text)) return;
         stSet('voz', 'Escuchando');
         App._convLive = Date.now();
         if (!App.inCall()) App.go('chat');

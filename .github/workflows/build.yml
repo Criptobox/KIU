@@ -27,6 +27,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Sintaxis de todo el JavaScript propio
+        run: |
+          set -e
+          for f in app/src/main/assets/www/js/*.js app/src/main/assets/www/js/app/*.js; do node --check "$f"; done
       - name: Correr la suite completa
         run: node --test tests/*.test.mjs
       - name: Auditar el puente JavaScript ↔ Android

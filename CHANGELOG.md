@@ -1,3 +1,17 @@
+## [2.23.3] - 2026-11-12
+
+**UN SOLO ESCAPADO DE TEXTO ENTRE JAVA Y EL WEBVIEW, PROBADO CONTRA INYECCIÓN.**
+
+Java arma JSON y código JS con texto que no controla (lo que genera el modelo, mensajes de error, nombres de archivo) y lo manda al WebView. Había **cuatro escapadores distintos** (`KiuGenJob`, `KiuStream`, `KiuDownload`, `KiuVoskInstall`) y ninguno tenía test:
+- `KiuDownload` **no escapaba saltos de línea**: un error con «\n» rompía el literal y el callback entero fallaba (el progreso de descarga dejaba de actualizarse). No era inyección —sin poder cerrar las comillas no se ejecuta nada—, pero sí un fallo silencioso.
+- `KiuVoskInstall` cambiaba «"» por «'» y los saltos por espacios: perdía texto.
+- `KiuGenJob` y `KiuStream` (el streaming de cada token) escapaban lo básico pero no los otros caracteres de control ni U+2028/U+2029.
+
+Ahora hay uno solo, `JsEscape.java` (Java puro), que escapa `\`, `"`, todos los controles (0x00–0x1F, 0x7F) y U+2028/U+2029, y devuelve JSON válido **y** literal JS válido. Los cuatro lo usan.
+- **Prueba cruzada:** Java escapa 13 textos (con payloads de inyección: `"; window.KiuBridge.sendSms(...); "`, `"}); alert(...); ({"x":"`, `</script>`, controles, emoji…) y Node **evalúa** el resultado como literal JS, como JSON y dentro de un objeto: tiene que devolver el texto exacto y no ejecutar nada. Un test con el escape roto a propósito confirma que la prueba detecta la inyección.
+- Tests: `java-jsescape-v2232` (3). Versión 2.23.3 (versionCode 124).
+- CI: el job de tests de 2.23.2 pasó en `main`.
+
 ## [2.23.2] - 2026-11-12
 
 **LA POLÍTICA DE CLAVES DEL PROXY DE API, PROBADA CON ATAQUES.**

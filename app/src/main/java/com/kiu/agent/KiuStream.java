@@ -28,15 +28,6 @@ public final class KiuStream {
         } catch (Throwable ignored) { }
     }
 
-    /* mismo escapado JSON que KiuGenJob.esc */
-    static String esc(String s) {
-        if (s == null) return "";
-        try {
-            return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                    .replace("\r\n", "\\n").replace("\n", "\\n")
-                    .replace("\r", "\\n").replace("\t", " ");
-        } catch (Throwable th) {
-            return s;
-        }
-    }
+    /* v2.23.2: un solo escapado para todo el Java → JsEscape */
+    static String esc(String s) { return JsEscape.esc(s); }
 }

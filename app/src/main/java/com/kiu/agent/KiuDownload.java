@@ -31,16 +31,7 @@ public class KiuDownload {
         }
     }
 
-    private static String esc(String str) {
-        if (str == null) {
-            return "";
-        }
-        try {
-            return str.replace("\\", "\\\\").replace("\"", "\\\"");
-        } catch (Throwable unused) {
-            return str;
-        }
-    }
+    private static String esc(String str) { return JsEscape.esc(str); }
 
     public static long free(Context context) {
         try {

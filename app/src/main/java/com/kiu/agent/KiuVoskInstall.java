@@ -249,10 +249,5 @@ public final class KiuVoskInstall {
         return b.toString();
     }
 
-    private static String esc(String s) {
-        if (s == null) {
-            return "";
-        }
-        return s.replace("\\", "\\\\").replace("\"", "'").replace("\n", " ").replace("\r", " ");
-    }
+    private static String esc(String s) { return JsEscape.esc(s); }
 }

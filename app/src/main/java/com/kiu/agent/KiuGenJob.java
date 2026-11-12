@@ -26,16 +26,7 @@ public class KiuGenJob implements Runnable {
     public static volatile boolean busy;
     public static int jt;
 
-    public static String esc(String str) {
-        if (str == null) {
-            return "";
-        }
-        try {
-            return str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n").replace("\t", " ");
-        } catch (Throwable th) {
-            return str;
-        }
-    }
+    public static String esc(String str) { return JsEscape.esc(str); }
 
     /* v2.14.2: el id incremental de generacion que publica el nativo.
        -1 si no se puede leer: el JS entonces no puede discriminar el evento y

@@ -231,7 +231,7 @@
       real, borrado cuando el hash no coincide y rechazo de lo que no se puede verificar,
       con control negativo. El arnés encontró un bug: si el hash no se podía calcular, la
       descarga instalaba el archivo como si estuviera bien. (2026-10)
-- [ ] **Faltan arneses para el resto de la capa Java.** Hoy hay 7 clases sin imports de
+- [ ] **Faltan arneses para el resto de la capa Java** (2.23.2: `Backoff`, `KiuDlTask`, `ZipInstall`, `KiuNotifStore`, `WakeDedupe` y `ProxyPolicy` ya tienen; la lista de abajo es la de 2.9.6). Hoy hay 7 clases sin imports de
       Android (1.033 líneas) y 2 con arnés (`Backoff`, `KiuDlTask`). Sin arnés siguen
       `KiuVoskInstall` (258), `KiuGenJob` (172), `ZipInstall` (174) y `KiuDlTask` (236, ya
       cubierto a medias). Y las 6.000 líneas con Android (`MainActivity` con 3.127) siguen

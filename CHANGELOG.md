@@ -1,3 +1,14 @@
+## [2.23.2] - 2026-11-12
+
+**LA POLÍTICA DE CLAVES DEL PROXY DE API, PROBADA CON ATAQUES.**
+
+`KiuApiProxy` decide a qué host viaja cada clave de API y qué URL puede abrir. Esa política pasó, sin cambiar su lógica, a `ProxyPolicy.java` (Java puro) y tiene un arnés que corre en una JVM con 30+ casos: la clave de un proveedor no va a otro; `api.openai.com.evil.com` y `evilapi.openai.com` no valen; un proveedor propio no puede mandar su clave a OpenAI o Groq; `http://` solo a localhost, `127.x`, `10.x`, `172.16–31.x`, `192.168.x` y `.local` (no `10.evil.com`, ni `172.32.x`, ni `192.168.1.10@evil.com`); nunca `file://`. Un test con la política rota a propósito confirma que el arnés falla cuando debe. No se encontró ningún error en la política.
+
+- `KiuApiProxy.java` queda en 262 líneas y delega.
+- `docs/KNOWN_ISSUES.md`: corregido el pendiente de arneses Java (`ZipInstall` y `KiuVoskInstall` ya tenían `VoskZipHarness`).
+- **Sin compilar el APK:** esta máquina no tiene Android SDK; el Java se compiló y probó solo con `javac`. El CI de Gradle lo confirmará.
+- Tests: `java-proxypolicy-v2232` (3). Versión 2.23.2 (versionCode 123).
+
 ## [2.23.1] - 2026-11-11
 
 **EL RENDERIZADOR DE MARKDOWN SALE DE `app-ui.js` Y QUEDA PROBADO CONTRA XSS.**

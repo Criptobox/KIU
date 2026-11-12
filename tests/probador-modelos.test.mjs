@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const rd = (p) => readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 const ui = rd('app/src/main/assets/www/js/app/app-ui.js');
 const state = rd('app/src/main/assets/www/js/app/state.js');
-const proxy = rd('app/src/main/java/com/kiu/agent/KiuApiProxy.java');
+const proxy = rd('app/src/main/java/com/kiu/agent/ProxyPolicy.java');   /* v2.23.2: la tabla de hosts vive en ProxyPolicy */
 
 test('NVIDIA está como proveedor y su host pertenece solo a su clave', () => {
   assert.match(state, /id: 'nvidia'[^}]*integrate\.api\.nvidia\.com\/v1/);
